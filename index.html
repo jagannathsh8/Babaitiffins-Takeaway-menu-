@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Babai Tiffins</title>
+
+<style>
+body{font-family:Arial;margin:0;background:#f5f5f5}
+header{background:#ff5200;color:white;padding:15px;text-align:center}
+.categories{display:flex;overflow-x:auto;background:white;padding:10px}
+.cat{margin-right:10px;padding:8px 15px;border-radius:20px;background:#eee}
+.cat.active{background:#ff5200;color:white}
+.menu{padding:10px}
+.card{background:white;padding:12px;margin-bottom:10px;border-radius:10px}
+.row{display:flex;justify-content:space-between}
+.desc{font-size:12px;color:#666}
+button{background:#ff5200;color:white;border:none;padding:5px 10px;border-radius:5px}
+.cart-bar{position:fixed;bottom:0;width:100%;background:black;color:white;padding:10px;display:flex;justify-content:space-between}
+.cart-screen{position:fixed;top:0;left:0;width:100%;height:100%;background:white;display:none;padding:15px}
+input{width:100%;padding:10px;margin:5px 0}
+.primary{width:100%;padding:10px;background:#ff5200}
+</style>
+</head>
+
+<body>
+
+<header><h2>Babai Tiffins</h2></header>
+
+<div class="categories" id="cats"></div>
+<div class="menu" id="menu"></div>
+
+<div class="cart-bar">
+<span>₹ <span id="total">0</span></span>
+<button onclick="openCart()">Cart</button>
+</div>
+
+<div class="cart-screen" id="cartScreen">
+<h3>Your Order</h3>
+<div id="cartItems"></div>
+<h4>Total ₹<span id="cartTotal">0</span></h4>
+
+<input id="name" placeholder="Your Name">
+<input id="phone" placeholder="Phone">
+
+<button class="primary" onclick="placeOrder()">Place Order</button>
+<button onclick="closeCart()">Close</button>
+</div>
+
+<script>
+
+let menuData=[];
+let cart={};
+let total=0;
+
+fetch("https://script.google.com/macros/s/AKfycbxG86MaQLBQqLwTM6N9sqYiOmZfWZBgQtcavirgnJwziIIs6mKklf-jh7WIp0FrKy0VAg/exec")
+.then(res=>res.json())
+.then(data=>{
+menuData=data;
+initMenu();
+})
+.catch(()=>alert("Menu not loading"));
+
+function initMenu(){
+let cats=[...new Set(menuData.map(i=>i.cat))];
+let div=document.getElementById("cats");
+
+cats.forEach((c,i)=>{
+let el=document.createElement("div");
+el.className="cat";
+el.innerText=c;
+el.onclick=()=>loadMenu(c,el);
+if(i===0)el.classList.add("active");
+div.appendChild(el);
+});
+
+loadMenu(cats[0]);
+}
+
+function loadMenu(cat,el){
+document.querySelectorAll(".cat").forEach(c=>c.classList.remove("active"));
+if(el)el.classList.add("active");
+
+let menu=document.getElementById("menu");
+menu.innerHTML="";
+
+menuData.filter(i=>i.cat===cat).forEach(item=>{
+let d=document.createElement("div");
+d.className="card";
+
+d.innerHTML=`
+<div class="row">
+<div>
+<b>${item.name}</b><br>
+<span class="desc">${item.desc||""}</span><br>
+₹${item.price}
+</div>
+<div>
+<button onclick="add(${item.id},'${item.name}',${item.price})">+</button>
+<span id="q-${item.id}">0</span>
+<button onclick="remove(${item.id},${item.price})">-</button>
+</div>
+</div>`;
+
+menu.appendChild(d);
+});
+}
+
+function add(id,name,price){
+if(!cart[id])cart[id]={name,price,qty:0};
+cart[id].qty++;
+total+=price;
+document.getElementById("q-"+id).innerText=cart[id].qty;
+updateTotal();
+}
+
+function remove(id,price){
+if(cart[id]&&cart[id].qty>0){
+cart[id].qty--;
+total-=price;
+document.getElementById("q-"+id).innerText=cart[id].qty;
+updateTotal();
+}
+}
+
+function updateTotal(){
+document.getElementById("total").innerText=total;
+}
+
+function openCart(){
+let div=document.getElementById("cartItems");
+div.innerHTML="";
+Object.values(cart).forEach(i=>{
+if(i.qty>0){
+div.innerHTML+=`<p>${i.name} x${i.qty}</p>`;
+}
+});
+document.getElementById("cartTotal").innerText=total;
+document.getElementById("cartScreen").style.display="block";
+}
+
+function closeCart(){
+document.getElementById("cartScreen").style.display="none";
+}
+
+function placeOrder(){
+window.location.href=`upi://pay?pa=paytm.s1395kp@pty&pn=BabaiTiffins&am=${total}`;
+}
+
+</script>
+
+</body>
+</html>
