@@ -154,6 +154,7 @@ public final class DosaStatsTest {
         // Trend: one point per 2 min, last 3 hours only.
         DosaStats s10 = new DosaStats();
         long t10 = at(12, 0);
+        s10.update(java.util.Collections.singletonList(prep(500, t10 - 5 * MIN)), t10, false);
         for (int m = 0; m <= 240; m++) s10.compute(t10 + m * MIN);
         DosaStats.Result r10 = s10.compute(t10 + 240 * MIN);
         check("trend window", r10.trendTimes.length >= 89 && r10.trendTimes.length <= 92
@@ -161,6 +162,21 @@ public final class DosaStatsTest {
         DosaStats s11 = new DosaStats();
         s11.load(s10.save(), t10 + 241 * MIN);
         check("trend persists", s11.compute(t10 + 241 * MIN).trendTimes.length >= 89, "");
+
+        // No Dosa data at all: no made-up number.
+        DosaStats s12 = new DosaStats();
+        DosaStats.Result r12 = s12.compute(t10);
+        check("no data -> calculating", Double.isNaN(r12.etaMin) && r12.etaLabel.startsWith("Calculating"), r12.etaLabel);
+        // Never above 40 min.
+        DosaStats s13 = new DosaStats();
+        s13.update(java.util.Collections.singletonList(prep(600, t10 - 75 * MIN)), t10, false);
+        check("cap 40", s13.compute(t10).etaMin == 40.0, s13.compute(t10).etaMin);
+        // Next morning, before any completion: yesterday's real average is used.
+        long nextDay = at(19, 0) + 24 * 60 * MIN + 1;
+        DosaStats s14 = new DosaStats();
+        s14.load(s.save(), nextDay);
+        DosaStats.Result r14 = s14.compute(nextDay);
+        check("uses last real day avg", Math.abs(r14.etaMin - 16.9) < 0.11, r14.etaMin);
 
         check("hour labels", DosaStats.hourLabel(11).equals("11\u201312 PM") && DosaStats.hourLabel(0).equals("12\u20131 AM"),
                 DosaStats.hourLabel(11) + " " + DosaStats.hourLabel(0));

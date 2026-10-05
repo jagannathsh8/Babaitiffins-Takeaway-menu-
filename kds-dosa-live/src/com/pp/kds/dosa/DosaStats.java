@@ -77,8 +77,7 @@ public final class DosaStats {
     static final long WINDOW_MS = 15 * MINUTE;      // recent-throughput window
     static final long MIN_WINDOW_MS = 3 * MINUTE;   // avoid huge rates right after start
     static final long MAX_PREP_MS = 150 * MINUTE;   // ignore forgotten tickets as outliers
-    static final double DEFAULT_AVG_MIN = 12.0;     // until the first Dosa KOT completes today
-    static final double MAX_ETA_MIN = 90.0;
+    static final double MAX_ETA_MIN = 40.0;         // never show more than 40 min
     static final int CONFIDENT_RECENT = 6;          // recent completions for full queue weighting
     static final int HISTORY_DAYS = 7;
     static final long TREND_STEP_MS = 2 * MINUTE;   // one trend point every 2 min
@@ -229,21 +228,28 @@ public final class DosaStats {
         }
         r.oldestActiveMin = oldest;
 
-        double avg = Double.isNaN(r.avgPrepMin) ? DEFAULT_AVG_MIN : r.avgPrepMin;
+        // Only real figures: today's Dosa average, else the most recent day's real average.
+        // With no Dosa history at all the screen shows "Calculating..." instead of a guess.
+        double avg = !Double.isNaN(r.avgPrepMin) ? r.avgPrepMin : lastDayAvg();
         double eta;
         r.queueMin = r.throughputPerMin > 0 ? r.activeCount / r.throughputPerMin : Double.NaN;
         if (r.activeCount == 0) {
             eta = avg;                                     // empty queue: just the prep time
         } else if (r.throughputPerMin <= 0) {
-            eta = Math.max(avg, Math.min(oldest, MAX_ETA_MIN)); // nothing finishing: stalled
+            // nothing finishing recently: at least as long as the oldest order has waited
+            double floor = Double.isNaN(avg) ? 0 : avg;
+            eta = Math.max(floor, oldest);
+            if (eta <= 0) eta = Double.NaN;
+        } else if (Double.isNaN(avg)) {
+            eta = r.queueMin;                              // pace known, no average yet
         } else {
             // Queue component (Little's law) can't beat the physical cook time.
             double core = Math.max(r.queueMin, 0.6 * avg);
             double w = Math.min(1.0, r.recentCompletions / (double) CONFIDENT_RECENT);
             eta = (1 - w) * avg + w * core;
         }
-        r.etaMin = Math.min(eta, MAX_ETA_MIN);
-        r.etaLabel = friendlyRange(r.etaMin);
+        r.etaMin = Double.isNaN(eta) ? Double.NaN : Math.min(eta, MAX_ETA_MIN);
+        r.etaLabel = Double.isNaN(r.etaMin) ? "Calculating\u2026" : friendlyRange(r.etaMin);
 
         int total = 0;
         for (int q : kinds.values()) total += q;
@@ -252,7 +258,9 @@ public final class DosaStats {
         r.kindsToday = kinds.size();
         r.fastestPrepMin = fastestMs > 0 ? fastestMs / (double) MINUTE : Double.NaN;
         r.servedToday = servedPieces;
-        if (trend.isEmpty() || now - trend.getLast()[0] >= TREND_STEP_MS) {
+        if (Double.isNaN(r.etaMin)) {
+            // no estimate yet: nothing to plot
+        } else if (trend.isEmpty() || now - trend.getLast()[0] >= TREND_STEP_MS) {
             trend.add(new long[]{now, Math.round(r.etaMin * 10)});
         } else {
             trend.getLast()[1] = Math.round(r.etaMin * 10); // keep the latest point live
@@ -353,6 +361,18 @@ public final class DosaStats {
         }
         if (hi < e) hi = e;
         return lo + "–" + hi + " min";
+    }
+
+    /** Real average from the most recent previous day that had completed Dosa KOTs, else NaN. */
+    private double lastDayAvg() {
+        for (String line : history) {
+            String[] p = line.split("\\|");
+            if (p.length >= 4 && parseInt(p[1]) > 0) {
+                double a = parseDouble(p[3]);
+                if (a > 0) return a;
+            }
+        }
+        return Double.NaN;
     }
 
     private String historyLine(String day) {

@@ -123,11 +123,14 @@ public final class DosaLive {
             if (OrderType.Companion.fromId(kot.getOrderType()) != OrderType.DINE_IN) continue;
             List<String> names = new ArrayList<String>();
             List<Double> qty = new ArrayList<Double>();
-            collectDosa(kot, names, qty);
+            boolean dosaItemsReady = collectDosa(kot, names, qty);
             if (names.isEmpty()) continue;
             String status = kot.getKotStatus();
             boolean cancelled = "0".equals(status);
-            boolean ready = card.getState().isDispatch() || "9".equals(status) || "10".equals(status);
+            // Dosa part is done when the KOT is Food Ready, or when every Dosa item on it is
+            // marked ready (so slower non-dosa items on the same KOT don't stretch dosa times).
+            boolean ready = card.getState().isDispatch() || "9".equals(status) || "10".equals(status)
+                    || dosaItemsReady;
             Long created = BoardVisualsKt.parseCreatedMillis(kot.getCreatedTime());
             double[] q = new double[qty.size()];
             for (int i = 0; i < q.length; i++) q[i] = qty.get(i);
@@ -137,9 +140,11 @@ public final class DosaLive {
         return out;
     }
 
-    private static void collectDosa(Kot kot, List<String> names, List<Double> qty) {
+    /** Collects the Dosa items; returns true when every one of them is marked ready. */
+    private static boolean collectDosa(Kot kot, List<String> names, List<Double> qty) {
         List<KotItem> items = kot.getItems();
-        if (items == null) return;
+        if (items == null) return false;
+        boolean allReady = true;
         for (KotItem item : items) {
             String cat = item.getCategory();
             if (cat != null && cat.toLowerCase(Locale.US).contains(DOSA)
@@ -148,8 +153,10 @@ public final class DosaLive {
                 names.add(n == null || n.trim().isEmpty() ? "Dosa" : n.trim());
                 Double q = item.getQuantity();
                 qty.add(q == null || q <= 0 ? 1.0 : q);
+                if (!BoardVisualsKt.isItemReady(item.getStatus())) allReady = false;
             }
         }
+        return allReady && !names.isEmpty();
     }
 
     private static DashboardUiState currentState() {
@@ -240,7 +247,7 @@ public final class DosaLive {
         void bind(DosaStats.Result r) {
             String time = DateFormat.getTimeFormat(activity).format(new java.util.Date(r.updatedAt));
             StringBuilder sb = new StringBuilder(String.format(Locale.US,
-                    "Dine-In Dosa only | exact %.1f min | completed today %d | %.2f KOT/min (%d in last %.0f min)"
+                    "Dine-In Dosa KOTs only | exact %.1f min | completed today %d | %.2f KOT/min (%d in last %.0f min)"
                             + " | queue %s | oldest waiting %.0f min\n",
                     r.etaMin, r.completedToday, r.throughputPerMin, r.recentCompletions, r.windowMin,
                     Double.isNaN(r.queueMin) ? "-" : String.format(Locale.US, "%.1f min", r.queueMin),

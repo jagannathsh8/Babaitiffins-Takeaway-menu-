@@ -77,7 +77,6 @@ final class DosaNeonView extends View {
             "Batter, heat and a lot of love in progress",
             "Sit back and relax — we'll serve it piping hot",
     };
-    private static final String EMPTY_MESSAGE = "The tawa is hot and ready — orders are flying out!";
     private static final float MESSAGE_SECONDS = 6f;
     private static final float PANEL_SECONDS = 7f;
     private static final long STAFF_HOLD_MS = 1500;
@@ -131,6 +130,10 @@ final class DosaNeonView extends View {
 
     private Listener listener;
     private String eta = "--";
+    private String etaUnit = "MINUTES";
+    private int lastBand = -1;                 // 5-min wait band, drives auto theme change
+    private long closeShownAt = SystemClock.uptimeMillis();
+    private static final long CLOSE_VISIBLE_MS = 5000, CLOSE_FADE_MS = 800;
     private int count, running, served;
     private float shownRunning, shownServed;
     private String avg = "—";
@@ -257,7 +260,23 @@ final class DosaNeonView extends View {
 
     void setData(DosaStats.Result r, String updatedText, String staffText) {
         String e = r.etaLabel == null ? "--" : r.etaLabel;
-        eta = e.startsWith("Under") ? "< 5" : e.replace(" min", "");
+        if (Double.isNaN(r.etaMin)) {
+            eta = "--";
+            etaUnit = "CALCULATING";
+        } else {
+            eta = e.startsWith("Under") ? "< 5" : e.replace(" min", "");
+            etaUnit = "MINUTES";
+            // Auto theme: every time the wait moves into a new 5-minute band (up or down),
+            // switch to the next theme.
+            int band = (int) (r.etaMin / 5);
+            if (lastBand >= 0 && band != lastBand) {
+                int next = (themeIndex + 1) % THEMES.length;
+                setTheme(next);
+                themeChangedAt = SystemClock.uptimeMillis();
+                if (listener != null) listener.onTheme(next);
+            }
+            lastBand = band;
+        }
         count = r.activeCount;
         running = r.runningDosas;
         served = r.servedToday;
@@ -297,7 +316,7 @@ final class DosaNeonView extends View {
                 setTheme(hit);
                 themeChangedAt = SystemClock.uptimeMillis();
                 if (listener != null) listener.onTheme(hit);
-            } else if (Math.hypot(x - closeX, y - closeY) < closeR + 14 * d) {
+            } else if (closeAlpha() > 0.3f && Math.hypot(x - closeX, y - closeY) < closeR + 14 * d) {
                 if (listener != null) listener.onClose();
             } else if (downOnTitle && titleHit.contains(x, y)
                     && SystemClock.uptimeMillis() - downAt >= STAFF_HOLD_MS) {
@@ -306,6 +325,7 @@ final class DosaNeonView extends View {
             } else if (showStaff) {
                 showStaff = false;
             }
+            closeShownAt = SystemClock.uptimeMillis(); // any tap brings the close button back
         }
         return true; // never let taps fall through to the board underneath
     }
@@ -352,6 +372,7 @@ final class DosaNeonView extends View {
         drawInfo(c, infoX, infoW, titleY, u, t);
         drawTrend(c, chartX, chartTop, chartW, chartBottom - chartTop, u, t);
         drawClose(c, w);
+        drawUpdated(c, w, t);
         drawThemeDots(c, t);
         if (showStaff) drawStaff(c, w, h);
 
@@ -538,24 +559,24 @@ final class DosaNeonView extends View {
         c.restore();
         stroke.setAlpha(255);
 
-        text.setTypeface(condensed);
-        text.setTextAlign(Paint.Align.CENTER);
-        text.setLetterSpacing(0.3f);
-        text.setTextSize(r * 0.13f);
-        text.setColor(alpha(CREAM, 0xDD));
-        c.drawText("ESTIMATED WAIT", cx, cy - r * 0.42f, text);
+        // dark inner disc so the number reads strongly over the photos and glow
+        fill.setShader(null);
+        fill.setColor(alpha(theme.bg2, 0xD9));
+        c.drawCircle(cx, cy, r - 8 * d, fill);
+        fill.setAlpha(255);
 
-        text.setTypeface(thin);
-        text.setLetterSpacing(0f);
-        float size = r * 0.62f;
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        text.setLetterSpacing(-0.02f);
+        float size = r * 0.58f;
         text.setTextSize(size);
         float tw = text.measureText(eta);
         if (tw > r * 1.5f) {
             size *= r * 1.5f / tw;
             text.setTextSize(size);
         }
-        text.setColor(Color.WHITE);
-        text.setShadowLayer(18 * d, 0, 0, ORANGE);
+        text.setColor(CREAM);
+        text.setShadowLayer(10 * d, 0, 0, ORANGE);
         c.drawText(eta, cx, cy + size * 0.33f, text);
         text.clearShadowLayer();
 
@@ -563,7 +584,11 @@ final class DosaNeonView extends View {
         text.setLetterSpacing(0.4f);
         text.setTextSize(r * 0.12f);
         text.setColor(GOLD);
-        c.drawText("MINUTES", cx, cy + r * 0.52f, text);
+        c.drawText(etaUnit, cx, cy + r * 0.52f, text);
+        text.setLetterSpacing(0.3f);
+        text.setTextSize(r * 0.13f);
+        text.setColor(alpha(CREAM, 0xDD));
+        c.drawText("ESTIMATED WAIT", cx, cy - r * 0.42f, text);
         text.setLetterSpacing(0f);
     }
 
@@ -653,8 +678,8 @@ final class DosaNeonView extends View {
         String msg;
         float alpha;
         if (count == 0) {
-            msg = EMPTY_MESSAGE;
-            alpha = 1f;
+            msg = "";                       // no orders waiting: brand line above says it all
+            alpha = 0f;
         } else {
             msg = MESSAGES[(int) (t / MESSAGE_SECONDS) % MESSAGES.length];
             alpha = fade(t % MESSAGE_SECONDS, MESSAGE_SECONDS);
@@ -831,7 +856,7 @@ final class DosaNeonView extends View {
         text.setTypeface(light);
         text.setLetterSpacing(0.12f);
         text.setColor(0x99FFFFFF);
-        c.drawText("UPDATED " + updated + "  •  MADE FRESH TO ORDER ♥", x + w - pad,
+        c.drawText("MADE FRESH TO ORDER \u2665", x + w - pad,
                 y + pad + u * 0.018f, text);
         text.setLetterSpacing(0f);
 
@@ -925,49 +950,81 @@ final class DosaNeonView extends View {
 
     // ---- close & staff -------------------------------------------------------------------
 
+    /** Small theme dots in the top-left corner. */
     private void drawThemeDots(Canvas c, float t) {
-        dotY = closeY;
+        dotY = 27 * d;
         for (int i = 0; i < THEMES.length; i++) {
-            dotX[i] = closeX - closeR - 24 * d - (THEMES.length - 1 - i) * 24 * d;
+            dotX[i] = 34 * d + i * 15 * d;
             boolean sel = i == themeIndex;
             fill.setShader(null);
             fill.setColor(THEMES[i].P);
-            c.drawCircle(dotX[i], dotY, (sel ? 7 : 5.5f) * d, fill);
+            fill.setAlpha(sel ? 255 : 170);
+            c.drawCircle(dotX[i], dotY, (sel ? 4.2f : 3.2f) * d, fill);
+            fill.setAlpha(255);
             if (sel) {
                 stroke.setShader(null);
                 stroke.setColor(Color.WHITE);
-                stroke.setStrokeWidth(1.6f * d);
-                stroke.setAlpha(220);
-                c.drawCircle(dotX[i], dotY, 11 * d, stroke);
+                stroke.setStrokeWidth(1.2f * d);
+                stroke.setAlpha(200);
+                c.drawCircle(dotX[i], dotY, 6.8f * d, stroke);
                 stroke.setAlpha(255);
             }
         }
         long since = SystemClock.uptimeMillis() - themeChangedAt;
         if (since < 2500) {
             text.setTypeface(condensed);
-            text.setTextAlign(Paint.Align.CENTER);
+            text.setTextAlign(Paint.Align.LEFT);
             text.setLetterSpacing(0.2f);
-            text.setTextSize(11 * d);
+            text.setTextSize(10 * d);
             text.setColor(Color.WHITE);
             text.setAlpha((int) (255 * Math.min(1f, (2500 - since) / 600f)));
-            c.drawText(theme.name.toUpperCase(Locale.US), (dotX[0] + dotX[THEMES.length - 1]) / 2f,
-                    dotY + 28 * d, text);
+            c.drawText(theme.name.toUpperCase(Locale.US), dotX[THEMES.length - 1] + 14 * d, dotY + 3.5f * d, text);
             text.setAlpha(255);
             text.setLetterSpacing(0f);
-            text.setTextAlign(Paint.Align.LEFT);
         }
+    }
+
+    /** Close button is visible for 5 s after opening or any tap, then fades out. */
+    private float closeAlpha() {
+        long since = SystemClock.uptimeMillis() - closeShownAt;
+        if (since <= CLOSE_VISIBLE_MS) return 1f;
+        return Math.max(0f, 1f - (since - CLOSE_VISIBLE_MS) / (float) CLOSE_FADE_MS);
+    }
+
+    /** "● LIVE · UPDATED 9:42 PM" pinned at the top right. */
+    private void drawUpdated(Canvas c, float w, float t) {
+        float y = 30 * d;
+        float right = w - 40 * d - closeAlpha() * (closeR * 2 + 12 * d);
+        text.setTypeface(condensed);
+        text.setTextAlign(Paint.Align.RIGHT);
+        text.setLetterSpacing(0.2f);
+        text.setTextSize(12 * d);
+        text.setColor(alpha(CREAM, 0xE6));
+        String label = "LIVE  \u2022  UPDATED " + updated;
+        c.drawText(label, right, y, text);
+        float lw = text.measureText(label);
+        float pulse = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 1.6);
+        fill.setShader(null);
+        fill.setColor(LIVE_GREEN);
+        fill.setAlpha((int) (120 + 135 * pulse));
+        c.drawCircle(right - lw - 10 * d, y - 4 * d, 4 * d, fill);
+        fill.setAlpha(255);
+        text.setLetterSpacing(0f);
+        text.setTextAlign(Paint.Align.LEFT);
     }
 
     private void drawClose(Canvas c, float w) {
         closeR = 18 * d;
         closeX = w - 46 * d;
         closeY = 46 * d;
+        float a = closeAlpha();
+        if (a <= 0f) return;
         fill.setShader(null);
-        fill.setColor(0x33FFFFFF);
+        fill.setColor(alpha(Color.WHITE, (int) (0x33 * a)));
         c.drawCircle(closeX, closeY, closeR, fill);
         stroke.setShader(null);
         stroke.setColor(Color.WHITE);
-        stroke.setAlpha(200);
+        stroke.setAlpha((int) (200 * a));
         stroke.setStrokeWidth(2 * d);
         float k = closeR * 0.38f;
         c.drawLine(closeX - k, closeY - k, closeX + k, closeY + k, stroke);
