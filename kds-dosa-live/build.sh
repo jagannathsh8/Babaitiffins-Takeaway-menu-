@@ -9,7 +9,7 @@
 # Only two things change in the APK:
 #   1. classes4.dex  - MainActivity.onCreate gets ONE extra line: DosaLive.install(this)
 #   2. classes7.dex  - new, contains com.pp.kds.dosa.* (this folder's src/)
-#   3. assets/dosa_live_logo.png - Babai Tiffins mascot for the Dosa Live screen
+#   3. assets/ - Babai Tiffins mascot + food photos for the Dosa Live screen
 # All other dex files, resources and the manifest are copied byte-for-byte from the input,
 # so the scanner (com.pp.kds.scan.*) and the board logic are untouched.
 set -euo pipefail
@@ -59,8 +59,8 @@ cp "$IN" "$WORK/unsigned.apk"
 zip -q -d "$WORK/unsigned.apk" 'META-INF/MANIFEST.MF' 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.EC' 'META-INF/*.DSA' || true
 cp "$WORK/classes4.dex" "$WORK/apk/classes4.dex"
 cp "$WORK/dex/classes.dex" "$WORK/apk/classes7.dex"
-mkdir -p "$WORK/apk/assets" && cp "$HERE/assets/dosa_live_logo.png" "$WORK/apk/assets/"
-(cd "$WORK/apk" && zip -q "$WORK/unsigned.apk" classes4.dex classes7.dex assets/dosa_live_logo.png)
+mkdir -p "$WORK/apk/assets" && cp "$HERE"/assets/* "$WORK/apk/assets/"
+(cd "$WORK/apk" && zip -q "$WORK/unsigned.apk" classes4.dex classes7.dex assets/*)
 
 echo "== align + sign"
 java -jar "$TOOLS/uber-apk-signer.jar" -a "$WORK/unsigned.apk" -o "$WORK/signed" ${KS:+--ks "$KS" --ksAlias "$KS_ALIAS" --ksPass "$KS_PASS" --ksKeyPass "$KS_PASS"} >/dev/null

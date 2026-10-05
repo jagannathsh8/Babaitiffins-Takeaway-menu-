@@ -117,6 +117,13 @@ final class DosaNeonView extends View {
     private final Paint bmp = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF dst = new RectF();
 
+    // cinematic food-photo slideshow behind everything (Ken Burns pan/zoom + cross-fade)
+    private static final String[] PHOTO_FILES = {"dl_karam_dosa.jpg", "dl_podi_idli.jpg",
+            "dl_masala_dosa.jpg", "dl_filter_coffee.jpg", "dl_tomato_rice.jpg"};
+    private static final float SLIDE_SECONDS = 9f, FADE_SECONDS = 1.8f;
+    private static android.graphics.Bitmap[] photos; // decoded once, shared across openings
+    private final Paint photoPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+
     private Shader background, blobA, blobB, halo;
     private float haloKey;
     private SweepGradient borderShader, cometShader;
@@ -149,6 +156,7 @@ final class DosaNeonView extends View {
         } catch (Exception ignored) {
             logo = null;
         }
+        loadPhotos(c);
         setTheme(0);
         try {
             food = DosaFoodArt.renderAll();
@@ -178,6 +186,51 @@ final class DosaNeonView extends View {
         stroke.setStrokeCap(Paint.Cap.ROUND);
         stroke.setStrokeJoin(Paint.Join.ROUND);
         setClickable(true);
+    }
+
+    private static synchronized void loadPhotos(Context c) {
+        if (photos != null) return;
+        List<android.graphics.Bitmap> list = new ArrayList<android.graphics.Bitmap>();
+        android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+        o.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565; // half the memory
+        for (String f : PHOTO_FILES) {
+            try {
+                java.io.InputStream in = c.getAssets().open(f);
+                android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeStream(in, null, o);
+                in.close();
+                if (b != null) list.add(b);
+            } catch (Throwable ignored) {
+            }
+        }
+        photos = list.toArray(new android.graphics.Bitmap[0]);
+    }
+
+    private void drawSlideshow(Canvas c, float w, float h, float t) {
+        int n = photos == null ? 0 : photos.length;
+        if (n == 0) return;
+        int k = (int) (t / SLIDE_SECONDS);
+        float local = t - k * SLIDE_SECONDS;
+        drawPhoto(c, w, h, t, k, n, 255);
+        if (local > SLIDE_SECONDS - FADE_SECONDS) {
+            float a = (local - (SLIDE_SECONDS - FADE_SECONDS)) / FADE_SECONDS;
+            drawPhoto(c, w, h, t, k + 1, n, (int) (255 * a));
+        }
+    }
+
+    private void drawPhoto(Canvas c, float w, float h, float t, int k, int n, int alpha) {
+        android.graphics.Bitmap b = photos[k % n];
+        float p = Math.max(0f, Math.min(1f, (t - k * SLIDE_SECONDS) / (SLIDE_SECONDS + FADE_SECONDS)));
+        float cover = Math.max(w / b.getWidth(), h / b.getHeight());
+        float sc = cover * (1.06f + 0.12f * p);
+        float dw = b.getWidth() * sc, dh = b.getHeight() * sc;
+        int dir = k % 4;
+        float px = (dir == 0 || dir == 3 ? 1 : -1) * (p - 0.5f) * 0.9f;
+        float py = (dir < 2 ? 1 : -1) * (p - 0.5f) * 0.6f;
+        float x = (w - dw) / 2f + (dw - w) / 2f * px;
+        float y = (h - dh) / 2f + (dh - h) / 2f * py;
+        dst.set(x, y, x + dw, y + dh);
+        photoPaint.setAlpha(alpha);
+        c.drawBitmap(b, null, dst, photoPaint);
     }
 
     void setTheme(int index) {
@@ -322,7 +375,8 @@ final class DosaNeonView extends View {
         shaderH = h;
         float big = Math.max(w, h);
         background = new RadialGradient(w * 0.28f, h * 0.42f, big * 0.95f,
-                new int[]{theme.bg0, theme.bg1, theme.bg2}, new float[]{0f, 0.45f, 1f},
+                new int[]{alpha(theme.bg0, 0xB8), alpha(theme.bg1, 0xCC), alpha(theme.bg2, 0xEC)},
+                new float[]{0f, 0.45f, 1f},
                 Shader.TileMode.CLAMP);
         blobA = new RadialGradient(w * 0.85f, h * 0.12f, big * 0.38f,
                 new int[]{alpha(ORANGE, 0x33), alpha(ORANGE, 0)}, null, Shader.TileMode.CLAMP);
@@ -337,6 +391,7 @@ final class DosaNeonView extends View {
 
     private void drawBackground(Canvas c, float w, float h, float t) {
         c.drawColor(theme.bg2);
+        drawSlideshow(c, w, h, t);
         fill.setColor(Color.BLACK);
         fill.setAlpha(255);
         fill.setShader(background);
