@@ -14,8 +14,6 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.pp.kds.core.common.model.OrderType;
@@ -163,13 +161,18 @@ public final class DosaLive {
     private static void addButton(final Activity activity) {
         float d = activity.getResources().getDisplayMetrics().density;
         TextView b = new TextView(activity);
-        b.setText("DOSA WAIT");
+        b.setText("\u2726 DOSA LIVE");
         b.setTextColor(Color.WHITE);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         b.setGravity(Gravity.CENTER);
         b.setPadding((int) (12 * d), 0, (int) (12 * d), 0);
-        b.setBackground(rounded(0xFFE65100, 18 * d));
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xFFFF2BD6, 0xFFFF6D00, 0xFFFFB300});
+        bg.setCornerRadius(18 * d);
+        bg.setStroke((int) (1.5f * d), 0xCCFFFFFF);
+        b.setBackground(bg);
+        b.setShadowLayer(8 * d, 0, 0, 0xFFFF2BD6);
         b.setElevation(8 * d);
         b.setContentDescription("Dosa Live Wait");
         b.setOnClickListener(new View.OnClickListener() {
@@ -197,124 +200,44 @@ public final class DosaLive {
         if (panel != null && last != null) panel.bind(last);
     }
 
-    private static GradientDrawable rounded(int color, float radius) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(radius);
-        return g;
-    }
-
-    /** Full-screen overlay inside MainActivity (no new Activity / manifest change needed). */
+    /** Full-screen neon overlay inside MainActivity (no new Activity / manifest change needed). */
     private static final class Panel {
         final Activity activity;
-        final FrameLayout root;
-        final TextView count, eta, avg, updated, details, history;
+        final DosaNeonView view;
 
         Panel(Activity a) {
             activity = a;
-            float d = a.getResources().getDisplayMetrics().density;
-            root = new FrameLayout(a);
-            root.setBackgroundColor(0xCC000000);
-            root.setClickable(true);
-            root.setElevation(24 * d);
-            root.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) { close(); }
+            view = new DosaNeonView(a);
+            view.setElevation(24 * a.getResources().getDisplayMetrics().density);
+            view.setListener(new DosaNeonView.Listener() {
+                @Override public void onClose() { close(); }
             });
-
-            LinearLayout card = new LinearLayout(a);
-            card.setOrientation(LinearLayout.VERTICAL);
-            card.setPadding((int) (28 * d), (int) (20 * d), (int) (28 * d), (int) (20 * d));
-            card.setBackground(rounded(0xFF1B1B1F, 16 * d));
-            card.setClickable(true); // taps inside the card don't close it
-
-            LinearLayout header = new LinearLayout(a);
-            header.setOrientation(LinearLayout.HORIZONTAL);
-            header.setGravity(Gravity.CENTER_VERTICAL);
-            TextView title = text(a, "DOSA LIVE STATUS", 22, 0xFFFFB74D, true);
-            header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-            TextView close = text(a, "CLOSE", 15, Color.WHITE, true);
-            close.setPadding((int) (16 * d), (int) (8 * d), (int) (16 * d), (int) (8 * d));
-            close.setBackground(rounded(0xFF424242, 8 * d));
-            close.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) { close(); }
-            });
-            header.addView(close);
-            card.addView(header);
-
-            count = row(a, card, "Current Dosa Orders");
-            eta = row(a, card, "Approx. Wait Time");
-            eta.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
-            eta.setTextColor(0xFF81C784);
-            avg = row(a, card, "Today Avg Prep Time");
-            updated = row(a, card, "Updated");
-
-            details = text(a, "", 13, 0xFFB0BEC5, false);
-            details.setPadding(0, (int) (14 * d), 0, 0);
-            card.addView(details);
-            history = text(a, "", 12, 0xFF90A4AE, false);
-            history.setTypeface(Typeface.MONOSPACE);
-            history.setPadding(0, (int) (10 * d), 0, 0);
-            card.addView(history);
-
-            ScrollView scroll = new ScrollView(a);
-            scroll.addView(card);
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                    (int) Math.min(620 * d, a.getResources().getDisplayMetrics().widthPixels * 0.92f),
-                    ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
-            root.addView(scroll, lp);
-            ((ViewGroup) a.findViewById(android.R.id.content)).addView(root,
+            ((ViewGroup) a.findViewById(android.R.id.content)).addView(view,
                     new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT));
         }
 
         void bind(DosaStats.Result r) {
-            count.setText(String.valueOf(r.activeCount));
-            eta.setText("Approx. " + r.etaLabel);
-            avg.setText(Double.isNaN(r.avgPrepMin) ? "— (no Dosa KOT completed yet)"
-                    : String.format(Locale.US, "%.1f min", r.avgPrepMin));
-            updated.setText(DateFormat.getTimeFormat(activity).format(new java.util.Date(r.updatedAt)));
-            details.setText(String.format(Locale.US,
-                    "Exact estimate %.1f min  •  Completed today %d  •  Throughput %.2f KOT/min "
-                            + "(%d in last %.0f min)  •  Queue %s  •  Oldest waiting %.0f min",
+            String time = DateFormat.getTimeFormat(activity).format(new java.util.Date(r.updatedAt));
+            StringBuilder sb = new StringBuilder(String.format(Locale.US,
+                    "Dine-In Dosa only | exact %.1f min | completed today %d | %.2f KOT/min (%d in last %.0f min)"
+                            + " | queue %s | oldest waiting %.0f min\n",
                     r.etaMin, r.completedToday, r.throughputPerMin, r.recentCompletions, r.windowMin,
-                    Double.isNaN(r.queueMin) ? "—" : String.format(Locale.US, "%.1f min", r.queueMin),
+                    Double.isNaN(r.queueMin) ? "-" : String.format(Locale.US, "%.1f min", r.queueMin),
                     r.oldestActiveMin));
-            StringBuilder sb = new StringBuilder("Date        Done  PrepMin   Avg  Peak/min\n");
+            sb.append("Date        Done  PrepMin   Avg  Peak/min");
             for (String line : r.history) {
                 String[] p = line.split("\\|");
                 if (p.length < 5) continue;
-                sb.append(String.format(Locale.US, "%-10s %5s %8s %5s %8s%n", p[0], p[1], p[2], p[3], p[4]));
+                sb.append(String.format(Locale.US, "%n%-10s %5s %8s %5s %8s", p[0], p[1], p[2], p[3], p[4]));
             }
-            history.setText(sb.toString().trim());
+            view.setData(r.etaLabel, r.activeCount, r.avgPrepMin, time, sb.toString());
         }
 
         void close() {
-            ViewGroup parent = (ViewGroup) root.getParent();
-            if (parent != null) parent.removeView(root);
+            ViewGroup parent = (ViewGroup) view.getParent();
+            if (parent != null) parent.removeView(view);
             if (panel == this) panel = null;
-        }
-
-        private static TextView row(Activity a, LinearLayout card, String label) {
-            float d = a.getResources().getDisplayMetrics().density;
-            LinearLayout row = new LinearLayout(a);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(0, (int) (12 * d), 0, 0);
-            row.addView(text(a, label + ":", 18, 0xFFE0E0E0, false),
-                    new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-            TextView value = text(a, "—", 24, Color.WHITE, true);
-            row.addView(value);
-            card.addView(row);
-            return value;
-        }
-
-        private static TextView text(Context c, String s, float sp, int color, boolean bold) {
-            TextView t = new TextView(c);
-            t.setText(s);
-            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
-            t.setTextColor(color);
-            if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
-            return t;
         }
     }
 }
