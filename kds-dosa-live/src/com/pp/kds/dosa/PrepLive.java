@@ -44,7 +44,12 @@ import java.util.Map;
 final class PrepLive {
 
     private static final String PREFS = "prep_live_stats";
-    private static final long PERSIST_MS = 20_000L;
+    private static final String HISTORY_PREFS = "prep_live_history";
+    private static final String UI_PREFS = "prep_live_ui";
+    private static final int CARDS = 11;
+    private static int[] slots;                       // target shown on each card
+    private static SharedPreferences historyPrefs, uiPrefs;
+    private static final long PERSIST_MS = 60_000L;
     private static final double[] BATCH_CHIPS = {1, 2, 5, 10, 20};
 
     private static final int BG = 0xFF120E07, SURFACE = 0xFF1E1810, CREAM = 0xFFFFF4DC, MUTED = 0xFFB9AE98,
@@ -67,6 +72,20 @@ final class PrepLive {
         if (m == null) return;
         stats = new PrepStats(m);
         prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        historyPrefs = ctx.getSharedPreferences(HISTORY_PREFS, Context.MODE_PRIVATE);
+        uiPrefs = ctx.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE);
+        stats.loadHistory(historyPrefs.getString("history", ""));
+        slots = new int[CARDS];
+        String[] saved0 = uiPrefs.getString("slots", "").split(",");
+        for (int i = 0; i < CARDS; i++) {
+            int t = -1;
+            try {
+                if (i < saved0.length) t = Integer.parseInt(saved0[i]);
+            } catch (NumberFormatException ignored) {
+            }
+            if (t < 0 || t >= m.targets.length) t = i < m.defaults.length ? m.defaults[i] : Math.min(i, m.targets.length - 1);
+            slots[i] = t;
+        }
         Map<String, String> saved = new HashMap<String, String>();
         for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) saved.put(e.getKey(), String.valueOf(e.getValue()));
         stats.load(saved, System.currentTimeMillis());
@@ -116,7 +135,7 @@ final class PrepLive {
                 m.recipeUnits[i] = new String[rows.length()];
                 for (int j = 0; j < rows.length(); j++) {
                     JSONArray row = rows.getJSONArray(j);
-                    m.recipeNames[i][j] = row.getString(0).replaceFirst("^(OP|CP) - ", "");
+                    m.recipeNames[i][j] = row.getString(0);
                     m.recipeQty[i][j] = row.getDouble(1);
                     m.recipeUnits[i][j] = row.getString(2);
                 }
@@ -131,6 +150,12 @@ final class PrepLive {
                 }
             }
             if (!o.isNull("dosaDineInAvgPrepMin")) m.seedDosaAvgPrepMin = o.getDouble("dosaDineInAvgPrepMin");
+            JSONArray un = o.optJSONArray("units");
+            m.units = new String[n];
+            for (int i = 0; i < n; i++) m.units[i] = un != null && i < un.length() ? un.getString(i) : "kg";
+            JSONArray df = o.optJSONArray("defaults");
+            m.defaults = new int[df == null ? 0 : df.length()];
+            for (int i = 0; i < m.defaults.length; i++) m.defaults[i] = df.getInt(i);
             return m;
         } catch (Throwable e) {
             return null;
@@ -169,7 +194,7 @@ final class PrepLive {
     static void tick(long now, boolean force) {
         if (stats == null) return;
         if (force || screen != null || dirty) last = stats.compute(now);
-        if (dirty && now - lastPersist >= PERSIST_MS) persist(now);
+        if ((dirty || stats.historyChanged()) && now - lastPersist >= PERSIST_MS) persist(now);
         if (screen != null) screen.bind(last);
     }
 
@@ -178,12 +203,20 @@ final class PrepLive {
         ed.clear();
         for (Map.Entry<String, String> e : stats.save().entrySet()) ed.putString(e.getKey(), e.getValue());
         ed.apply();
+        if (stats.historyChanged()) historyPrefs.edit().putString("history", stats.historyBlob()).apply();
         lastPersist = now;
         dirty = false;
     }
 
     static boolean available() {
         return stats != null;
+    }
+
+    static void setSlot(int card, int target) {
+        slots[card] = target;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < slots.length; i++) sb.append(i == 0 ? "" : ",").append(slots[i]);
+        uiPrefs.edit().putString("slots", sb.toString()).apply();
     }
 
     static void open(Activity a) {
@@ -195,10 +228,16 @@ final class PrepLive {
 
     // ---- formatting ----------------------------------------------------------------------
 
-    static String kg(double v) {
-        if (Double.isNaN(v)) return "—";
-        if (Math.abs(v) < 1) return String.format(Locale.US, "%.0f g", v * 1000);
-        return String.format(Locale.US, Math.abs(v) < 100 ? "%.1f kg" : "%.0f kg", v);
+    /** Amount in the item's own unit: kg (g below 1), ltr (ml below 1), pcs, ... */
+    static String amt(double v, String unit) {
+        if (Double.isNaN(v)) return "\u2014";
+        String u = unit == null ? "kg" : unit.toLowerCase(Locale.US);
+        if (u.equals("kg") || u.equals("ltr") || u.equals("l")) {
+            boolean kg = u.equals("kg");
+            if (Math.abs(v) < 1) return String.format(Locale.US, "%.0f %s", v * 1000, kg ? "g" : "ml");
+            return String.format(Locale.US, Math.abs(v) < 100 ? "%.1f %s" : "%.0f %s", v, kg ? "kg" : "L");
+        }
+        return String.format(Locale.US, "%.0f %s", v, u);
     }
 
     static String qty(double v, String unit) {
@@ -259,11 +298,11 @@ final class PrepLive {
             TextView title = text(a, "PREP LIVE", 22, GOLD, true);
             title.setLetterSpacing(0.12f);
             header.addView(title);
-            TextView sub = text(a, "   Babai Tiffins • fresh production • all orders", 12, MUTED, false);
+            TextView sub = text(a, "   Babai Tiffins \u2022 fresh production \u2022 all orders", 12, MUTED, false);
             header.addView(sub, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             updated = text(a, "", 12, CREAM, true);
             header.addView(updated);
-            TextView close = text(a, "  ✕  ", 18, CREAM, true);
+            TextView close = text(a, "  \u2715  ", 18, CREAM, true);
             close.setPadding((int) (12 * d), (int) (6 * d), (int) (6 * d), (int) (6 * d));
             close.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) { close(); }
@@ -276,7 +315,7 @@ final class PrepLive {
             int cols = landscape ? 4 : 2;
             GridLayout grid = new GridLayout(a);
             grid.setColumnCount(cols);
-            int n = last == null ? 0 : last.items.length;
+            int n = CARDS;
             for (int i = 0; i < n + 1; i++) {
                 View cell;
                 if (i < n) {
@@ -313,19 +352,20 @@ final class PrepLive {
 
         void bind(PrepStats.Result r) {
             if (r == null) return;
-            updated.setText("● LIVE  •  UPDATED " + DateFormat.getTimeFormat(a).format(new java.util.Date(r.updatedAt)));
+            updated.setText("\u25CF LIVE  \u2022  UPDATED " + DateFormat.getTimeFormat(a).format(new java.util.Date(r.updatedAt)));
             updated.setTextColor(CREAM);
-            for (int i = 0; i < cards.size() && i < r.items.length; i++) cards.get(i).bind(r.items[i]);
+            for (int i = 0; i < cards.size(); i++) cards.get(i).bind(r.items[slots[i]]);
             StringBuilder sb = new StringBuilder();
-            sb.append("KOTs counted: Dine-in ").append(r.kotsByType[0]).append(" • Pick-up ").append(r.kotsByType[1])
-                    .append(" • Delivery ").append(r.kotsByType[2]);
-            if (r.kotsByType[3] > 0) sb.append(" • Other ").append(r.kotsByType[3]);
+            sb.append("KOTs counted: Dine-in ").append(r.kotsByType[0]).append(" \u2022 Pick-up ").append(r.kotsByType[1])
+                    .append(" \u2022 Delivery ").append(r.kotsByType[2]);
+            if (r.kotsByType[3] > 0) sb.append(" \u2022 Other ").append(r.kotsByType[3]);
             sb.append("\n\nNot in BOM (not counted):");
             if (r.unmatched.isEmpty()) sb.append("\nnone");
-            for (String u : r.unmatched) sb.append("\n• ").append(u);
+            for (String u : r.unmatched) sb.append("\n\u2022 ").append(u);
             sb.append("\n\nProjection = typical for this weekday/hour (Petpooja + this tablet), scaled by the last hour.");
             if (coverage != null) coverage.setText(sb.toString());
             if (detail != null) detail.bind(r.items[detail.index]);
+            if (picker != null) picker.refreshSelection();
         }
 
         void close() {
@@ -350,10 +390,17 @@ final class PrepLive {
                 view.setOnClickListener(new View.OnClickListener() {
                     @Override public void onClick(View v) { openDetail(i); }
                 });
+                view.setOnLongClickListener(new View.OnLongClickListener() {
+                    @Override public boolean onLongClick(View v) {
+                        openPicker(i);
+                        return true;
+                    }
+                });
                 LinearLayout top = new LinearLayout(c);
                 top.setGravity(Gravity.CENTER_VERTICAL);
                 name = text(c, "", 14, CREAM, true);
                 name.setSingleLine(true);
+                name.setEllipsize(android.text.TextUtils.TruncateAt.END);
                 top.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
                 chip = text(c, "", 10, Color.BLACK, true);
                 chip.setPadding((int) (7 * d), (int) (2 * d), (int) (7 * d), (int) (2 * d));
@@ -371,9 +418,9 @@ final class PrepLive {
             void bind(PrepStats.Item it) {
                 name.setText(it.name);
                 double diff = it.nextHour - it.lastHour;
-                String arrow = Math.abs(diff) < 0.05 * Math.max(1, it.lastHour) ? "" : diff > 0 ? "  ▲" : "  ▼";
-                next.setText("≈ " + kg(it.nextHour) + arrow);
-                sub.setText("Last hr " + kg(it.lastHour) + "  •  Today " + kg(it.usedToday));
+                String arrow = Math.abs(diff) < 0.05 * Math.max(1, it.lastHour) ? "" : diff > 0 ? "  \u25B2" : "  \u25BC";
+                next.setText("\u2248 " + amt(it.nextHour, it.unit) + arrow);
+                sub.setText("Last hr " + amt(it.lastHour, it.unit) + "  \u2022  Today " + amt(it.usedToday, it.unit));
                 if (it.status == 0) {
                     chip.setText("+ BATCH");
                     chip.setTextColor(CREAM);
@@ -392,11 +439,119 @@ final class PrepLive {
             }
         }
 
-        void openDetail(int i) {
+        Picker picker;
+
+        /** card = which tile was tapped; the detail shows that tile's current item. */
+        void openDetail(int card) {
             if (detail != null) detail.close();
-            detail = new Detail(a, i);
-            if (last != null) detail.bind(last.items[i]);
+            detail = new Detail(a, card, slots[card]);
+            if (last != null) detail.bind(last.items[slots[card]]);
         }
+
+        void openPicker(int card) {
+            if (picker != null) picker.close();
+            picker = new Picker(a, card);
+        }
+
+        /** Searchable list of every OP / CP item, busiest first. Tap one to show it on the card. */
+        final class Picker {
+            final int card;
+            final FrameLayout overlay;
+            final GridLayout list;
+            final List<TextView> rows = new ArrayList<TextView>();
+            final List<Integer> rowTarget = new ArrayList<Integer>();
+
+            Picker(Context c, int cardIndex) {
+                card = cardIndex;
+                overlay = new FrameLayout(c);
+                overlay.setBackgroundColor(0xF0120E07);
+                overlay.setClickable(true);
+                LinearLayout col = new LinearLayout(c);
+                col.setOrientation(LinearLayout.VERTICAL);
+                col.setPadding((int) (18 * d), (int) (12 * d), (int) (18 * d), (int) (12 * d));
+                LinearLayout head = new LinearLayout(c);
+                head.setGravity(Gravity.CENTER_VERTICAL);
+                head.addView(text(c, "CHOOSE ITEM FOR CARD " + (card + 1), 16, GOLD, true),
+                        new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+                final android.widget.EditText search = new android.widget.EditText(c);
+                search.setHint("Search OP / CP item");
+                search.setHintTextColor(MUTED);
+                search.setTextColor(CREAM);
+                search.setSingleLine(true);
+                search.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                search.setBackground(box(SURFACE, 0x55FFFFFF, 8 * d, 1 * d));
+                search.setPadding((int) (10 * d), (int) (6 * d), (int) (10 * d), (int) (6 * d));
+                head.addView(search, new LinearLayout.LayoutParams((int) (240 * d), ViewGroup.LayoutParams.WRAP_CONTENT));
+                TextView x = text(c, "   ✕", 18, CREAM, true);
+                x.setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View v) { close(); }
+                });
+                head.addView(x);
+                col.addView(head);
+                col.addView(text(c, "Sorted by typical daily use. Long-press any card to come back here.", 11, MUTED, false));
+
+                list = new GridLayout(c);
+                list.setColumnCount(3);
+                final PrepStats.Model m = stats.model();
+                List<Integer> order = new ArrayList<Integer>();
+                for (int t = 0; t < m.targets.length; t++) order.add(t);
+                java.util.Collections.sort(order, new java.util.Comparator<Integer>() {
+                    @Override public int compare(Integer p, Integer q) {
+                        return Double.compare(m.avgPerDay(q), m.avgPerDay(p));
+                    }
+                });
+                int w = (int) ((a.getResources().getDisplayMetrics().widthPixels - 48 * d) / 3);
+                for (final int t : order) {
+                    TextView row = text(c, m.targets[t] + "\n~" + amt(m.avgPerDay(t), m.unit(t)) + " / day", 13, CREAM, false);
+                    row.setPadding((int) (10 * d), (int) (8 * d), (int) (10 * d), (int) (8 * d));
+                    row.setOnClickListener(new View.OnClickListener() {
+                        @Override public void onClick(View v) {
+                            setSlot(card, t);
+                            close();
+                            tick(System.currentTimeMillis(), true);
+                        }
+                    });
+                    GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+                    lp.width = w - (int) (8 * d);
+                    lp.setMargins((int) (4 * d), (int) (4 * d), (int) (4 * d), (int) (4 * d));
+                    list.addView(row, lp);
+                    rows.add(row);
+                    rowTarget.add(t);
+                }
+                refreshSelection();
+                search.addTextChangedListener(new android.text.TextWatcher() {
+                    @Override public void beforeTextChanged(CharSequence s1, int a1, int b1, int c1) {}
+                    @Override public void onTextChanged(CharSequence s1, int a1, int b1, int c1) {}
+                    @Override public void afterTextChanged(android.text.Editable e) {
+                        String q = e.toString().trim().toLowerCase(Locale.US);
+                        for (int i = 0; i < rows.size(); i++) {
+                            boolean show = q.isEmpty() || m.targets[rowTarget.get(i)].toLowerCase(Locale.US).contains(q);
+                            rows.get(i).setVisibility(show ? View.VISIBLE : View.GONE);
+                        }
+                    }
+                });
+                ScrollView sc = new ScrollView(c);
+                sc.addView(list);
+                col.addView(sc, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+                overlay.addView(col);
+                root.addView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+
+            void refreshSelection() {
+                for (int i = 0; i < rows.size(); i++) {
+                    boolean sel = rowTarget.get(i) == slots[card];
+                    rows.get(i).setBackground(box(sel ? 0x33F5B21B : SURFACE, sel ? GOLD : 0x22FFFFFF, 10 * d, (sel ? 2 : 1) * d));
+                }
+            }
+
+            void close() {
+                ViewGroup p = (ViewGroup) overlay.getParent();
+                if (p != null) p.removeView(overlay);
+                if (picker == this) picker = null;
+            }
+        }
+
 
         /** Item detail: batch buttons, raw-ingredient breakdown for the next hour, top drivers. */
         final class Detail {
@@ -404,8 +559,11 @@ final class PrepLive {
             final FrameLayout overlay;
             final TextView title, numbers, batch, breakdown, drivers;
 
-            Detail(Context c, final int i) {
+            final int card;
+
+            Detail(Context c, final int cardIndex, final int i) {
                 index = i;
+                card = cardIndex;
                 overlay = new FrameLayout(c);
                 overlay.setBackgroundColor(0xCC000000);
                 overlay.setClickable(true);
@@ -422,7 +580,17 @@ final class PrepLive {
                 head.setGravity(Gravity.CENTER_VERTICAL);
                 title = text(c, "", 20, GOLD, true);
                 head.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-                TextView x = text(c, "  ✕  ", 18, CREAM, true);
+                TextView change = text(c, "\u21C4 CHANGE ITEM", 13, Color.BLACK, true);
+                change.setPadding((int) (12 * d), (int) (6 * d), (int) (12 * d), (int) (6 * d));
+                change.setBackground(box(LEAF, 0, 10 * d, 0));
+                change.setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View v) {
+                        close();
+                        openPicker(card);
+                    }
+                });
+                head.addView(change);
+                TextView x = text(c, "  \u2715  ", 18, CREAM, true);
                 x.setOnClickListener(new View.OnClickListener() {
                     @Override public void onClick(View v) { close(); }
                 });
@@ -438,8 +606,12 @@ final class PrepLive {
                 left.addView(text(c, "BATCH MADE (tap to add)", 11, GOLD, true));
                 LinearLayout chips = new LinearLayout(c);
                 chips.setPadding(0, (int) (6 * d), 0, (int) (6 * d));
-                for (final double kgv : BATCH_CHIPS) {
-                    TextView b = text(c, "+" + (int) kgv + " kg", 14, Color.BLACK, true);
+                final String unit = stats.model().unit(i);
+                boolean pieces = !(unit.equalsIgnoreCase("kg") || unit.equalsIgnoreCase("ltr"));
+                double[] sizes = pieces ? new double[]{10, 25, 50, 100, 200} : BATCH_CHIPS;
+                String shortUnit = unit.equalsIgnoreCase("ltr") ? "L" : unit.toLowerCase(Locale.US);
+                for (final double kgv : sizes) {
+                    TextView b = text(c, "+" + (int) kgv + " " + shortUnit, 14, Color.BLACK, true);
                     b.setPadding((int) (10 * d), (int) (8 * d), (int) (10 * d), (int) (8 * d));
                     b.setBackground(box(GOLD, 0, 10 * d, 0));
                     b.setOnClickListener(new View.OnClickListener() {
@@ -498,14 +670,14 @@ final class PrepLive {
 
             void bind(PrepStats.Item it) {
                 title.setText(it.name);
-                numbers.setText("Next 1 hr ≈ " + kg(it.nextHour) + "   •   Last 1 hr " + kg(it.lastHour)
-                        + "   •   Used today " + kg(it.usedToday) + "   •   Typical next hr " + kg(it.typicalNextHour));
+                numbers.setText("Next 1 hr \u2248 " + amt(it.nextHour, it.unit) + "   \u2022   Last 1 hr " + amt(it.lastHour, it.unit)
+                        + "   \u2022   Used today " + amt(it.usedToday, it.unit) + "   \u2022   Typical next hr " + amt(it.typicalNextHour, it.unit));
                 if (it.made > 0) {
-                    batch.setText("Made today " + kg(it.made) + "  •  Left ≈ " + kg(Math.max(0, it.remaining))
-                            + (it.minutesLeft < 999 ? String.format(Locale.US, "  •  lasts ≈ %.0f min", it.minutesLeft) : ""));
+                    batch.setText("Made today " + amt(it.made, it.unit) + "  \u2022  Left \u2248 " + amt(Math.max(0, it.remaining), it.unit)
+                            + (it.minutesLeft < 999 ? String.format(Locale.US, "  \u2022  lasts \u2248 %.0f min", it.minutesLeft) : ""));
                     batch.setTextColor(it.status >= 2 ? statusColor(it.status) : CREAM);
                 } else {
-                    batch.setText("No batch logged today — tap a size when a fresh batch is ready.");
+                    batch.setText("No batch logged today \u2014 tap a size when a fresh batch is ready.");
                     batch.setTextColor(MUTED);
                 }
                 StringBuilder dr = new StringBuilder();
@@ -513,7 +685,7 @@ final class PrepLive {
                     String[] p = s.split("\\|");
                     dr.append(String.format(Locale.US, "%3.0f%%  %s%n", Double.parseDouble(p[1]) * 100, p[0]));
                 }
-                drivers.setText(dr.length() == 0 ? "—" : dr.toString().trim());
+                drivers.setText(dr.length() == 0 ? "\u2014" : dr.toString().trim());
                 StringBuilder bd = new StringBuilder();
                 for (String s : it.breakdown) {
                     String[] p = s.split("\\|");

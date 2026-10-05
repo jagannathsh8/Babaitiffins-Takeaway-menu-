@@ -31,6 +31,20 @@ public final class PrepStats {
         public String[][] recipeUnits = new String[0][];
         public double[][][] profile = new double[0][][];                    // [target][weekday Mon=0][hour]
         public double seedDosaAvgPrepMin = Double.NaN;
+        public String[] units = new String[0];                               // kg / ltr / pcs per target
+        public int[] defaults = new int[0];                                  // default card targets
+
+        /** Typical daily usage of target t (average over the seeded weekdays), for the picker. */
+        public double avgPerDay(int t) {
+            if (t >= profile.length) return 0;
+            double s = 0;
+            for (double[] day : profile[t]) for (double v : day) s += v;
+            return s / Math.max(1, profile[t].length);
+        }
+
+        public String unit(int t) {
+            return t < units.length && units[t] != null ? units[t] : "kg";
+        }
     }
 
     public static final class Kot {
@@ -53,6 +67,7 @@ public final class PrepStats {
 
     public static final class Item {
         public String name;
+        public String unit = "kg";
         public double usedToday, lastHour, nextHour, typicalNextHour;
         public double made, remaining = Double.NaN, minutesLeft = Double.NaN;
         public int status;                  // 0 no batch info, 1 ok, 2 prepare soon, 3 prepare now
@@ -72,6 +87,7 @@ public final class PrepStats {
     static final long MINUTE = 60_000L;
     static final int BUCKETS = 288;                // 5-minute buckets per day
     static final double SOON_MIN = 30, NOW_MIN = 15;
+    static final int HISTORY_DAYS = 28;            // 4 of each weekday
 
     private final Model m;
     private final int n;
@@ -85,6 +101,9 @@ public final class PrepStats {
     private final List<Map<String, Double>> drivers = new ArrayList<Map<String, Double>>();
     private final Map<String, Double> unmatched = new HashMap<String, Double>();
     private final LinkedList<String> history = new LinkedList<String>(); // "date|wd|t|h0,h1,..."
+    private boolean historyChanged;
+    private Map<Integer, double[]> ownCache;                             // (t*7+wd) -> sum of hourly
+    private Map<Integer, Integer> ownDays;
 
     public PrepStats(Model model) {
         m = model;
@@ -179,10 +198,12 @@ public final class PrepStats {
                 for (double v : h) sum += v;
                 if (sum <= 0) continue;
                 StringBuilder sb = new StringBuilder(dateKey).append('|').append(wd).append('|').append(t).append('|');
-                for (int i = 0; i < 24; i++) sb.append(i == 0 ? "" : ",").append(String.format(Locale.US, "%.2f", h[i]));
+                for (int i = 0; i < 24; i++) sb.append(i == 0 ? "" : ",").append(Math.round(h[i] * 100) / 100.0);
                 history.addFirst(sb.toString());
             }
-            while (history.size() > 7 * n) history.removeLast();
+            trimHistory();
+            historyChanged = true;
+            ownCache = null;
         }
         dateKey = today;
         reset();
@@ -205,6 +226,7 @@ public final class PrepStats {
         for (int t = 0; t < n; t++) {
             Item it = new Item();
             it.name = m.targets[t];
+            it.unit = m.unit(t);
             double[] typ = typical(t, wd);
             it.typicalHourly = typ;
             it.todayHourly = hourly(t);
@@ -267,22 +289,72 @@ public final class PrepStats {
         return r;
     }
 
-    /** Typical hourly usage: Petpooja seed, averaged with this tablet's own same-weekday days. */
+    /**
+     * Typical hourly usage: Petpooja seed blended with this tablet's own same-weekday days.
+     * Own weight = days / (days + 1): 1 day 50%, 2 days 67%, 4 days 80%.
+     */
     private double[] typical(int t, int wd) {
         double[] seed = t < m.profile.length ? m.profile[t][wd] : new double[24];
-        double[] own = new double[24];
-        int days = 0;
-        for (String line : history) {
-            String[] p = line.split("\\|");
-            if (p.length < 4 || Integer.parseInt(p[1]) != wd || Integer.parseInt(p[2]) != t) continue;
-            String[] v = p[3].split(",");
-            for (int h = 0; h < 24 && h < v.length; h++) own[h] += Double.parseDouble(v[h]);
-            days++;
-        }
-        if (days == 0) return seed.clone();
+        if (ownCache == null) buildOwnCache();
+        double[] own = ownCache.get(t * 7 + wd);
+        if (own == null) return seed.clone();
+        int days = ownDays.get(t * 7 + wd);
+        double w = days / (days + 1.0);
         double[] out = new double[24];
-        for (int h = 0; h < 24; h++) out[h] = 0.5 * seed[h] + 0.5 * own[h] / days;
+        for (int h = 0; h < 24; h++) out[h] = (1 - w) * seed[h] + w * own[h] / days;
         return out;
+    }
+
+    private void buildOwnCache() {
+        ownCache = new HashMap<Integer, double[]>();
+        ownDays = new HashMap<Integer, Integer>();
+        for (String line : history) {
+            try {
+                String[] p = line.split("\\|");
+                int key = Integer.parseInt(p[2]) * 7 + Integer.parseInt(p[1]);
+                double[] acc = ownCache.get(key);
+                if (acc == null) {
+                    acc = new double[24];
+                    ownCache.put(key, acc);
+                    ownDays.put(key, 0);
+                }
+                String[] v = p[3].split(",");
+                for (int h = 0; h < 24 && h < v.length; h++) acc[h] += Double.parseDouble(v[h]);
+                ownDays.put(key, ownDays.get(key) + 1);
+            } catch (RuntimeException ignored) {
+            }
+        }
+    }
+
+    /** Keeps the most recent HISTORY_DAYS distinct dates. */
+    private void trimHistory() {
+        Set<String> dates = new HashSet<String>();
+        java.util.Iterator<String> it = history.iterator();
+        while (it.hasNext()) {
+            String line = it.next();
+            String date = line.substring(0, Math.max(0, line.indexOf('|')));
+            if (!dates.contains(date) && dates.size() >= HISTORY_DAYS) it.remove();
+            else dates.add(date);
+        }
+    }
+
+    /** History is stored separately and only rewritten once a day. */
+    public boolean historyChanged() {
+        return historyChanged;
+    }
+
+    public String historyBlob() {
+        historyChanged = false;
+        StringBuilder hi = new StringBuilder();
+        for (String h : history) hi.append(hi.length() == 0 ? "" : "\n").append(h);
+        return hi.toString();
+    }
+
+    public void loadHistory(String blob) {
+        history.clear();
+        if (blob != null) for (String h : blob.split("\n")) if (!h.isEmpty()) history.add(h);
+        trimHistory();
+        ownCache = null;
     }
 
     private double[] hourly(int t) {
@@ -331,7 +403,7 @@ public final class PrepStats {
         for (int t = 0; t < n; t++) {
             if (t > 0) b.append(';');
             for (int i = 0; i < BUCKETS; i++) {
-                if (buckets[t][i] != 0) b.append(i).append(':').append(String.format(Locale.US, "%.3f", buckets[t][i])).append(',');
+                if (buckets[t][i] != 0) b.append(i).append(':').append(Math.round(buckets[t][i] * 1000) / 1000.0).append(',');
             }
         }
         s.put("buckets", b.toString());
@@ -355,16 +427,11 @@ public final class PrepStats {
             un.append(e.getKey().replace('\t', ' ').replace('\n', ' ')).append('\t').append(e.getValue()).append('\n');
         }
         s.put("unmatched", un.toString());
-        StringBuilder hi = new StringBuilder();
-        for (String h : history) hi.append(hi.length() == 0 ? "" : "\n").append(h);
-        s.put("history", hi.toString());
         return s;
     }
 
     public void load(Map<String, String> s, long now) {
         try {
-            String hist = s.get("history");
-            if (hist != null) for (String h : hist.split("\n")) if (!h.isEmpty()) history.add(h);
             String d = s.get("date");
             if (d == null || d.isEmpty()) return;
             dateKey = d;

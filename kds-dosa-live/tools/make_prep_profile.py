@@ -16,19 +16,19 @@ import sys
 
 import openpyxl
 
-# Display name -> BOM product names that count as that item
-TARGETS = [
-    ("Sambar", ["CP - Breakfast Sambar"]),
-    ("Peanut Chutney", ["OP - Peanut chutney"]),
-    ("Aloo Masala", ["OP - Aloo masala"]),
-    ("Sagu (Aloo Curry)", ["OP - Aloo curry"]),
-    ("Upma", ["OP - Upma"]),
-    ("Pongal", ["OP - New Pongal", "OP - Pongal"]),
-    ("Allam Chutney", ["CP - Allam Chutney"]),
-    ("Tomato Chutney", ["OP - Tomato chutney"]),
-    ("Kesari Bath", ["OP - Kesari bath"]),
-    ("Dosa Batter", ["OP - Dosa batter"]),
-    ("Idli Batter", ["OP - Idli batter"]),
+# Default cards (BOM product name, optional alias). Every other OP/CP item can be picked on the tablet.
+DEFAULTS = [
+    ("CP - Breakfast Sambar", None),
+    ("OP - Peanut chutney", None),
+    ("OP - Aloo masala", None),
+    ("OP - Aloo curry", "Sagu"),
+    ("OP - Upma", None),
+    ("OP - New Pongal", None),
+    ("CP - Allam Chutney", None),
+    ("OP - Tomato chutney", None),
+    ("OP - Kesari bath", None),
+    ("OP - Dosa batter", None),
+    ("OP - Idli batter", None),
 ]
 
 
@@ -38,53 +38,64 @@ def norm(s):
 
 def load_bom(path):
     bom = collections.defaultdict(list)
-    uom = {}
+    uom, label = {}, {}
     ws = openpyxl.load_workbook(path, data_only=True).worksheets[0]
     for r in ws.iter_rows(min_row=2, values_only=True):
         if r[1] and r[2]:
             bom[norm(r[1])].append((r[2].strip(), float(r[8] or 0), (r[4] or "").strip()))
-            uom[norm(r[1])] = (r[12] or "").strip()
-    return bom, uom
+            uom.setdefault(norm(r[1]), (r[12] or "").strip())
+            label.setdefault(norm(r[1]), r[1].strip())
+            uom.setdefault(norm(r[2]), (r[4] or "").strip())   # ingredient unit (for CP items)
+            label.setdefault(norm(r[2]), r[2].strip())
+    return bom, uom, label
+
+
+def prepared(key):
+    return key.startswith(("op - ", "cp - "))
 
 
 def main():
     bom_path, out_path, reports = sys.argv[1], sys.argv[2], sys.argv[3:]
-    bom, uom = load_bom(bom_path)
-    target_of = {norm(c): i for i, (_, cs) in enumerate(TARGETS) for c in cs}
+    bom, uom, label = load_bom(bom_path)
 
-    memo = {}
+    def expand(name, mult, out, depth=0):
+        """Adds usage of every prepared (OP/CP) item reached from `name` (recursively)."""
+        if depth > 6:
+            return
+        for ing, q, _ in bom.get(norm(name), []):
+            k = norm(ing)
+            if prepared(k) and q > 0:
+                out[k] += mult * q
+                if k in bom and k != norm(name):
+                    expand(ing, mult * q, out, depth + 1)
 
-    def expand(name, depth=0):
-        """Per 1 unit of `name`: usage of each target (recursing through non-target OP items)."""
-        key = norm(name)
-        if key in memo:
-            return memo[key]
-        out = collections.Counter()
-        if depth < 6:
-            for ing, q, _ in bom.get(key, []):
-                k = norm(ing)
-                if k in target_of:
-                    out[target_of[k]] += q
-                elif k in bom and k != key:
-                    for t, v in expand(ing, depth + 1).items():
-                        out[t] += q * v
-        memo[key] = out
-        return out
-
-    # menu item -> {target index: kg per portion}
-    menu = {}
+    raw_menu = {}
     for key in bom:
-        if key.startswith(("op - ", "cp - ")):
+        if prepared(key):
             continue
-        e = expand(key)
-        if e:
-            menu[key] = {str(t): round(v, 5) for t, v in e.items() if v > 0}
+        out = collections.Counter()
+        expand(key, 1.0, out)
+        if out:
+            raw_menu[key] = out
+    targets = sorted({k for out in raw_menu.values() for k in out})
+    index = {k: i for i, k in enumerate(targets)}
+    menu = {m: {str(index[k]): round(v, 5) for k, v in out.items() if v > 0} for m, out in raw_menu.items()}
 
-    # recipe breakdown per kg of each target (first BOM product of the target)
-    recipes = []
-    for _, cs in TARGETS:
-        rows = bom.get(norm(cs[0]), [])
-        recipes.append([[ing, round(q, 5), u] for ing, q, u in rows if q > 0])
+    # Keep the BOM names with their OP / CP prefix (as requested by the kitchen team).
+    names = [label[k] for k in targets]
+    defaults = []
+    for bom_name, alias in DEFAULTS:
+        k = norm(bom_name)
+        if k in index:
+            defaults.append(index[k])
+            if alias:
+                names[index[k]] = label[k] + " (" + alias + ")"
+    units = [(uom.get(k) or "kg").lower() for k in targets]
+
+    # recipe breakdown per unit of each target (its direct BOM ingredients)
+    recipes = [[[ing, round(q, 5), u]
+                for ing, q, u in bom.get(k, []) if q > 0] for k in targets]
+    TARGETS = targets  # used below for sizing
 
     # usage per (date, hour) from the reports
     use = collections.defaultdict(lambda: [0.0] * len(TARGETS))
@@ -125,8 +136,9 @@ def main():
 
     preps = [max(v) for v in dosa_prep.values()]
     out = {
-        "targets": [n for n, _ in TARGETS],
-        "units": ["kg"] * len(TARGETS),
+        "targets": names,
+        "units": units,
+        "defaults": defaults,
         "menu": menu,
         "recipes": recipes,
         "profile": profile,

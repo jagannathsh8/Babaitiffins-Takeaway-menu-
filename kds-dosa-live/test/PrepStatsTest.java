@@ -84,6 +84,7 @@ public final class PrepStatsTest {
         s.addBatch(0, 5, t0 + 21 * MIN);
         Map<String, String> saved = s.save();
         PrepStats s2 = new PrepStats(model());
+        s2.loadHistory(s.historyBlob());
         s2.load(saved, t0 + 22 * MIN);
         PrepStats.Item p3 = s2.compute(t0 + 22 * MIN).items[0];
         check("persist usage", Math.abs(p3.usedToday - 22.0) < 1e-6, p3.usedToday);
@@ -104,6 +105,32 @@ public final class PrepStatsTest {
         PrepStats s3 = new PrepStats(model());
         s3.update(java.util.Collections.singletonList(kot(1, at(4, 22, 0), 0, "Masala Dosa", 1)), at(5, 7, 0));
         check("old KOTs ignored", s3.compute(at(5, 7, 0)).items[0].usedToday == 0, "");
+
+        // History survives a restart via its own blob, and keeps at most 28 dates
+        PrepStats s4 = new PrepStats(model());
+        s4.loadHistory(s2.historyBlob());
+        check("history blob restores typical", Math.abs(s4.compute(at(12, 8, 0)).items[0].typicalHourly[8] - 9.5) < 1e-6, "");
+        PrepStats s5 = new PrepStats(model());
+        for (int day = 0; day < 40; day++) {
+            long dt = at(1, 9, 0) + day * 24 * 60 * MIN;
+            s5.update(java.util.Collections.singletonList(kot(9000 + day, dt - MIN, 0, "Masala Dosa", 10)), dt);
+            s5.compute(dt);
+        }
+        s5.compute(at(1, 9, 0) + 41L * 24 * 60 * MIN);
+        String blob = s5.historyBlob();
+        java.util.Set<String> dates = new java.util.HashSet<String>();
+        for (String line : blob.split("\n")) dates.add(line.split("\\|")[0]);
+        check("history keeps 28 days", dates.size() == 28, dates.size());
+        // Own weight grows with days: 4 same-weekday days of 10 kg vs seed 6 -> 0.2*6 + 0.8*10
+        PrepStats s6 = new PrepStats(model());
+        StringBuilder hb = new StringBuilder();
+        for (int i = 0; i < 4; i++) {
+            hb.append(i == 0 ? "" : "\n").append("2026-09-0").append(i + 1).append("|0|0|");
+            for (int h = 0; h < 24; h++) hb.append(h == 0 ? "" : ",").append(h == 8 ? "10" : "0");
+        }
+        s6.loadHistory(hb.toString());
+        double typ = s6.compute(at(5, 7, 0)).items[0].typicalHourly[8];
+        check("own weight 4 days = 80%", Math.abs(typ - (0.2 * 6 + 0.8 * 10)) < 1e-6, typ);
 
         if (failures > 0) { System.out.println(failures + " failure(s)"); System.exit(1); }
         System.out.println("All PrepStats checks passed");
