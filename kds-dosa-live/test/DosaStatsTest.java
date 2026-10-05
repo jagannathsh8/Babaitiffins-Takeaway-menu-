@@ -137,13 +137,31 @@ public final class DosaStatsTest {
         check("today total", r8.dosasToday == 7, r8.dosasToday);
         check("running pieces", r8.runningDosas == 6, r8.runningDosas);
         check("kinds", r8.kindsToday == 3, r8.kindsToday);
-        check("favourite fact", r8.facts.get(0).startsWith("Masala Dosa is today's favourite \u2014 5"), r8.facts.get(0));
+        check("favourite fact", r8.facts.get(0).equals("Masala Dosa is today's favourite at Babai Tiffins"), r8.facts.get(0));
+        b8.set(0, new DosaStats.Entry(100, t8 - 5 * MIN, true, false, new String[]{"Masala Dosa", "Ghee Roast"}, new double[]{2, 1}));
+        s8.update(b8, t8 + 60_000, false);
+        DosaStats.Result r8b = s8.compute(t8 + 60_000);
+        check("served pieces", r8b.servedToday == 3 && r8b.runningDosas == 3, r8b.servedToday + "/" + r8b.runningDosas);
+        boolean leak = false;
+        for (String f : r8b.facts) leak |= f.contains("%") || f.contains("kg");
+        check("no sensitive facts", !leak, r8b.facts);
         boolean hour = false;
         for (String f : r8.facts) hour |= f.contains("7\u20138 PM");
         check("busiest hour fact", hour, r8.facts);
         DosaStats s9 = new DosaStats();
         s9.load(s8.save(), t8 + 3000);
         check("totals persist", s9.compute(t8 + 3000).dosasToday == 7 && s9.compute(t8 + 3000).kindsToday == 3, "");
+        // Trend: one point per 2 min, last 3 hours only.
+        DosaStats s10 = new DosaStats();
+        long t10 = at(12, 0);
+        for (int m = 0; m <= 240; m++) s10.compute(t10 + m * MIN);
+        DosaStats.Result r10 = s10.compute(t10 + 240 * MIN);
+        check("trend window", r10.trendTimes.length >= 89 && r10.trendTimes.length <= 92
+                && r10.trendTimes[0] >= t10 + 60 * MIN, r10.trendTimes.length);
+        DosaStats s11 = new DosaStats();
+        s11.load(s10.save(), t10 + 241 * MIN);
+        check("trend persists", s11.compute(t10 + 241 * MIN).trendTimes.length >= 89, "");
+
         check("hour labels", DosaStats.hourLabel(11).equals("11\u201312 PM") && DosaStats.hourLabel(0).equals("12\u20131 AM"),
                 DosaStats.hourLabel(11) + " " + DosaStats.hourLabel(0));
 

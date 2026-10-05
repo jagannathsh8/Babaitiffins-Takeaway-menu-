@@ -45,6 +45,13 @@ public final class DosaLive {
     private static final int BOARD_CAP = 300;            // KotRepositoryImpl caps the board at 300
     private static final String DOSA = "dosa";
 
+    /**
+     * Real guest reviews shown as "Guest love" on the customer screen, e.g.
+     * "Crispiest ghee roast in Varthur! \u2014 Priya, Google review".
+     * Only add genuine reviews (with permission/public text); leave empty to show facts only.
+     */
+    static final String[] GUEST_LOVE = {};
+
     private static DosaStats stats;
     private static DosaStats.Result last;
     private static Handler handler;
@@ -176,11 +183,11 @@ public final class DosaLive {
         b.setGravity(Gravity.CENTER);
         b.setPadding((int) (12 * d), 0, (int) (12 * d), 0);
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0xFFFF2BD6, 0xFFFF6D00, 0xFFFFB300});
+                new int[]{0xFFFF5200, 0xFFFF8A00, 0xFFFFC107});
         bg.setCornerRadius(18 * d);
         bg.setStroke((int) (1.5f * d), 0xCCFFFFFF);
         b.setBackground(bg);
-        b.setShadowLayer(8 * d, 0, 0, 0xFFFF2BD6);
+        b.setShadowLayer(8 * d, 0, 0, 0xFFFF5200);
         b.setElevation(8 * d);
         b.setContentDescription("Dosa Live Wait");
         b.setOnClickListener(new View.OnClickListener() {

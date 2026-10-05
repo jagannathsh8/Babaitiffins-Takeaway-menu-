@@ -3,8 +3,10 @@ package com.pp.kds.dosa;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
@@ -14,21 +16,29 @@ import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 
+import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 
 /**
- * Customer-facing "Dosa Live" screen: calm neon look with a rotating neon border, a breathing
- * wait ring, rising tawa embers and rotating comfort messages. Everything is drawn on one Canvas
- * (no resources needed), animated with postInvalidateOnAnimation while visible.
+ * Customer-facing "Dosa Live" screen in Babai Tiffins colours: rotating neon border, breathing
+ * wait ring, rising tawa embers, comfort messages, live stat cards, rotating facts / guest love
+ * and a wait-time trend chart. Drawn on one Canvas, animated while visible.
+ *
+ * Staff details (exact numbers, 7-day table) open only with a 1.5 s long-press on the title.
  */
 final class DosaNeonView extends View {
 
-    private static final int CYAN = 0xFF00E5FF;
-    private static final int MAGENTA = 0xFFFF2BD6;
-    private static final int AMBER = 0xFFFFB300;
-    private static final int VIOLET = 0xFF7C4DFF;
+    // Babai Tiffins palette (brand orange #FF5200 from the menu site)
+    private static final int ORANGE = 0xFFFF5200;
+    private static final int SAFFRON = 0xFFFF8A00;
+    private static final int GOLD = 0xFFFFC107;
+    private static final int CREAM = 0xFFFFE8C7;
+    private static final int LEAF = 0xFF66BB6A;
+    private static final int CHILI = 0xFFFF3D00;
 
     private static final String[] MESSAGES = {
             "Your dosa is being crafted fresh on the tawa",
@@ -39,6 +49,8 @@ final class DosaNeonView extends View {
     };
     private static final String EMPTY_MESSAGE = "The tawa is hot and ready — orders are flying out!";
     private static final float MESSAGE_SECONDS = 6f;
+    private static final float PANEL_SECONDS = 7f;
+    private static final long STAFF_HOLD_MS = 1500;
 
     interface Listener {
         void onClose();
@@ -52,12 +64,13 @@ final class DosaNeonView extends View {
     private final RectF rect = new RectF();
     private final RectF titleHit = new RectF();
     private final Matrix matrix = new Matrix();
+    private final Path path = new Path();
     private final Typeface thin = Typeface.create("sans-serif-thin", Typeface.NORMAL);
     private final Typeface light = Typeface.create("sans-serif-light", Typeface.NORMAL);
     private final Typeface medium = Typeface.create("sans-serif-medium", Typeface.NORMAL);
     private final Typeface condensed = Typeface.create("sans-serif-condensed", Typeface.BOLD);
+    private final DateFormat timeFormat;
 
-    // embers rising from the tawa
     private static final int EMBERS = 34;
     private final float[] ex = new float[EMBERS], ey = new float[EMBERS], es = new float[EMBERS],
             er = new float[EMBERS], ep = new float[EMBERS];
@@ -70,25 +83,26 @@ final class DosaNeonView extends View {
 
     private Listener listener;
     private String eta = "--";
-    private String etaUnit = "MINUTES";
-    private int count;          // active Dosa KOTs
-    private int running;        // Dosa pieces still preparing
-    private int today;          // Dosa pieces ordered today
-    private int kinds;
-    private float shownRunning, shownToday;
+    private int count, running, served;
+    private float shownRunning, shownServed;
     private String avg = "—";
     private String fastest = "";
     private String updated = "";
-    private List<String> facts = new ArrayList<String>();
     private String staff = "";
+    private List<String> facts = new ArrayList<String>();
+    private long[] trendTimes = new long[0];
+    private float[] trendEta = new float[0];
     private boolean showStaff;
     private float closeX, closeY, closeR;
+    private long downAt;
+    private boolean downOnTitle;
 
     DosaNeonView(Context c) {
         super(c);
         d = c.getResources().getDisplayMetrics().density;
+        timeFormat = android.text.format.DateFormat.getTimeFormat(c);
         Random rnd = new Random(7);
-        int[] palette = {AMBER, 0xFFFF7043, 0xFFFFD180, MAGENTA};
+        int[] palette = {ORANGE, SAFFRON, GOLD, CREAM};
         for (int i = 0; i < EMBERS; i++) {
             ex[i] = rnd.nextFloat();
             ey[i] = rnd.nextFloat();
@@ -99,6 +113,7 @@ final class DosaNeonView extends View {
         }
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeCap(Paint.Cap.ROUND);
+        stroke.setStrokeJoin(Paint.Join.ROUND);
         setClickable(true);
     }
 
@@ -111,26 +126,43 @@ final class DosaNeonView extends View {
         eta = e.startsWith("Under") ? "< 5" : e.replace(" min", "");
         count = r.activeCount;
         running = r.runningDosas;
-        today = r.dosasToday;
-        kinds = r.kindsToday;
-        avg = Double.isNaN(r.avgPrepMin) ? "\u2014" : String.format(java.util.Locale.US, "%.1f", r.avgPrepMin);
-        fastest = Double.isNaN(r.fastestPrepMin) ? "fastest \u2014"
-                : String.format(java.util.Locale.US, "fastest %.1f min", r.fastestPrepMin);
+        served = r.servedToday;
+        avg = Double.isNaN(r.avgPrepMin) ? "—" : String.format(Locale.US, "%.1f", r.avgPrepMin);
+        fastest = Double.isNaN(r.fastestPrepMin) ? "fastest —"
+                : String.format(Locale.US, "fastest %.1f min", r.fastestPrepMin);
         updated = updatedText;
         staff = staffText;
-        if (r.facts != null && !r.facts.isEmpty()) facts = r.facts;
+        trendTimes = r.trendTimes;
+        trendEta = r.trendEta;
+        List<String> panel = new ArrayList<String>();
+        List<String> f = r.facts == null ? new ArrayList<String>() : r.facts;
+        int gi = 0;
+        for (int i = 0; i < f.size(); i++) {
+            panel.add("F" + f.get(i));
+            // interleave a guest review after every second fact
+            if (i % 2 == 1 && DosaLive.GUEST_LOVE.length > 0) {
+                panel.add("R" + DosaLive.GUEST_LOVE[gi++ % DosaLive.GUEST_LOVE.length]);
+            }
+        }
+        if (!panel.isEmpty()) facts = panel;
         invalidate();
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
-        if (ev.getAction() == MotionEvent.ACTION_UP) {
-            float x = ev.getX(), y = ev.getY();
+        float x = ev.getX(), y = ev.getY();
+        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+            downAt = SystemClock.uptimeMillis();
+            downOnTitle = titleHit.contains(x, y);
+        } else if (ev.getAction() == MotionEvent.ACTION_UP) {
             if (Math.hypot(x - closeX, y - closeY) < closeR + 20 * d) {
                 if (listener != null) listener.onClose();
-            } else if (titleHit.contains(x, y)) {
-                showStaff = !showStaff; // hidden staff details: tap the title
+            } else if (downOnTitle && titleHit.contains(x, y)
+                    && SystemClock.uptimeMillis() - downAt >= STAFF_HOLD_MS) {
+                showStaff = !showStaff;
                 invalidate();
+            } else if (showStaff) {
+                showStaff = false;
             }
         }
         return true; // never let taps fall through to the board underneath
@@ -143,32 +175,40 @@ final class DosaNeonView extends View {
         float t = (SystemClock.uptimeMillis() - start) / 1000f;
         ensureShaders((int) w, (int) h);
         shownRunning = ease(shownRunning, running);
-        shownToday = ease(shownToday, today);
+        shownServed = ease(shownServed, served);
 
         drawBackground(c, w, h, t);
         drawBorder(c, w, h, t);
 
-        boolean landscape = w >= h;
         float u = Math.min(w, h);
-        float ringCx, ringCy, ringR, infoX, infoW, titleY;
-        if (landscape) {
-            ringCx = w * 0.29f;
-            ringCy = h * 0.54f;
-            ringR = Math.min(w * 0.18f, h * 0.29f);
-            infoX = w * 0.53f;
-            infoW = w * 0.93f - infoX;
-            titleY = h * 0.19f;
+        float ringCx, ringCy, ringR, infoX, infoW, titleY, chartTop, chartBottom, chartX, chartW;
+        if (w >= h) {
+            ringCx = w * 0.245f;
+            ringCy = h * 0.40f;
+            ringR = Math.min(w * 0.15f, h * 0.23f);
+            infoX = w * 0.465f;
+            infoW = w * 0.935f - infoX;
+            titleY = h * 0.20f;
+            chartX = w * 0.06f;
+            chartW = w * 0.875f;
+            chartTop = h * 0.755f;
+            chartBottom = h * 0.925f;
         } else {
             ringCx = w * 0.5f;
-            ringCy = h * 0.30f;
-            ringR = Math.min(w * 0.30f, h * 0.17f);
-            infoX = w * 0.08f;
-            infoW = w * 0.84f;
-            titleY = h * 0.55f;
+            ringCy = h * 0.21f;
+            ringR = Math.min(w * 0.27f, h * 0.13f);
+            infoX = w * 0.07f;
+            infoW = w * 0.86f;
+            titleY = h * 0.43f;
+            chartX = w * 0.07f;
+            chartW = w * 0.86f;
+            chartTop = h * 0.80f;
+            chartBottom = h * 0.95f;
         }
 
         drawRing(c, ringCx, ringCy, ringR, t);
-        drawInfo(c, infoX, infoW, titleY, u, h, t, landscape);
+        drawInfo(c, infoX, infoW, titleY, u, t);
+        drawTrend(c, chartX, chartTop, chartW, chartBottom - chartTop, u, t);
         drawClose(c, w);
         if (showStaff) drawStaff(c, w, h);
 
@@ -180,29 +220,33 @@ final class DosaNeonView extends View {
         return Math.abs(target - v) < 0.02f ? target : v;
     }
 
-    // ---- pieces --------------------------------------------------------------------------
+    private static float fade(float ph, float period) {
+        return Math.max(0f, Math.min(1f, Math.min(ph / 0.9f, (period - ph) / 0.9f)));
+    }
+
+    // ---- background & border -------------------------------------------------------------
 
     private void ensureShaders(int w, int h) {
         if (w == shaderW && h == shaderH && background != null) return;
         shaderW = w;
         shaderH = h;
         float big = Math.max(w, h);
-        background = new RadialGradient(w * 0.3f, h * 0.55f, big * 0.95f,
-                new int[]{0xFF241046, 0xFF120A2C, 0xFF05040D}, new float[]{0f, 0.45f, 1f},
+        background = new RadialGradient(w * 0.28f, h * 0.42f, big * 0.95f,
+                new int[]{0xFF3A1606, 0xFF1E0B04, 0xFF0A0402}, new float[]{0f, 0.45f, 1f},
                 Shader.TileMode.CLAMP);
-        blobA = new RadialGradient(w * 0.82f, h * 0.15f, big * 0.35f,
-                new int[]{0x3300E5FF, 0x0000E5FF}, null, Shader.TileMode.CLAMP);
-        blobB = new RadialGradient(w * 0.15f, h * 0.95f, big * 0.35f,
-                new int[]{0x33FF2BD6, 0x00FF2BD6}, null, Shader.TileMode.CLAMP);
+        blobA = new RadialGradient(w * 0.85f, h * 0.12f, big * 0.38f,
+                new int[]{0x33FF5200, 0x00FF5200}, null, Shader.TileMode.CLAMP);
+        blobB = new RadialGradient(w * 0.12f, h * 0.95f, big * 0.35f,
+                new int[]{0x2AFFC107, 0x00FFC107}, null, Shader.TileMode.CLAMP);
         borderShader = new SweepGradient(w / 2f, h / 2f,
-                new int[]{CYAN, VIOLET, MAGENTA, AMBER, CYAN}, null);
+                new int[]{ORANGE, GOLD, CREAM, SAFFRON, CHILI, ORANGE}, null);
         cometShader = new SweepGradient(0, 0,
-                new int[]{0x0000E5FF, 0x0000E5FF, CYAN, MAGENTA, AMBER},
+                new int[]{0x00FF5200, 0x00FF5200, ORANGE, GOLD, CREAM},
                 new float[]{0f, 0.15f, 0.55f, 0.85f, 1f});
     }
 
     private void drawBackground(Canvas c, float w, float h, float t) {
-        c.drawColor(0xFF05040D);
+        c.drawColor(0xFF0A0402);
         fill.setColor(Color.BLACK);
         fill.setAlpha(255);
         fill.setShader(background);
@@ -214,15 +258,15 @@ final class DosaNeonView extends View {
         fill.setShader(null);
 
         for (int i = 0; i < EMBERS; i++) {
-            float life = (ey[i] + t * es[i]) % 1f;                 // 0 bottom -> 1 top
+            float life = (ey[i] + t * es[i]) % 1f;
             float x = (ex[i] + 0.02f * (float) Math.sin(t * 0.6f + ep[i])) * w;
             float y = h * (1.05f - life * 1.1f);
-            float fade = (float) Math.sin(Math.PI * life);         // fade in & out
+            float f = (float) Math.sin(Math.PI * life);
             float r = er[i] * d;
             fill.setColor(ec[i]);
-            fill.setAlpha((int) (35 * fade));
+            fill.setAlpha((int) (30 * f));
             c.drawCircle(x, y, r * 3.2f, fill);
-            fill.setAlpha((int) (200 * fade));
+            fill.setAlpha((int) (190 * f));
             c.drawCircle(x, y, r, fill);
         }
         fill.setAlpha(255);
@@ -245,14 +289,15 @@ final class DosaNeonView extends View {
         stroke.setAlpha(255);
     }
 
-    private void drawRing(Canvas c, float cx, float cy, float r, float t) {
-        float breath = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 4.5);   // 4.5 s breathing
+    // ---- wait ring -----------------------------------------------------------------------
 
-        // soft halo
+    private void drawRing(Canvas c, float cx, float cy, float r, float t) {
+        float breath = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 4.5);
+
         if (halo == null || haloKey != cx * 31 + cy * 17 + r) {
             haloKey = cx * 31 + cy * 17 + r;
             halo = new RadialGradient(cx, cy, r * 1.6f,
-                    new int[]{0x4400E5FF, 0x14FF2BD6, 0x00000000}, new float[]{0.45f, 0.75f, 1f},
+                    new int[]{0x55FF5200, 0x18FFC107, 0x00000000}, new float[]{0.45f, 0.75f, 1f},
                     Shader.TileMode.CLAMP);
         }
         fill.setShader(halo);
@@ -261,28 +306,25 @@ final class DosaNeonView extends View {
         fill.setShader(null);
         fill.setAlpha(255);
 
-        // breathing outer rings
         stroke.setStrokeWidth(1.5f * d);
-        stroke.setColor(CYAN);
+        stroke.setColor(GOLD);
         stroke.setAlpha((int) (40 + 60 * breath));
         c.drawCircle(cx, cy, r + (14 + 8 * breath) * d, stroke);
-        stroke.setColor(MAGENTA);
-        stroke.setAlpha((int) (25 + 40 * (1 - breath)));
-        c.drawCircle(cx, cy, r + (30 - 6 * breath) * d, stroke);
+        stroke.setColor(ORANGE);
+        stroke.setAlpha((int) (25 + 45 * (1 - breath)));
+        c.drawCircle(cx, cy, r + (28 - 6 * breath) * d, stroke);
 
-        // track
         stroke.setColor(Color.WHITE);
         stroke.setAlpha(22);
-        stroke.setStrokeWidth(10 * d);
+        stroke.setStrokeWidth(9 * d);
         c.drawCircle(cx, cy, r, stroke);
 
-        // rotating comet arc with glow
         c.save();
         c.translate(cx, cy);
         c.rotate(t * 50f);
         rect.set(-r, -r, r, r);
         stroke.setShader(cometShader);
-        float[] widths = {26 * d, 14 * d, 7 * d};
+        float[] widths = {24 * d, 13 * d, 6.5f * d};
         int[] alphas = {40, 110, 255};
         for (int i = 0; i < widths.length; i++) {
             stroke.setStrokeWidth(widths[i]);
@@ -290,24 +332,20 @@ final class DosaNeonView extends View {
             c.drawArc(rect, 20, 330, false, stroke);
         }
         stroke.setShader(null);
-        // bright head
         fill.setColor(Color.WHITE);
-        fill.setShadowLayer(14 * d, 0, 0, AMBER);
+        fill.setShadowLayer(14 * d, 0, 0, GOLD);
         c.drawCircle(r, 0, 5 * d, fill);
         fill.clearShadowLayer();
         c.restore();
         stroke.setAlpha(255);
 
-        // label above
         text.setTypeface(condensed);
         text.setTextAlign(Paint.Align.CENTER);
-        text.setLetterSpacing(0.35f);
+        text.setLetterSpacing(0.3f);
         text.setTextSize(r * 0.13f);
-        text.setColor(0xCCB2EBF2);
-        text.clearShadowLayer();
+        text.setColor(0xDDFFE0B2);
         c.drawText("ESTIMATED WAIT", cx, cy - r * 0.42f, text);
 
-        // big number
         text.setTypeface(thin);
         text.setLetterSpacing(0f);
         float size = r * 0.62f;
@@ -318,142 +356,84 @@ final class DosaNeonView extends View {
             text.setTextSize(size);
         }
         text.setColor(Color.WHITE);
-        text.setShadowLayer(18 * d, 0, 0, CYAN);
+        text.setShadowLayer(18 * d, 0, 0, ORANGE);
         c.drawText(eta, cx, cy + size * 0.33f, text);
         text.clearShadowLayer();
 
-        // unit
         text.setTypeface(condensed);
         text.setLetterSpacing(0.4f);
         text.setTextSize(r * 0.12f);
-        text.setColor(0xFFFFD180);
-        c.drawText(etaUnit, cx, cy + r * 0.52f, text);
+        text.setColor(GOLD);
+        c.drawText("MINUTES", cx, cy + r * 0.52f, text);
         text.setLetterSpacing(0f);
     }
 
-    private void drawInfo(Canvas c, float x, float width, float titleY, float u, float h, float t,
-                          boolean landscape) {
+    // ---- title, message, cards, facts ----------------------------------------------------
+
+    private void drawInfo(Canvas c, float x, float width, float titleY, float u, float t) {
         text.setTextAlign(Paint.Align.LEFT);
 
-        // neon title
-        float ts = u * 0.095f;
+        // brand line
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.35f);
+        text.setTextSize(u * 0.028f);
+        text.setColor(0xCCFFE8C7);
+        c.drawText("BABAI TIFFINS  •  VARTHUR", x, titleY - u * 0.085f, text);
+
+        float ts = u * 0.085f;
         text.setTypeface(medium);
         text.setLetterSpacing(0.08f);
         text.setTextSize(ts);
         String a = "DOSA ", b = "LIVE";
         float aw = text.measureText(a);
         text.setColor(0xFFFFE0B2);
-        text.setShadowLayer(16 * d, 0, 0, AMBER);
+        text.setShadowLayer(16 * d, 0, 0, ORANGE);
         c.drawText(a, x, titleY, text);
-        text.setColor(0xFFE0F7FA);
-        text.setShadowLayer(16 * d, 0, 0, MAGENTA);
+        text.setColor(Color.WHITE);
+        text.setShadowLayer(16 * d, 0, 0, GOLD);
         c.drawText(b, x + aw, titleY, text);
         text.clearShadowLayer();
         float titleW = aw + text.measureText(b);
         titleHit.set(x - 10 * d, titleY - ts, x + titleW + 10 * d, titleY + 10 * d);
 
-        // pulsing live dot
         float pulse = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 1.6);
         float dx = x + titleW + ts * 0.45f, dy = titleY - ts * 0.36f;
-        fill.setColor(0xFF69F0AE);
+        fill.setColor(LEAF);
         fill.setAlpha((int) (60 * pulse));
         c.drawCircle(dx, dy, ts * (0.16f + 0.12f * pulse), fill);
         fill.setAlpha(255);
-        fill.setShadowLayer(10 * d, 0, 0, 0xFF69F0AE);
+        fill.setShadowLayer(10 * d, 0, 0, LEAF);
         c.drawCircle(dx, dy, ts * 0.11f, fill);
         fill.clearShadowLayer();
 
-        // rotating comfort message (cross-fade)
         String msg;
         float alpha;
         if (count == 0) {
             msg = EMPTY_MESSAGE;
             alpha = 1f;
         } else {
-            int idx = (int) (t / MESSAGE_SECONDS) % MESSAGES.length;
+            msg = MESSAGES[(int) (t / MESSAGE_SECONDS) % MESSAGES.length];
             alpha = fade(t % MESSAGE_SECONDS, MESSAGE_SECONDS);
-            msg = MESSAGES[idx];
         }
         text.setTypeface(light);
         text.setLetterSpacing(0.02f);
-        text.setTextSize(u * 0.038f);
-        text.setColor(0xFFE1E6F0);
+        text.setTextSize(u * 0.036f);
+        text.setColor(0xFFF3E5D8);
         text.setAlpha((int) (255 * alpha));
-        float msgBottom = drawWrapped(c, msg, x, titleY + u * 0.085f, width, u * 0.05f, 2);
+        drawWrapped(c, msg, x, titleY + u * 0.075f, width, u * 0.045f, 1);
         text.setAlpha(255);
 
-        // glass stat cards
         float gap = 10 * d;
-        float cardTop = Math.max(msgBottom + u * 0.045f, titleY + u * 0.2f);
-        float cardH = u * 0.235f;
+        float cardTop = titleY + u * 0.12f;
+        float cardH = u * 0.21f;
         float cw = (width - 2 * gap) / 3f;
         drawCard(c, x, cardTop, cw, cardH, String.valueOf(Math.round(shownRunning)), null,
-                count == 1 ? "in 1 order" : "in " + count + " orders", "ON THE TAWA", CYAN);
-        drawCard(c, x + cw + gap, cardTop, cw, cardH, String.valueOf(Math.round(shownToday)), null,
-                kinds == 1 ? "1 kind" : kinds + " kinds", "TODAY'S DOSAS", AMBER);
-        drawCard(c, x + 2 * (cw + gap), cardTop, cw, cardH, avg, "min", fastest, "AVG PREP", MAGENTA);
+                count == 1 ? "in 1 order" : "in " + count + " orders", "ON THE TAWA", ORANGE);
+        drawCard(c, x + cw + gap, cardTop, cw, cardH, String.valueOf(Math.round(shownServed)), null,
+                "fresh & hot", "SERVED TODAY", GOLD);
+        drawCard(c, x + 2 * (cw + gap), cardTop, cw, cardH, avg, "min", fastest, "AVG PREP", LEAF);
 
-        // "did you know" fact panel
-        float fTop = cardTop + cardH + u * 0.035f;
-        float fH = u * 0.16f;
-        drawFact(c, x, fTop, width, fH, u, t);
-
-        // footer
-        text.setTypeface(light);
-        text.setTextAlign(Paint.Align.LEFT);
-        text.setLetterSpacing(0.12f);
-        text.setTextSize(u * 0.027f);
-        text.setColor(0x99FFFFFF);
-        float fy = fTop + fH + u * 0.055f;
-        if (fy < h - 18 * d) {
-            c.drawText("UPDATED " + updated + "  \u2022  MADE FRESH TO ORDER  \u2022  THANK YOU \u2665", x, fy, text);
-        }
-        text.setLetterSpacing(0f);
-    }
-
-    private static final float FACT_SECONDS = 7f;
-
-    private static float fade(float ph, float period) {
-        return Math.max(0f, Math.min(1f, Math.min(ph / 0.9f, (period - ph) / 0.9f)));
-    }
-
-    private void drawFact(Canvas c, float x, float y, float w, float h, float u, float t) {
-        float r = 14 * d;
-        rect.set(x, y, x + w, y + h);
-        fill.setShader(null);
-        fill.setColor(0xFF140D2B);
-        c.drawRoundRect(rect, r, r, fill);
-        stroke.setShader(null);
-        stroke.setColor(VIOLET);
-        stroke.setStrokeWidth(1.2f * d);
-        stroke.setAlpha(150);
-        c.drawRoundRect(rect, r, r, stroke);
-        stroke.setAlpha(255);
-        // accent bar
-        fill.setColor(AMBER);
-        fill.setShadowLayer(8 * d, 0, 0, AMBER);
-        c.drawRoundRect(x + 10 * d, y + h * 0.2f, x + 13 * d, y + h * 0.8f, 2 * d, 2 * d, fill);
-        fill.clearShadowLayer();
-
-        float tx = x + 24 * d;
-        text.setTextAlign(Paint.Align.LEFT);
-        text.setTypeface(condensed);
-        text.setLetterSpacing(0.25f);
-        text.setTextSize(u * 0.026f);
-        text.setColor(AMBER);
-        c.drawText("\u2726 DID YOU KNOW", tx, y + h * 0.3f, text);
-
-        int n = facts.size();
-        if (n == 0) return;
-        int idx = (int) (t / FACT_SECONDS) % n;
-        text.setTypeface(light);
-        text.setLetterSpacing(0.01f);
-        text.setTextSize(u * 0.034f);
-        text.setColor(Color.WHITE);
-        text.setAlpha((int) (255 * fade(t % FACT_SECONDS, FACT_SECONDS)));
-        drawWrapped(c, facts.get(idx), tx, y + h * 0.58f, w - 36 * d, u * 0.042f, 2);
-        text.setAlpha(255);
-        text.setLetterSpacing(0f);
+        drawPanel(c, x, cardTop + cardH + u * 0.03f, width, u * 0.15f, u, t);
     }
 
     private void drawCard(Canvas c, float x, float y, float w, float h, String value, String unit,
@@ -461,8 +441,9 @@ final class DosaNeonView extends View {
         float r = 16 * d;
         rect.set(x, y, x + w, y + h);
         fill.setShader(null);
-        fill.setColor(0xFF15112A);
+        fill.setColor(0xFF1F0E06);
         c.drawRoundRect(rect, r, r, fill);
+        stroke.setShader(null);
         stroke.setColor(color);
         stroke.setStrokeWidth(5 * d);
         stroke.setAlpha(35);
@@ -472,7 +453,6 @@ final class DosaNeonView extends View {
         c.drawRoundRect(rect, r, r, stroke);
         stroke.setAlpha(255);
 
-        // value
         text.setTextAlign(Paint.Align.CENTER);
         text.setTypeface(light);
         text.setLetterSpacing(0f);
@@ -510,7 +490,6 @@ final class DosaNeonView extends View {
             c.drawText(" " + unit, cx + vw / 2f, vy, up);
         }
 
-        // sub text
         if (sub != null) {
             text.setTypeface(light);
             text.setLetterSpacing(0.02f);
@@ -521,26 +500,193 @@ final class DosaNeonView extends View {
             c.drawText(sub, x + w / 2f, y + h * 0.66f, text);
         }
 
-        // label
         text.setTypeface(condensed);
         text.setLetterSpacing(0.18f);
         text.setTextSize(h * 0.1f);
         float lw = text.measureText(label);
         if (lw > w * 0.9f) text.setTextSize(text.getTextSize() * w * 0.9f / lw);
         text.setColor(color);
-        text.setAlpha(210);
+        text.setAlpha(220);
         c.drawText(label, x + w / 2f, y + h * 0.87f, text);
         text.setAlpha(255);
         text.setLetterSpacing(0f);
         text.setTextAlign(Paint.Align.LEFT);
     }
 
+    /** Rotating "Did you know" facts, interleaved with guest reviews when provided. */
+    private void drawPanel(Canvas c, float x, float y, float w, float h, float u, float t) {
+        int n = facts.size();
+        String item = n == 0 ? "F" : facts.get((int) (t / PANEL_SECONDS) % n);
+        boolean review = item.startsWith("R");
+        String body = item.substring(1);
+        int accent = review ? CHILI : GOLD;
+
+        float r = 14 * d;
+        rect.set(x, y, x + w, y + h);
+        fill.setShader(null);
+        fill.setColor(0xFF1A0B05);
+        c.drawRoundRect(rect, r, r, fill);
+        stroke.setShader(null);
+        stroke.setColor(accent);
+        stroke.setStrokeWidth(1.2f * d);
+        stroke.setAlpha(140);
+        c.drawRoundRect(rect, r, r, stroke);
+        stroke.setAlpha(255);
+        fill.setColor(accent);
+        fill.setShadowLayer(8 * d, 0, 0, accent);
+        c.drawRoundRect(x + 10 * d, y + h * 0.2f, x + 13 * d, y + h * 0.8f, 2 * d, 2 * d, fill);
+        fill.clearShadowLayer();
+
+        float alpha = fade(t % PANEL_SECONDS, PANEL_SECONDS);
+        float tx = x + 24 * d;
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.25f);
+        text.setTextSize(u * 0.025f);
+        text.setColor(accent);
+        text.setAlpha((int) (255 * alpha));
+        c.drawText(review ? "♥ GUEST LOVE" : "✦ DID YOU KNOW", tx, y + h * 0.3f, text);
+
+        text.setTypeface(review ? Typeface.create("serif", Typeface.ITALIC) : light);
+        text.setLetterSpacing(0.01f);
+        text.setTextSize(u * 0.032f);
+        text.setColor(Color.WHITE);
+        text.setAlpha((int) (255 * alpha));
+        drawWrapped(c, review ? "“" + body + "”" : body, tx, y + h * 0.58f, w - 36 * d,
+                u * 0.04f, 2);
+        text.setAlpha(255);
+        text.setLetterSpacing(0f);
+    }
+
+    // ---- wait trend chart ----------------------------------------------------------------
+
+    private void drawTrend(Canvas c, float x, float y, float w, float h, float u, float t) {
+        float r = 14 * d;
+        rect.set(x, y, x + w, y + h);
+        fill.setShader(null);
+        fill.setColor(0xCC140804);
+        c.drawRoundRect(rect, r, r, fill);
+        stroke.setShader(null);
+        stroke.setColor(ORANGE);
+        stroke.setStrokeWidth(1f * d);
+        stroke.setAlpha(90);
+        c.drawRoundRect(rect, r, r, stroke);
+        stroke.setAlpha(255);
+
+        // header
+        float pad = 14 * d;
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.25f);
+        text.setTextSize(u * 0.024f);
+        text.setColor(GOLD);
+        c.drawText("WAIT TREND  •  LAST 3 HOURS", x + pad, y + pad + u * 0.018f, text);
+        text.setTextAlign(Paint.Align.RIGHT);
+        text.setTypeface(light);
+        text.setLetterSpacing(0.12f);
+        text.setColor(0x99FFFFFF);
+        c.drawText("UPDATED " + updated + "  •  MADE FRESH TO ORDER ♥", x + w - pad,
+                y + pad + u * 0.018f, text);
+        text.setLetterSpacing(0f);
+
+        float px = x + pad + u * 0.06f, pw = w - 2 * pad - u * 0.06f;
+        float py = y + pad + u * 0.04f, ph = h - (py - y) - pad * 0.8f;
+        int n = trendTimes.length;
+        if (n < 2) {
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTypeface(light);
+            text.setTextSize(u * 0.03f);
+            text.setColor(0xAAFFFFFF);
+            c.drawText("The trend draws itself as dosa orders flow in…", x + w / 2f, py + ph * 0.6f, text);
+            text.setTextAlign(Paint.Align.LEFT);
+            return;
+        }
+
+        long t0 = trendTimes[0], t1 = trendTimes[n - 1];
+        long span = Math.max(30 * 60_000L, t1 - t0);
+        float maxEta = 10;
+        for (float v : trendEta) maxEta = Math.max(maxEta, v);
+        maxEta = (float) Math.ceil(maxEta / 5f) * 5f;
+
+        // grid + y labels
+        text.setTextAlign(Paint.Align.RIGHT);
+        text.setTypeface(light);
+        text.setTextSize(u * 0.022f);
+        text.setColor(0x88FFFFFF);
+        stroke.setColor(Color.WHITE);
+        stroke.setStrokeWidth(1);
+        for (int g = 0; g <= 2; g++) {
+            float gy = py + ph * g / 2f;
+            stroke.setAlpha(g == 2 ? 50 : 22);
+            c.drawLine(px, gy, px + pw, gy, stroke);
+            c.drawText(Math.round(maxEta * (2 - g) / 2f) + "m", px - 6 * d, gy + u * 0.008f, text);
+        }
+        stroke.setAlpha(255);
+
+        // line + area
+        path.reset();
+        float lastX = 0, lastY = 0;
+        for (int i = 0; i < n; i++) {
+            float fx = px + pw * (float) (trendTimes[i] - (t1 - span)) / span;
+            float fy = py + ph * (1 - Math.min(1f, trendEta[i] / maxEta));
+            if (i == 0) path.moveTo(fx, fy); else path.lineTo(fx, fy);
+            lastX = fx;
+            lastY = fy;
+        }
+        float firstX = px + pw * (float) (t0 - (t1 - span)) / span;
+        Path area = new Path(path);
+        area.lineTo(lastX, py + ph);
+        area.lineTo(firstX, py + ph);
+        area.close();
+        fill.setShader(new LinearGradient(0, py, 0, py + ph, 0x66FF5200, 0x00FF5200, Shader.TileMode.CLAMP));
+        c.drawPath(area, fill);
+        fill.setShader(null);
+
+        stroke.setShader(new LinearGradient(px, 0, px + pw, 0, SAFFRON, GOLD, Shader.TileMode.CLAMP));
+        stroke.setStrokeWidth(7 * d);
+        stroke.setAlpha(45);
+        c.drawPath(path, stroke);
+        stroke.setStrokeWidth(2.4f * d);
+        stroke.setAlpha(255);
+        c.drawPath(path, stroke);
+        stroke.setShader(null);
+
+        // live point
+        float pulse = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 1.6);
+        fill.setColor(GOLD);
+        fill.setAlpha((int) (70 * pulse));
+        c.drawCircle(lastX, lastY, (6 + 6 * pulse) * d, fill);
+        fill.setAlpha(255);
+        fill.setColor(Color.WHITE);
+        c.drawCircle(lastX, lastY, 3.5f * d, fill);
+        text.setTextAlign(Paint.Align.RIGHT);
+        text.setTypeface(condensed);
+        text.setTextSize(u * 0.026f);
+        text.setColor(CREAM);
+        c.drawText(String.format(Locale.US, "now ~%.0fm", trendEta[n - 1]), lastX - 10 * d,
+                Math.max(py + u * 0.03f, lastY - 8 * d), text);
+
+        // x labels
+        text.setTypeface(light);
+        text.setTextSize(u * 0.021f);
+        text.setColor(0x88FFFFFF);
+        text.setTextAlign(Paint.Align.LEFT);
+        c.drawText(timeFormat.format(new Date(t1 - span)), px, y + h - pad * 0.25f, text);
+        text.setTextAlign(Paint.Align.RIGHT);
+        c.drawText(timeFormat.format(new Date(t1)), px + pw, y + h - pad * 0.25f, text);
+        text.setTextAlign(Paint.Align.LEFT);
+    }
+
+    // ---- close & staff -------------------------------------------------------------------
+
     private void drawClose(Canvas c, float w) {
         closeR = 18 * d;
         closeX = w - 46 * d;
         closeY = 46 * d;
+        fill.setShader(null);
         fill.setColor(0x33FFFFFF);
         c.drawCircle(closeX, closeY, closeR, fill);
+        stroke.setShader(null);
         stroke.setColor(Color.WHITE);
         stroke.setAlpha(200);
         stroke.setStrokeWidth(2 * d);
@@ -555,13 +701,14 @@ final class DosaNeonView extends View {
         text.setTextAlign(Paint.Align.LEFT);
         text.setLetterSpacing(0f);
         text.setTextSize(11 * d);
-        String[] lines = staff.split("\n");
+        String[] lines = ("STAFF ONLY (tap anywhere to hide)\n" + staff).split("\n");
         float lh = 14 * d;
         float bh = lines.length * lh + 16 * d;
         rect.set(28 * d, h - 28 * d - bh, w - 28 * d, h - 28 * d);
-        fill.setColor(0xDD0A0A18);
+        fill.setShader(null);
+        fill.setColor(0xF00A0402);
         c.drawRoundRect(rect, 10 * d, 10 * d, fill);
-        text.setColor(0xFFB0BEC5);
+        text.setColor(0xFFFFE0B2);
         float y = rect.top + 8 * d + lh * 0.8f;
         for (String line : lines) {
             c.drawText(line, rect.left + 12 * d, y, text);
@@ -569,7 +716,6 @@ final class DosaNeonView extends View {
         }
     }
 
-    /** Word-wraps {@code s} into at most {@code maxLines}; returns the baseline of the last line. */
     private float drawWrapped(Canvas c, String s, float x, float y, float maxW, float lineH, int maxLines) {
         List<String> lines = new ArrayList<String>();
         StringBuilder cur = new StringBuilder();
@@ -583,8 +729,14 @@ final class DosaNeonView extends View {
             }
         }
         if (cur.length() > 0) lines.add(cur.toString());
+        // shrink to fit instead of cutting words off
+        if (lines.size() > maxLines && text.getTextSize() > 8 * d) {
+            float k = 0.9f;
+            text.setTextSize(text.getTextSize() * k);
+            return drawWrapped(c, s, x, y, maxW, lineH * k, maxLines);
+        }
         float baseline = y;
-        for (int i = 0; i < lines.size() && i < maxLines; i++) {
+        for (int i = 0; i < lines.size(); i++) {
             baseline = y + i * lineH;
             c.drawText(lines.get(i), x, baseline, text);
         }
