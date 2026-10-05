@@ -14,6 +14,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.pp.kds.core.common.model.OrderType;
@@ -83,6 +84,11 @@ public final class DosaLive {
             saved.put(e.getKey(), String.valueOf(e.getValue()));
         }
         stats.load(saved, System.currentTimeMillis());
+        try {
+            PrepLive.init(ctx);
+            stats.setSeedAvg(PrepLive.seedDosaAvg()); // real Petpooja Dine-In dosa average
+        } catch (Throwable ignored) {
+        }
         last = stats.compute(System.currentTimeMillis());
         handler = new Handler(Looper.getMainLooper());
         handler.post(new Runnable() {
@@ -105,7 +111,15 @@ public final class DosaLive {
             if (cards != null && cards != lastCards) { // StateFlow emits a new list on every change
                 lastCards = cards;
                 changed = stats.update(dosaEntries(cards), now, cards.size() >= BOARD_CAP - 5);
+                try {
+                    PrepLive.onBoard(cards, now);
+                } catch (Throwable ignored) {
+                }
             }
+        }
+        try {
+            PrepLive.tick(now, false);
+        } catch (Throwable ignored) {
         }
         if (changed || now - lastComputeAt >= RECOMPUTE_MS) {
             lastComputeAt = now;
@@ -182,33 +196,51 @@ public final class DosaLive {
 
     private static void addButton(final Activity activity) {
         float d = activity.getResources().getDisplayMetrics().density;
-        TextView b = new TextView(activity);
-        b.setText("\u2726 DOSA LIVE");
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setElevation(8 * d);
+        TextView dosa = pill(activity, "\u2726 DOSA LIVE", new int[]{0xFFFF5200, 0xFFFF8A00, 0xFFFFC107}, 0xFFFF5200);
+        dosa.setContentDescription("Dosa Live Wait");
+        dosa.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                showPanel(activity);
+            }
+        });
+        row.addView(dosa, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (int) (36 * d)));
+        TextView prep = pill(activity, "\u25C9 PREP LIVE", new int[]{0xFF2E7D32, 0xFF43A047, 0xFF8BC34A}, 0xFF43A047);
+        prep.setContentDescription("Prep Live production");
+        prep.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                PrepLive.open(activity);
+            }
+        });
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (int) (36 * d));
+        plp.leftMargin = (int) (8 * d);
+        row.addView(prep, plp);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = Gravity.TOP | Gravity.START;
+        // Just right of the scanner camera button (which sits at 14% width, 44dp wide).
+        lp.leftMargin = (int) (activity.getResources().getDisplayMetrics().widthPixels * 0.14f + 52 * d);
+        lp.topMargin = (int) (7 * d);
+        ((ViewGroup) activity.findViewById(android.R.id.content)).addView(row, lp);
+    }
+
+    private static TextView pill(Activity a, String label, int[] colors, int glow) {
+        float d = a.getResources().getDisplayMetrics().density;
+        TextView b = new TextView(a);
+        b.setText(label);
         b.setTextColor(Color.WHITE);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         b.setGravity(Gravity.CENTER);
         b.setPadding((int) (12 * d), 0, (int) (12 * d), 0);
-        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0xFFFF5200, 0xFFFF8A00, 0xFFFFC107});
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors);
         bg.setCornerRadius(18 * d);
         bg.setStroke((int) (1.5f * d), 0xCCFFFFFF);
         b.setBackground(bg);
-        b.setShadowLayer(8 * d, 0, 0, 0xFFFF5200);
-        b.setElevation(8 * d);
-        b.setContentDescription("Dosa Live Wait");
-        b.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                showPanel(activity);
-            }
-        });
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, (int) (36 * d));
-        lp.gravity = Gravity.TOP | Gravity.START;
-        // Just right of the scanner camera button (which sits at 14% width, 44dp wide).
-        lp.leftMargin = (int) (activity.getResources().getDisplayMetrics().widthPixels * 0.14f + 52 * d);
-        lp.topMargin = (int) (7 * d);
-        ((ViewGroup) activity.findViewById(android.R.id.content)).addView(b, lp);
+        b.setShadowLayer(8 * d, 0, 0, glow);
+        return b;
     }
 
     private static void showPanel(Activity activity) {

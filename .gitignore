@@ -1,0 +1,4 @@
+# Business data: generated locally, never committed
+kds-dosa-live/assets/prep_profile.json
+kds-dosa-live/dist/*.apk
+*.xlsx

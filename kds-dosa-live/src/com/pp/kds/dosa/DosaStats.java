@@ -363,7 +363,14 @@ public final class DosaStats {
         return lo + "–" + hi + " min";
     }
 
-    /** Real average from the most recent previous day that had completed Dosa KOTs, else NaN. */
+    private double seedAvg = Double.NaN;
+
+    /** Real historical Dine-In dosa average (from the Petpooja report) used before any own history. */
+    public void setSeedAvg(double minutes) {
+        seedAvg = minutes > 0 ? minutes : Double.NaN;
+    }
+
+    /** Real average from the most recent previous day that had completed Dosa KOTs, else the seed. */
     private double lastDayAvg() {
         for (String line : history) {
             String[] p = line.split("\\|");
@@ -372,7 +379,7 @@ public final class DosaStats {
                 if (a > 0) return a;
             }
         }
-        return Double.NaN;
+        return seedAvg;
     }
 
     private String historyLine(String day) {

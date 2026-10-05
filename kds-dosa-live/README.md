@@ -61,3 +61,25 @@ not counted as completed.
 See the header of `build.sh` for the tools. `test/DosaStatsTest.java` runs first and covers the
 32-orders/2-per-minute example, the ETA falling as the queue clears, restarts, cancellations,
 outliers, cap drops and midnight rollover.
+
+## PREP LIVE (production screen)
+
+Second button next to DOSA LIVE. Every KOT on the board (all order types) is converted through the
+BOM into usage of the fresh-prep items (Sambar, Peanut/Allam/Tomato chutney, Aloo masala, Sagu,
+Upma, Pongal, Kesari bath, Dosa and Idli batter). Each card: next-hour projection, last hour,
+used today, today-vs-typical hourly chart, and batch status once batches are logged. Tap a card
+for "+ batch made" chips, undo, raw-ingredient needs for the next hour, and top driving dishes.
+
+Projection = typical usage for this weekday/hour (Petpooja seed, blended 50/50 with this tablet's
+own recorded days) scaled by how busy the last hour was vs typical, blended with the last-hour
+trend. Backtest on a held-out day (5 Oct, 2,007 KOTs): ~18-22% error on high-volume items vs
+31-38% for "same as last hour".
+
+`assets/prep_profile.json` holds sales volumes and recipe quantities, so it is git-ignored.
+Regenerate it (no prices, costs, KOT ids or staff names are kept):
+
+```
+python3 tools/make_prep_profile.py BOM_SCRAP.xlsx assets/prep_profile.json report1.xlsx [report2.xlsx ...]
+```
+
+Petpooja caps exports at 50,000 rows (~9 days here): export week by week and pass all files.
