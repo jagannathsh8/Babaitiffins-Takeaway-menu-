@@ -70,12 +70,23 @@ Upma, Pongal, Kesari bath, Dosa and Idli batter). Each card: next-hour projectio
 used today, today-vs-typical hourly chart, and batch status once batches are logged. Tap a card
 for "+ batch made" chips, undo, raw-ingredient needs for the next hour, and top driving dishes.
 
-Projection = typical usage for this weekday/hour (Petpooja seed, blended 50/50 with this tablet's
-own recorded days) scaled by how busy the last hour was vs typical, blended with the last-hour
-trend. Backtest on a held-out day (5 Oct, 2,007 KOTs): ~18-22% error on high-volume items vs
-31-38% for "same as last hour".
+Projection (owner's rule, backtested on Petpooja data 1 Sep - 5 Oct 2026):
 
-`assets/prep_profile.json` holds sales volumes and recipe quantities, so it is git-ignored.
+* sources = same weekday 1-4 weeks back (past Sundays when HOLIDAY TODAY is on), skipping
+  holidays and incomplete days; Petpooja seed days, then this tablet's own complete days
+* typical = 60% x "same day last month" + 20% x avg of the 4 + 20% x avg of the latest 2
+* pace = today's actual / typical over the last 2 hours; next hour = typical x (1 + 0.5 x (pace - 1))
+
+| Week | same as last hour | 60/20/20 raw | + holiday handling + half pace |
+|---|---|---|---|
+| 22-28 Sep | 42% | 20% | 15% |
+| 29 Sep - 5 Oct | 43% | 20% | 17% |
+
+REPORT / EXCEL: pick any date (today live, 42 days of tablet history, Petpooja seed days),
+view prep items or dishes per hour, export .xlsx (Summary, Prep items, Dishes sold) via the
+system "Save as" screen, then share.
+
+`assets/prep_profile.json` and `assets/prep_days.txt` hold sales volumes and recipe quantities, so they are git-ignored.
 Regenerate it (no prices, costs, KOT ids or staff names are kept):
 
 ```

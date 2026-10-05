@@ -2,3 +2,5 @@
 kds-dosa-live/assets/prep_profile.json
 kds-dosa-live/dist/*.apk
 *.xlsx
+kds-dosa-live/assets/prep_days.txt
+__pycache__/

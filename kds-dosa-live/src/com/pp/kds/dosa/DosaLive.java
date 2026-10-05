@@ -61,6 +61,7 @@ public final class DosaLive {
     private static Field vmField;
     private static Panel panel;
     private static SharedPreferences prefs;
+    private static boolean seedApplied;
 
     private DosaLive() {}
 
@@ -85,8 +86,7 @@ public final class DosaLive {
         }
         stats.load(saved, System.currentTimeMillis());
         try {
-            PrepLive.init(ctx);
-            stats.setSeedAvg(PrepLive.seedDosaAvg()); // real Petpooja Dine-In dosa average
+            PrepLive.init(ctx); // loads in the background; the dosa seed is applied in tick()
         } catch (Throwable ignored) {
         }
         last = stats.compute(System.currentTimeMillis());
@@ -118,6 +118,11 @@ public final class DosaLive {
             }
         }
         try {
+            if (!seedApplied && PrepLive.available()) {
+                stats.setSeedAvg(PrepLive.seedDosaAvg()); // real Petpooja Dine-In dosa average
+                seedApplied = true;
+                changed = true;
+            }
             PrepLive.tick(now, false);
         } catch (Throwable ignored) {
         }

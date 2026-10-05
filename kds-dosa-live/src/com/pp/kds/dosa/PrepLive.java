@@ -52,7 +52,7 @@ final class PrepLive {
     private static final long PERSIST_MS = 60_000L;
     private static final double[] BATCH_CHIPS = {1, 2, 5, 10, 20};
 
-    private static final int BG = 0xFF120E07, SURFACE = 0xFF1E1810, CREAM = 0xFFFFF4DC, MUTED = 0xFFB9AE98,
+    static final int BG = 0xFF120E07, SURFACE = 0xFF1E1810, CREAM = 0xFFFFF4DC, MUTED = 0xFFB9AE98,
             GOLD = 0xFFF5B21B, GREEN = 0xFF69F0AE, AMBER = 0xFFFFB300, RED = 0xFFFF5A36, LEAF = 0xFF8BCB8E;
 
     private static PrepStats stats;
@@ -66,30 +66,58 @@ final class PrepLive {
 
     // ---- data ----------------------------------------------------------------------------
 
-    static void init(Context ctx) {
-        if (stats != null) return;
-        PrepStats.Model m = loadModel(ctx);
-        if (m == null) return;
-        stats = new PrepStats(m);
-        prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        historyPrefs = ctx.getSharedPreferences(HISTORY_PREFS, Context.MODE_PRIVATE);
-        uiPrefs = ctx.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE);
-        stats.loadHistory(historyPrefs.getString("history", ""));
-        slots = new int[CARDS];
-        String[] saved0 = uiPrefs.getString("slots", "").split(",");
-        for (int i = 0; i < CARDS; i++) {
-            int t = -1;
-            try {
-                if (i < saved0.length) t = Integer.parseInt(saved0[i]);
-            } catch (NumberFormatException ignored) {
+    private static boolean loading;
+
+    /** Loads the model + seed history off the main thread, then installs it on the main thread. */
+    static void init(final Context ctx) {
+        if (stats != null || loading) return;
+        loading = true;
+        final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    final PrepStats.Model m = loadModel(ctx);
+                    if (m == null) return;
+                    final PrepStats st = new PrepStats(m);
+                    final SharedPreferences p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+                    final SharedPreferences hp = ctx.getSharedPreferences(HISTORY_PREFS, Context.MODE_PRIVATE);
+                    final SharedPreferences up = ctx.getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE);
+                    st.loadHistory(hp.getString("history", ""));
+                    final int[] sl = new int[CARDS];
+                    String[] saved0 = up.getString("slots", "").split(",");
+                    for (int i = 0; i < CARDS; i++) {
+                        int t = -1;
+                        try {
+                            if (i < saved0.length) t = Integer.parseInt(saved0[i]);
+                        } catch (NumberFormatException ignored) {
+                        }
+                        if (t < 0 || t >= m.targets.length) t = i < m.defaults.length ? m.defaults[i] : Math.min(i, m.targets.length - 1);
+                        sl[i] = t;
+                    }
+                    Map<String, String> saved = new HashMap<String, String>();
+                    for (Map.Entry<String, ?> e : p.getAll().entrySet()) saved.put(e.getKey(), String.valueOf(e.getValue()));
+                    st.load(saved, System.currentTimeMillis());
+                    final PrepStats.Result first = st.compute(System.currentTimeMillis());
+                    main.post(new Runnable() {
+                        @Override public void run() {
+                            prefs = p;
+                            historyPrefs = hp;
+                            uiPrefs = up;
+                            slots = sl;
+                            last = first;
+                            stats = st;
+                            loading = false;
+                        }
+                    });
+                } catch (Throwable ignored) {
+                    loading = false;
+                }
             }
-            if (t < 0 || t >= m.targets.length) t = i < m.defaults.length ? m.defaults[i] : Math.min(i, m.targets.length - 1);
-            slots[i] = t;
-        }
-        Map<String, String> saved = new HashMap<String, String>();
-        for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) saved.put(e.getKey(), String.valueOf(e.getValue()));
-        stats.load(saved, System.currentTimeMillis());
-        last = stats.compute(System.currentTimeMillis());
+        }, "prep-live-load").start();
+    }
+
+    static PrepStats stats() {
+        return stats;
     }
 
     static double seedDosaAvg() {
@@ -140,15 +168,11 @@ final class PrepLive {
                     m.recipeUnits[i][j] = row.getString(2);
                 }
             }
-            JSONArray prof = o.getJSONArray("profile");
-            m.profile = new double[n][7][24];
-            for (int i = 0; i < n && i < prof.length(); i++) {
-                JSONArray wk = prof.getJSONArray(i);
-                for (int wd = 0; wd < 7 && wd < wk.length(); wd++) {
-                    JSONArray hrs = wk.getJSONArray(wd);
-                    for (int h = 0; h < 24 && h < hrs.length(); h++) m.profile[i][wd][h] = hrs.getDouble(h);
-                }
-            }
+            JSONArray avg = o.optJSONArray("avgPerDay");
+            m.avgPerDay = new double[n];
+            for (int i = 0; avg != null && i < n && i < avg.length(); i++) m.avgPerDay[i] = avg.getDouble(i);
+            JSONArray hol = o.optJSONArray("holidays");
+            for (int i = 0; hol != null && i < hol.length(); i++) m.holidays.add(hol.getString(i));
             if (!o.isNull("dosaDineInAvgPrepMin")) m.seedDosaAvgPrepMin = o.getDouble("dosaDineInAvgPrepMin");
             JSONArray un = o.optJSONArray("units");
             m.units = new String[n];
@@ -156,6 +180,19 @@ final class PrepLive {
             JSONArray df = o.optJSONArray("defaults");
             m.defaults = new int[df == null ? 0 : df.length()];
             for (int i = 0; i < m.defaults.length; i++) m.defaults[i] = df.getInt(i);
+            try {
+                java.io.BufferedReader br = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(ctx.getAssets().open("prep_days.txt"), "UTF-8"));
+                for (String line; (line = br.readLine()) != null; ) {
+                    try {
+                        m.addSeedLine(line);
+                    } catch (RuntimeException ignored) {
+                    }
+                }
+                br.close();
+            } catch (java.io.IOException ignored) {
+                // no dated seed: projections use the tablet's own history only
+            }
             return m;
         } catch (Throwable e) {
             return null;
@@ -220,7 +257,11 @@ final class PrepLive {
     }
 
     static void open(Activity a) {
-        if (stats == null) return;
+        if (stats == null) {
+            android.widget.Toast.makeText(a, "Prep Live is loading history, try again in a moment",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (screen != null) screen.close();
         screen = new Screen(a);
         tick(System.currentTimeMillis(), true);
@@ -276,7 +317,7 @@ final class PrepLive {
         final Activity a;
         final float d;
         final FrameLayout root;
-        final TextView updated;
+        final TextView updated, holiday;
         final List<Card> cards = new ArrayList<Card>();
         final TextView coverage;
         Detail detail;
@@ -300,6 +341,28 @@ final class PrepLive {
             header.addView(title);
             TextView sub = text(a, "   Babai Tiffins \u2022 fresh production \u2022 all orders", 12, MUTED, false);
             header.addView(sub, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            holiday = text(a, "", 11, CREAM, true);
+            holiday.setPadding((int) (10 * d), (int) (5 * d), (int) (10 * d), (int) (5 * d));
+            holiday.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    stats.setHolidayToday(!stats.holidayToday(), System.currentTimeMillis());
+                    dirty = true;
+                    tick(System.currentTimeMillis(), true);
+                }
+            });
+            LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            hlp.rightMargin = (int) (8 * d);
+            header.addView(holiday, hlp);
+            TextView report = text(a, "REPORT / EXCEL", 11, Color.BLACK, true);
+            report.setPadding((int) (10 * d), (int) (5 * d), (int) (10 * d), (int) (5 * d));
+            report.setBackground(box(GOLD, 0, 8 * d, 0));
+            report.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    PrepReport.open(a, root);
+                }
+            });
+            header.addView(report, hlp);
             updated = text(a, "", 12, CREAM, true);
             header.addView(updated);
             TextView close = text(a, "  \u2715  ", 18, CREAM, true);
@@ -355,6 +418,9 @@ final class PrepLive {
             updated.setText("\u25CF LIVE  \u2022  UPDATED " + DateFormat.getTimeFormat(a).format(new java.util.Date(r.updatedAt)));
             updated.setTextColor(CREAM);
             for (int i = 0; i < cards.size(); i++) cards.get(i).bind(r.items[slots[i]]);
+            holiday.setText(r.holidayToday ? "HOLIDAY TODAY: ON" : "HOLIDAY TODAY: OFF");
+            holiday.setTextColor(r.holidayToday ? Color.BLACK : CREAM);
+            holiday.setBackground(box(r.holidayToday ? AMBER : 0x22FFFFFF, 0x55FFFFFF, 8 * d, r.holidayToday ? 0 : 1 * d));
             StringBuilder sb = new StringBuilder();
             sb.append("KOTs counted: Dine-in ").append(r.kotsByType[0]).append(" \u2022 Pick-up ").append(r.kotsByType[1])
                     .append(" \u2022 Delivery ").append(r.kotsByType[2]);
@@ -362,7 +428,10 @@ final class PrepLive {
             sb.append("\n\nNot in BOM (not counted):");
             if (r.unmatched.isEmpty()) sb.append("\nnone");
             for (String u : r.unmatched) sb.append("\n\u2022 ").append(u);
-            sb.append("\n\nProjection = typical for this weekday/hour (Petpooja + this tablet), scaled by the last hour.");
+            sb.append("\n\nProjection: 60% same day last month + 20% avg of last 4 same days + 20% avg of last 2,"
+                    + " then moved half-way to today's pace (last 2 h).");
+            sb.append(r.holidayToday ? "\nHoliday mode: using past Sundays." : "");
+            sb.append("\nSources: ").append(r.sources.isEmpty() ? "none yet" : android.text.TextUtils.join(", ", r.sources));
             if (coverage != null) coverage.setText(sb.toString());
             if (detail != null) detail.bind(r.items[detail.index]);
             if (picker != null) picker.refreshSelection();
@@ -379,7 +448,7 @@ final class PrepLive {
         final class Card {
             final int index;
             final LinearLayout view;
-            final TextView name, chip, next, sub;
+            final TextView name, chip, next, sub, nextLabel;
             final Bars bars;
 
             Card(Context c, final int i) {
@@ -406,7 +475,8 @@ final class PrepLive {
                 chip.setPadding((int) (7 * d), (int) (2 * d), (int) (7 * d), (int) (2 * d));
                 top.addView(chip);
                 view.addView(top);
-                view.addView(text(c, "NEXT 1 HR", 9, MUTED, true));
+                nextLabel = text(c, "NEXT 1 HR", 9, MUTED, true);
+                view.addView(nextLabel);
                 next = text(c, "", 22, Color.WHITE, true);
                 view.addView(next);
                 sub = text(c, "", 11, MUTED, false);
@@ -417,6 +487,14 @@ final class PrepLive {
 
             void bind(PrepStats.Item it) {
                 name.setText(it.name);
+                if (!Double.isNaN(it.pace) && Math.abs(it.pace - 1) >= 0.1) {
+                    nextLabel.setText(String.format(Locale.US, "NEXT 1 HR  \u2022  PACE %s%.0f%%", it.pace > 1 ? "+" : "\u2212",
+                            Math.abs(it.pace - 1) * 100));
+                    nextLabel.setTextColor(it.pace > 1 ? AMBER : LEAF);
+                } else {
+                    nextLabel.setText("NEXT 1 HR");
+                    nextLabel.setTextColor(MUTED);
+                }
                 double diff = it.nextHour - it.lastHour;
                 String arrow = Math.abs(diff) < 0.05 * Math.max(1, it.lastHour) ? "" : diff > 0 ? "  \u25B2" : "  \u25BC";
                 next.setText("\u2248 " + amt(it.nextHour, it.unit) + arrow);

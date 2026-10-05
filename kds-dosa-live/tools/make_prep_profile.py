@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build assets/prep_profile.json for PREP LIVE from the BOM and Petpooja item-wise reports.
+"""Build assets/prep_profile.json + assets/prep_days.txt for PREP LIVE from the BOM and Petpooja item-wise reports.
 
     python3 make_prep_profile.py BOM.xlsx out.json REPORT1.xlsx [REPORT2.xlsx ...]
 
@@ -30,6 +30,10 @@ DEFAULTS = [
     ("OP - Dosa batter", None),
     ("OP - Idli batter", None),
 ]
+
+
+# Festival / holiday dates in the seed data (behave like Sundays; skipped as history sources).
+HOLIDAYS = ["2026-09-14", "2026-10-02"]
 
 
 def norm(s):
@@ -97,10 +101,8 @@ def main():
                 for ing, q, u in bom.get(k, []) if q > 0] for k in targets]
     TARGETS = targets  # used below for sizing
 
-    # usage per (date, hour) from the reports
-    use = collections.defaultdict(lambda: [0.0] * len(TARGETS))
-    seen = set()
-    dosa_prep = collections.defaultdict(list)
+    # Rows per (file, date); for dates present in several exports keep the file with most rows.
+    per_file_day = collections.defaultdict(list)
     for path in reports:
         ws = openpyxl.load_workbook(path, data_only=True, read_only=True).worksheets[0]
         for i, r in enumerate(ws.iter_rows(values_only=True)):
@@ -109,31 +111,48 @@ def main():
             if len(r) > 7 and r[7] not in (None, "Success"):
                 continue
             t = datetime.datetime.strptime(str(r[8])[:19], "%Y-%m-%d %H:%M:%S")
-            row_key = (r[0], str(r[8]), r[4], r[5])
-            if row_key in seen:  # overlapping exports
-                continue
-            seen.add(row_key)
+            per_file_day[(path, t.date())].append(r)
+    best = {}
+    for (path, d), rows in per_file_day.items():
+        if d not in best or len(rows) > len(best[d]):
+            best[d] = rows
+
+    use = collections.defaultdict(lambda: collections.defaultdict(lambda: [0.0] * 24))   # date -> t -> hours
+    dish = collections.defaultdict(lambda: collections.defaultdict(lambda: [0.0] * 24))  # date -> dish -> hours
+    dosa_prep = collections.defaultdict(list)
+    for d, rows in best.items():
+        for r in rows:
+            t = datetime.datetime.strptime(str(r[8])[:19], "%Y-%m-%d %H:%M:%S")
+            q = float(r[5] or 0)
+            dish[d][str(r[4]).strip()][t.hour] += q
             for ti, v in menu.get(norm(r[4]), {}).items():
-                use[(t.date(), t.hour)][int(ti)] += v * float(r[5] or 0)
+                use[d][int(ti)][t.hour] += v * q
             if r[1] == "Dine In" and "dosa" in str(r[4]).lower() and len(r) > 10 and r[10] is not None:
-                dosa_prep[(r[0], t.date())].append(float(r[10]))
+                dosa_prep[(r[0], d)].append(float(r[10]))
 
-    days = sorted({d for d, _ in use})
-    full_days = days[1:-1] if len(days) > 2 else days  # first/last export day may be partial
-    by_wd = collections.defaultdict(list)
-    for d in full_days:
-        by_wd[d.weekday()].append(d)
-    # profile[target][weekday][hour] = average kg (weekday 0 = Monday)
-    profile = []
-    for ti in range(len(TARGETS)):
-        overall = [statistics.mean(use[(d, h)][ti] for d in full_days) for h in range(24)]
-        wk = []
-        for wd in range(7):
-            ds = by_wd.get(wd)
-            wk.append([round(statistics.mean(use[(d, h)][ti] for d in ds), 3) if ds else round(overall[h], 3)
-                       for h in range(24)])
-        profile.append(wk)
+    # A day is complete when orders exist from the morning (<= 8 AM) to the night (>= 9 PM).
+    complete, partial = [], []
+    for d in sorted(dish):
+        hours = [h for h in range(24) if any(v[h] > 0 for v in dish[d].values())]
+        (complete if hours and min(hours) <= 8 and max(hours) >= 21 else partial).append(d)
 
+    holidays = [h for h in HOLIDAYS if datetime.date.fromisoformat(h) in dish]
+    lines = []
+    for d in complete:
+        for ti, hrs in sorted(use[d].items()):
+            cells = " ".join(f"{h}:{round(v, 3)}" for h, v in enumerate(hrs) if v > 0)
+            if cells:
+                lines.append(f"T|{d}|{ti}|{cells}")
+        for name, hrs in sorted(dish[d].items()):
+            cells = " ".join(f"{h}:{round(v, 3):g}" for h, v in enumerate(hrs) if v > 0)
+            if cells:
+                lines.append(f"D|{d}|{name.replace('|', '/')}|{cells}")
+    days_path = out_path.rsplit("/", 1)[0] + "/prep_days.txt"
+    with open(days_path, "w") as f:
+        f.write("\n".join(lines))
+
+    avg_per_day = [round(statistics.mean(sum(use[d][t]) for d in complete), 3) if complete else 0
+                   for t in range(len(targets))]
     preps = [max(v) for v in dosa_prep.values()]
     out = {
         "targets": names,
@@ -141,14 +160,16 @@ def main():
         "defaults": defaults,
         "menu": menu,
         "recipes": recipes,
-        "profile": profile,
-        "profileDays": [str(d) for d in full_days],
+        "avgPerDay": avg_per_day,
+        "holidays": holidays,
+        "seedDays": [str(d) for d in complete],
         "dosaDineInAvgPrepMin": round(statistics.mean(preps), 2) if preps else None,
     }
     with open(out_path, "w") as f:
         json.dump(out, f, separators=(",", ":"))
-    print(f"{len(menu)} menu items, {len(full_days)} profile days ({full_days[0]}..{full_days[-1]}), "
-          f"dosa avg prep {out['dosaDineInAvgPrepMin']} min -> {out_path}")
+    print(f"{len(menu)} menu items, {len(targets)} prep items, {len(complete)} complete days "
+          f"({complete[0]}..{complete[-1]}), skipped partial {[str(d) for d in partial]}, holidays {holidays}, "
+          f"dosa avg prep {out['dosaDineInAvgPrepMin']} min -> {out_path} + {days_path}")
 
 
 if __name__ == "__main__":

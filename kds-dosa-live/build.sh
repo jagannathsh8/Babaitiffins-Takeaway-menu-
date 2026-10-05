@@ -9,7 +9,7 @@
 # Only two things change in the APK:
 #   1. classes4.dex  - MainActivity.onCreate gets ONE extra line: DosaLive.install(this)
 #   2. classes7.dex  - new, contains com.pp.kds.dosa.* (this folder's src/)
-#   3. assets/ - Babai Tiffins mascot + food photos for the Dosa Live screen
+#   3. assets/ - mascot, food photos, prep_profile.json + prep_days.txt (make_prep_profile.py)
 # All other dex files, resources and the manifest are copied byte-for-byte from the input,
 # so the scanner (com.pp.kds.scan.*) and the board logic are untouched.
 set -euo pipefail
