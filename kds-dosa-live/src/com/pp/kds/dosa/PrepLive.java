@@ -116,6 +116,10 @@ final class PrepLive {
         }, "prep-live-load").start();
     }
 
+    static void markDirty() {
+        dirty = true;
+    }
+
     static PrepStats stats() {
         return stats;
     }

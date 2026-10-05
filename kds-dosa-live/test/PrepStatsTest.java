@@ -177,6 +177,30 @@ public final class PrepStatsTest {
         PrepStats.Day seedDay = sn.day("2026-09-07", at(10, 12, 9, 0));
         check("seed day export", seedDay.source.startsWith("Petpooja") && Math.abs(seedDay.prep[0][9] - 40) < 1e-9, seedDay.source);
 
+        // Forecasts: next Monday 12 Oct from seed (sources 5 Oct is missing -> 28 Sep, 21, 14, 7 Sep)
+        PrepStats.Model mf = model();
+        seed(mf, "2026-09-28", 10);
+        seed(mf, "2026-09-21", 20);
+        seed(mf, "2026-09-14", 30);
+        seed(mf, "2026-09-07", 40);
+        mf.addSeedLine("D|2026-09-28|Masala Dosa|9:100");
+        mf.addSeedLine("D|2026-09-21|Masala Dosa|9:200");
+        mf.addSeedLine("D|2026-09-14|Masala Dosa|9:300");
+        mf.addSeedLine("D|2026-09-07|Masala Dosa|9:400");
+        PrepStats sf = new PrepStats(mf);
+        long tue = at(10, 6, 10, 0);
+        List<String> fd = sf.forecastDates(tue, 7);
+        check("forecast dates today+7", fd.size() == 8 && fd.get(0).equals("2026-10-06") && fd.get(6).equals("2026-10-12"), fd);
+        PrepStats.Day f12 = sf.forecast("2026-10-12", tue);
+        check("forecast prep 60/20/20", f12.forecast && Math.abs(f12.prep[0][9] - 32) < 1e-9, f12.prep[0][9] + " " + f12.sources);
+        check("forecast dishes 60/20/20", Math.abs(f12.dishes.get("Masala Dosa")[9] - 320) < 1e-9, f12.dishes.get("Masala Dosa")[9]);
+        // Planned holiday: forecast switches to Sundays and the day starts in holiday mode
+        sf.setHoliday("2026-10-12", true, tue);
+        check("planned holiday forecast", sf.forecast("2026-10-12", tue).holiday, "");
+        sf.compute(at(10, 12, 0, 5));
+        check("holiday mode auto-on when the day comes", sf.holidayToday(), "");
+        check("planned holiday persists", sf.historyBlob().contains("H|2026-10-12"), "");
+
         // Own history keeps 42 dates
         PrepStats sh = new PrepStats(m);
         for (int d = 0; d < 50; d++) {

@@ -57,11 +57,17 @@ public final class PrepReport {
         final TextView info = PrepLive.text(a, "", 12, PrepLive.MUTED, false);
         info.setPadding((int) (14 * d), 0, 0, 0);
         head.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        final TextView export = PrepLive.text(a, "⬇ EXPORT EXCEL", 13, Color.BLACK, true);
+        final TextView export = PrepLive.text(a, "\u2B07 EXPORT EXCEL", 13, Color.BLACK, true);
         export.setPadding((int) (12 * d), (int) (6 * d), (int) (12 * d), (int) (6 * d));
         export.setBackground(PrepLive.box(PrepLive.LEAF, 0, 10 * d, 0));
+        final TextView holidayBtn = PrepLive.text(a, "", 12, PrepLive.CREAM, true);
+        holidayBtn.setPadding((int) (12 * d), (int) (6 * d), (int) (12 * d), (int) (6 * d));
+        LinearLayout.LayoutParams hb = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        hb.rightMargin = (int) (8 * d);
+        head.addView(holidayBtn, hb);
         head.addView(export);
-        TextView close = PrepLive.text(a, "   ✕", 18, PrepLive.CREAM, true);
+        TextView close = PrepLive.text(a, "   \u2715", 18, PrepLive.CREAM, true);
         close.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 host.removeView(overlay);
@@ -70,8 +76,13 @@ public final class PrepReport {
         head.addView(close);
         col.addView(head);
 
-        // date strip, newest first
-        final List<String> dates = stats.availableDates(System.currentTimeMillis());
+        // date strip: today live, today + next 7 days forecast, then past days newest first
+        long now0 = System.currentTimeMillis();
+        final List<String> dates = new ArrayList<String>();      // "A:date" actual, "F:date" forecast
+        List<String> fut = stats.forecastDates(now0, 7);
+        dates.add("A:" + fut.get(0));
+        for (String f : fut) dates.add("F:" + f);
+        for (String pd : stats.availableDates(now0)) if (!pd.equals(fut.get(0))) dates.add("A:" + pd);
         HorizontalScrollView strip = new HorizontalScrollView(a);
         final LinearLayout chips = new LinearLayout(a);
         chips.setPadding(0, (int) (8 * d), 0, (int) (8 * d));
@@ -102,20 +113,28 @@ public final class PrepReport {
         host.addView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
-        final String[] selected = {dates.get(0)};
+        final String[] selected = {dates.get(1)}; // open on today's whole-day forecast
         final boolean[] dishesTab = {false};
         final List<TextView> chipViews = new ArrayList<TextView>();
         final Runnable render = new Runnable() {
             @Override public void run() {
-                PrepStats.Day day = stats.day(selected[0], System.currentTimeMillis());
-                info.setText(label(day.date) + "  •  " + day.source + (day.holiday ? "  •  holiday" : "")
-                        + (day.kotsByType != null ? String.format(Locale.US, "  •  KOTs: Dine-in %d, Pick-up %d, Delivery %d",
+                PrepStats.Day day = load(stats, selected[0]);
+                boolean fc = selected[0].startsWith("F:");
+                holidayBtn.setVisibility(fc ? View.VISIBLE : View.GONE);
+                holidayBtn.setText(day.holiday ? "HOLIDAY \u2713" : "MARK HOLIDAY");
+                holidayBtn.setTextColor(day.holiday ? Color.BLACK : PrepLive.CREAM);
+                holidayBtn.setBackground(PrepLive.box(day.holiday ? PrepLive.AMBER : 0x22FFFFFF, 0x55FFFFFF, 10 * d, day.holiday ? 0 : 1 * d));
+                info.setText(label(day.date) + "  \u2022  " + day.source + (day.holiday && !fc ? "  \u2022  holiday" : "")
+                        + (fc ? "  \u2022  based on " + (day.sources.isEmpty() ? "no history" : android.text.TextUtils.join(", ", shortDates(day.sources))) : "")
+                        + (day.kotsByType != null ? String.format(Locale.US, "  \u2022  KOTs: Dine-in %d, Pick-up %d, Delivery %d",
                         day.kotsByType[0], day.kotsByType[1], day.kotsByType[2]) : ""));
                 table.setText(dishesTab[0] ? dishTable(day) : prepTable(stats.model(), day));
                 for (int i = 0; i < chipViews.size(); i++) {
                     boolean sel = dates.get(i).equals(selected[0]);
-                    chipViews.get(i).setTextColor(sel ? Color.BLACK : PrepLive.CREAM);
-                    chipViews.get(i).setBackground(PrepLive.box(sel ? PrepLive.GOLD : PrepLive.SURFACE, 0x44FFFFFF, 8 * d, sel ? 0 : 1 * d));
+                    boolean f = dates.get(i).startsWith("F:");
+                    int on = f ? PrepLive.LEAF : PrepLive.GOLD;
+                    chipViews.get(i).setTextColor(sel ? Color.BLACK : f ? PrepLive.LEAF : PrepLive.CREAM);
+                    chipViews.get(i).setBackground(PrepLive.box(sel ? on : PrepLive.SURFACE, f ? PrepLive.LEAF : 0x44FFFFFF, 8 * d, sel ? 0 : 1 * d));
                 }
                 tabPrep.setTextColor(dishesTab[0] ? PrepLive.CREAM : Color.BLACK);
                 tabPrep.setBackground(PrepLive.box(dishesTab[0] ? PrepLive.SURFACE : PrepLive.GOLD, 0x44FFFFFF, 8 * d, 1 * d));
@@ -124,7 +143,11 @@ public final class PrepReport {
             }
         };
         for (final String date : dates) {
-            TextView c = PrepLive.text(a, label(date), 12, PrepLive.CREAM, true);
+            String dt = date.substring(2);
+            String today = DosaStats.dayKey(System.currentTimeMillis());
+            String txt = date.startsWith("F:") ? "\u25F7 " + (dt.equals(today) ? "Today forecast" : label(dt))
+                    : dt.equals(today) ? "Today (live)" : label(dt);
+            TextView c = PrepLive.text(a, txt, 12, PrepLive.CREAM, true);
             c.setPadding((int) (10 * d), (int) (6 * d), (int) (10 * d), (int) (6 * d));
             c.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
@@ -150,6 +173,15 @@ public final class PrepReport {
                 render.run();
             }
         });
+        holidayBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                String dt = selected[0].substring(2);
+                long now = System.currentTimeMillis();
+                stats.setHoliday(dt, !stats.holidayOn(dt, now), now);
+                PrepLive.markDirty();
+                render.run();
+            }
+        });
         export.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 exportDay(a, stats, selected[0]);
@@ -158,11 +190,23 @@ public final class PrepReport {
         render.run();
     }
 
+    static PrepStats.Day load(PrepStats stats, String key) {
+        long now = System.currentTimeMillis();
+        String date = key.substring(2);
+        return key.startsWith("F:") ? stats.forecast(date, now) : stats.day(date, now);
+    }
+
+    static List<String> shortDates(List<String> ds) {
+        List<String> out = new ArrayList<String>();
+        for (String x : ds) out.add(label(x));
+        return out;
+    }
+
     static String label(String date) {
         try {
             Date dt = new SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date);
             String today = DosaStats.dayKey(System.currentTimeMillis());
-            return (date.equals(today) ? "Today " : "") + new SimpleDateFormat("EEE d MMM", Locale.US).format(dt);
+            return new SimpleDateFormat("EEE d MMM", Locale.US).format(dt);
         } catch (Exception e) {
             return date;
         }
@@ -177,9 +221,9 @@ public final class PrepReport {
     }
 
     private static String row(String name, String unit, double[] hrs) {
-        String nm = name.length() > 34 ? name.substring(0, 33) + "…" : name;
+        String nm = name.length() > 34 ? name.substring(0, 33) + "\u2026" : name;
         StringBuilder sb = new StringBuilder(String.format(Locale.US, "%-34s %-4s %9s", nm, unit, num(XlsxWriter.total(hrs))));
-        for (int h = FROM; h <= TO; h++) sb.append(String.format(Locale.US, " %6s", hrs[h] == 0 ? "·" : num(hrs[h])));
+        for (int h = FROM; h <= TO; h++) sb.append(String.format(Locale.US, " %6s", hrs[h] == 0 ? "\u00B7" : num(hrs[h])));
         return sb.append('\n').toString();
     }
 
@@ -217,9 +261,10 @@ public final class PrepReport {
 
     // ---- export ----------------------------------------------------------------------------
 
-    static void exportDay(Activity a, PrepStats stats, String date) {
+    static void exportDay(Activity a, PrepStats stats, String key) {
         try {
-            PrepStats.Day day = stats.day(date, System.currentTimeMillis());
+            PrepStats.Day day = load(stats, key);
+            String date = key.substring(2) + (key.startsWith("F:") ? "_forecast" : "");
             ByteArrayOutputStream bo = new ByteArrayOutputStream();
             XlsxWriter.dayReport(stats.model(), day,
                     new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(new Date())).write(bo);

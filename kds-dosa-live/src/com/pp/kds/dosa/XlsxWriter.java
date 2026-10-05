@@ -178,6 +178,10 @@ final class XlsxWriter {
         sum.row("Babai Tiffins - Prep Live report", "");
         sum.row("Date", d.date);
         sum.row("Data source", d.source);
+        if (d.forecast) {
+            sum.row("Type", "FORECAST - 60% same day last month + 20% avg last 4 + 20% avg last 2");
+            sum.row("Based on dates", d.sources.isEmpty() ? "no history" : join(d.sources));
+        }
         sum.row("Holiday / festival", d.holiday ? "Yes" : "No");
         if (d.kotsByType != null) {
             sum.row("KOTs - Dine In", d.kotsByType[0]);
@@ -240,6 +244,12 @@ final class XlsxWriter {
         row[2] = round(total(hours));
         for (int h = 0; h < 24; h++) if (hours != null && hours[h] != 0) row[3 + h] = round(hours[h]);
         return row;
+    }
+
+    private static String join(List<String> l) {
+        StringBuilder sb = new StringBuilder();
+        for (String x : l) sb.append(sb.length() == 0 ? "" : ", ").append(x);
+        return sb.toString();
     }
 
     static double total(double[] h) {

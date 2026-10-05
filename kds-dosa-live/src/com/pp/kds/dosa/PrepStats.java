@@ -127,6 +127,8 @@ public final class PrepStats {
         public double[][] prep;                   // [t][24], rows may be null
         public Map<String, double[]> dishes = new HashMap<String, double[]>();
         public int[] kotsByType;                  // null when unknown
+        public boolean forecast;                  // projected with the 60/20/20 rule
+        public List<String> sources = new ArrayList<String>();
     }
 
     static final long MINUTE = 60_000L;
@@ -266,8 +268,7 @@ public final class PrepStats {
     /** Staff switch: today is a holiday/festival -> project from past Sundays. */
     public void setHolidayToday(boolean on, long now) {
         rollover(now);
-        holidayToday = on;
-        typicalKey = null;
+        setHoliday(dateKey, on, now);
     }
 
     public boolean holidayToday() {
@@ -280,6 +281,7 @@ public final class PrepStats {
         if (dateKey != null) archiveToday();
         dateKey = today;
         reset();
+        holidayToday = isHoliday(today);          // holiday planned in advance
         return true;
     }
 
@@ -464,6 +466,88 @@ public final class PrepStats {
             }
         });
         return l;
+    }
+
+    // ---- forecasts -------------------------------------------------------------------------
+
+    /** Today + the next `days` dates, for forecasting. */
+    public List<String> forecastDates(long now, int days) {
+        rollover(now);
+        List<String> out = new ArrayList<String>();
+        Calendar c = calendarOf(dateKey);
+        for (int i = 0; i <= days; i++) {
+            out.add(DosaStats.dayKey(c.getTimeInMillis()));
+            c.add(Calendar.DAY_OF_MONTH, 1);
+        }
+        return out;
+    }
+
+    /** Whether a date is (or is planned as) a holiday. */
+    public boolean holidayOn(String date, long now) {
+        rollover(now);
+        return date.equals(dateKey) ? holidayToday : isHoliday(date);
+    }
+
+    /** Plan a holiday in advance (or today). Stored with the tablet history. */
+    public void setHoliday(String date, boolean on, long now) {
+        rollover(now);
+        if (date.equals(dateKey)) {
+            holidayToday = on;
+        }
+        if (on) ownHolidays.add(date); else ownHolidays.remove(date);
+        historyChanged = true;
+        typicalKey = null;
+    }
+
+    /** Whole-day forecast for a date (today or future) with the owner's rule, prep items + dishes. */
+    public Day forecast(String date, long now) {
+        rollover(now);
+        boolean hol = date.equals(dateKey) ? holidayToday : isHoliday(date);
+        double[][] typ = typicalFor(date, hol);
+        Day d = new Day();
+        d.date = date;
+        d.forecast = true;
+        d.holiday = hol;
+        d.today = date.equals(dateKey);
+        d.sources = new ArrayList<String>(typicalSources);
+        d.source = "Forecast (60/20/20" + (hol ? ", holiday = Sundays" : "") + ")";
+        d.prep = new double[n][];
+        for (int t = 0; t < n; t++) d.prep[t] = typ[t].clone();
+        // dishes: same rule over the same source dates
+        List<Map<String, double[]>> src = new ArrayList<Map<String, double[]>>();
+        for (String sd : d.sources) {
+            Map<String, double[]> dd = ownComplete.contains(sd) && ownD.containsKey(sd) ? ownD.get(sd) : m.seedD.get(sd);
+            src.add(dd == null ? new HashMap<String, double[]>() : dd);
+        }
+        Set<String> names = new HashSet<String>();
+        for (Map<String, double[]> dd : src) names.addAll(dd.keySet());
+        for (String name : names) {
+            double[] out = new double[24];
+            for (int h = 0; h < 24; h++) {
+                double w = 0, v = 0;
+                if (src.size() >= 4) {
+                    w += W_LAST_MONTH;
+                    v += W_LAST_MONTH * cell(src.get(3), name, h);
+                }
+                if (!src.isEmpty()) {
+                    double b = 0, cc = 0;
+                    for (Map<String, double[]> dd : src) b += cell(dd, name, h);
+                    int two = Math.min(2, src.size());
+                    for (int i = 0; i < two; i++) cc += cell(src.get(i), name, h);
+                    w += W_FOUR_WEEKS + W_TWO_WEEKS;
+                    v += W_FOUR_WEEKS * b / src.size() + W_TWO_WEEKS * cc / two;
+                }
+                out[h] = w > 0 ? v / w : 0;
+            }
+            d.dishes.put(name, out);
+        }
+        typicalKey = null; // keep today's cache honest
+        return d;
+    }
+
+    private static double cell(Map<String, double[]> day, String name, int h) {
+        double[] v = day.get(name);
+        return v == null ? 0 : v[h];
     }
 
     // ---- report / export -----------------------------------------------------------------
