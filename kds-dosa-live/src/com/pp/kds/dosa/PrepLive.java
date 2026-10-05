@@ -50,7 +50,6 @@ final class PrepLive {
     private static int[] slots;                       // target shown on each card
     private static SharedPreferences historyPrefs, uiPrefs;
     private static final long PERSIST_MS = 60_000L;
-    private static final double[] BATCH_CHIPS = {1, 2, 5, 10, 20};
 
     static final int BG = 0xFF120E07, SURFACE = 0xFF1E1810, CREAM = 0xFFFFF4DC, MUTED = 0xFFB9AE98,
             GOLD = 0xFFF5B21B, GREEN = 0xFF69F0AE, AMBER = 0xFFFFB300, RED = 0xFFFF5A36, LEAF = 0xFF8BCB8E;
@@ -273,25 +272,21 @@ final class PrepLive {
 
     // ---- formatting ----------------------------------------------------------------------
 
-    /** Amount in the item's own unit: kg (g below 1), ltr (ml below 1), pcs, ... */
+    /** Amount in the item's own unit, always whole units: kg (never g), L (never ml), pcs. */
     static String amt(double v, String unit) {
         if (Double.isNaN(v)) return "\u2014";
         String u = unit == null ? "kg" : unit.toLowerCase(Locale.US);
-        if (u.equals("kg") || u.equals("ltr") || u.equals("l")) {
-            boolean kg = u.equals("kg");
-            if (Math.abs(v) < 1) return String.format(Locale.US, "%.0f %s", v * 1000, kg ? "g" : "ml");
-            return String.format(Locale.US, Math.abs(v) < 100 ? "%.1f %s" : "%.0f %s", v, kg ? "kg" : "L");
+        if (u.equals("ltr") || u.equals("l")) u = "L";
+        if (u.equals("kg") || u.equals("L")) {
+            double a = Math.abs(v);
+            if (a < 0.005) return "0 " + u;
+            return String.format(Locale.US, a < 1 ? "%.2f %s" : a < 100 ? "%.1f %s" : "%.0f %s", v, u);
         }
         return String.format(Locale.US, "%.0f %s", v, u);
     }
 
     static String qty(double v, String unit) {
-        String u = unit == null ? "" : unit.toLowerCase(Locale.US);
-        if (u.equals("kg") || u.equals("ltr") || u.equals("l")) {
-            if (Math.abs(v) < 1) return String.format(Locale.US, "%.0f %s", v * 1000, u.equals("kg") ? "g" : "ml");
-            return String.format(Locale.US, "%.2f %s", v, u);
-        }
-        return String.format(Locale.US, "%.1f %s", v, unit);
+        return amt(v, unit);
     }
 
     static GradientDrawable box(int fill, int stroke, float radius, float strokeW) {
@@ -452,7 +447,7 @@ final class PrepLive {
         final class Card {
             final int index;
             final LinearLayout view;
-            final TextView name, chip, next, sub, nextLabel;
+            final TextView name, next, sub, nextLabel;
             final Bars bars;
 
             Card(Context c, final int i) {
@@ -471,13 +466,11 @@ final class PrepLive {
                 });
                 LinearLayout top = new LinearLayout(c);
                 top.setGravity(Gravity.CENTER_VERTICAL);
-                name = text(c, "", 14, CREAM, true);
-                name.setSingleLine(true);
+                name = text(c, "", 13, CREAM, true);
+                name.setMaxLines(2);
                 name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                name.setLineSpacing(0, 0.92f);
                 top.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-                chip = text(c, "", 10, Color.BLACK, true);
-                chip.setPadding((int) (7 * d), (int) (2 * d), (int) (7 * d), (int) (2 * d));
-                top.addView(chip);
                 view.addView(top);
                 nextLabel = text(c, "NEXT 1 HR", 9, MUTED, true);
                 view.addView(nextLabel);
@@ -503,20 +496,7 @@ final class PrepLive {
                 String arrow = Math.abs(diff) < 0.05 * Math.max(1, it.lastHour) ? "" : diff > 0 ? "  \u25B2" : "  \u25BC";
                 next.setText("\u2248 " + amt(it.nextHour, it.unit) + arrow);
                 sub.setText("Last hr " + amt(it.lastHour, it.unit) + "  \u2022  Today " + amt(it.usedToday, it.unit));
-                if (it.status == 0) {
-                    chip.setText("+ BATCH");
-                    chip.setTextColor(CREAM);
-                    chip.setBackground(box(0x22FFFFFF, 0x55FFFFFF, 8 * d, 1 * d));
-                } else {
-                    String s = it.status == 3 ? "PREP NOW" : it.status == 2
-                            ? String.format(Locale.US, "PREP IN %.0fm", Math.max(0, it.minutesLeft - 15))
-                            : String.format(Locale.US, "OK %.0fm", Math.min(999, it.minutesLeft));
-                    chip.setText(s);
-                    chip.setTextColor(Color.BLACK);
-                    chip.setBackground(box(statusColor(it.status), 0, 8 * d, 0));
-                }
-                view.setBackground(box(SURFACE, it.status >= 2 ? statusColor(it.status) : 0x33FFFFFF, 12 * d,
-                        (it.status >= 2 ? 2.5f : 1f) * d));
+                view.setBackground(box(SURFACE, 0x33FFFFFF, 12 * d, 1f * d));
                 bars.set(it.todayHourly, it.typicalHourly);
             }
         }
@@ -564,7 +544,7 @@ final class PrepLive {
                 search.setBackground(box(SURFACE, 0x55FFFFFF, 8 * d, 1 * d));
                 search.setPadding((int) (10 * d), (int) (6 * d), (int) (10 * d), (int) (6 * d));
                 head.addView(search, new LinearLayout.LayoutParams((int) (240 * d), ViewGroup.LayoutParams.WRAP_CONTENT));
-                TextView x = text(c, "   ✕", 18, CREAM, true);
+                TextView x = text(c, "   \u2715", 18, CREAM, true);
                 x.setOnClickListener(new View.OnClickListener() {
                     @Override public void onClick(View v) { close(); }
                 });
@@ -685,47 +665,9 @@ final class PrepLive {
                 cols.setPadding(0, (int) (10 * d), 0, 0);
                 LinearLayout left = new LinearLayout(c);
                 left.setOrientation(LinearLayout.VERTICAL);
-                left.addView(text(c, "BATCH MADE (tap to add)", 11, GOLD, true));
-                LinearLayout chips = new LinearLayout(c);
-                chips.setPadding(0, (int) (6 * d), 0, (int) (6 * d));
-                final String unit = stats.model().unit(i);
-                boolean pieces = !(unit.equalsIgnoreCase("kg") || unit.equalsIgnoreCase("ltr"));
-                double[] sizes = pieces ? new double[]{10, 25, 50, 100, 200} : BATCH_CHIPS;
-                String shortUnit = unit.equalsIgnoreCase("ltr") ? "L" : unit.toLowerCase(Locale.US);
-                for (final double kgv : sizes) {
-                    TextView b = text(c, "+" + (int) kgv + " " + shortUnit, 14, Color.BLACK, true);
-                    b.setPadding((int) (10 * d), (int) (8 * d), (int) (10 * d), (int) (8 * d));
-                    b.setBackground(box(GOLD, 0, 10 * d, 0));
-                    b.setOnClickListener(new View.OnClickListener() {
-                        @Override public void onClick(View v) {
-                            stats.addBatch(index, kgv, System.currentTimeMillis());
-                            dirty = true;
-                            persist(System.currentTimeMillis());
-                            tick(System.currentTimeMillis(), true);
-                        }
-                    });
-                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                    lp.rightMargin = (int) (6 * d);
-                    chips.addView(b, lp);
-                }
-                TextView undo = text(c, "UNDO", 13, CREAM, true);
-                undo.setPadding((int) (10 * d), (int) (8 * d), (int) (10 * d), (int) (8 * d));
-                undo.setBackground(box(0x22FFFFFF, 0x55FFFFFF, 10 * d, 1 * d));
-                undo.setOnClickListener(new View.OnClickListener() {
-                    @Override public void onClick(View v) {
-                        if (stats.undoBatch(index)) {
-                            dirty = true;
-                            persist(System.currentTimeMillis());
-                            tick(System.currentTimeMillis(), true);
-                        }
-                    }
-                });
-                chips.addView(undo);
-                left.addView(chips);
-                batch = text(c, "", 13, CREAM, false);
-                left.addView(batch);
-                left.addView(text(c, "\nDRIVEN BY (today)", 11, GOLD, true));
+                batch = text(c, "", 1, CREAM, false);
+                batch.setVisibility(View.GONE);
+                left.addView(text(c, "DRIVEN BY (today)", 11, GOLD, true));
                 drivers = text(c, "", 12, CREAM, false);
                 left.addView(drivers);
                 cols.addView(left, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.1f));
@@ -754,14 +696,6 @@ final class PrepLive {
                 title.setText(it.name);
                 numbers.setText("Next 1 hr \u2248 " + amt(it.nextHour, it.unit) + "   \u2022   Last 1 hr " + amt(it.lastHour, it.unit)
                         + "   \u2022   Used today " + amt(it.usedToday, it.unit) + "   \u2022   Typical next hr " + amt(it.typicalNextHour, it.unit));
-                if (it.made > 0) {
-                    batch.setText("Made today " + amt(it.made, it.unit) + "  \u2022  Left \u2248 " + amt(Math.max(0, it.remaining), it.unit)
-                            + (it.minutesLeft < 999 ? String.format(Locale.US, "  \u2022  lasts \u2248 %.0f min", it.minutesLeft) : ""));
-                    batch.setTextColor(it.status >= 2 ? statusColor(it.status) : CREAM);
-                } else {
-                    batch.setText("No batch logged today \u2014 tap a size when a fresh batch is ready.");
-                    batch.setTextColor(MUTED);
-                }
                 StringBuilder dr = new StringBuilder();
                 for (String s : it.drivers) {
                     String[] p = s.split("\\|");
