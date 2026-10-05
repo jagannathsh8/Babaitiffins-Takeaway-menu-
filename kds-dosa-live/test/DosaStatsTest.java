@@ -123,6 +123,30 @@ public final class DosaStatsTest {
         DosaStats.Result r7 = s.compute(at(19, 0) + 24 * 60 * MIN);
         check("rollover", r7.completedToday == 0 && r7.history.size() == 2, r7.history);
 
+        // Totals, running pieces, kinds and facts.
+        DosaStats s8 = new DosaStats();
+        long t8 = at(19, 10);
+        List<DosaStats.Entry> b8 = new ArrayList<DosaStats.Entry>();
+        b8.add(new DosaStats.Entry(100, t8 - 5 * MIN, false, false, new String[]{"Masala Dosa", "Ghee Roast"}, new double[]{2, 1}));
+        b8.add(new DosaStats.Entry(101, t8 - 4 * MIN, false, false, new String[]{"Masala Dosa"}, new double[]{3}));
+        b8.add(new DosaStats.Entry(102, t8 - 9 * MIN, true, false, new String[]{"Onion Dosa"}, new double[]{1}));
+        b8.add(new DosaStats.Entry(103, t8 - 9 * MIN, false, true, new String[]{"Masala Dosa"}, new double[]{4}));
+        s8.update(b8, t8, false);
+        s8.update(b8, t8 + 2000, false); // same board again must not double count
+        DosaStats.Result r8 = s8.compute(t8 + 2000);
+        check("today total", r8.dosasToday == 7, r8.dosasToday);
+        check("running pieces", r8.runningDosas == 6, r8.runningDosas);
+        check("kinds", r8.kindsToday == 3, r8.kindsToday);
+        check("favourite fact", r8.facts.get(0).startsWith("Masala Dosa is today's favourite \u2014 5"), r8.facts.get(0));
+        boolean hour = false;
+        for (String f : r8.facts) hour |= f.contains("7\u20138 PM");
+        check("busiest hour fact", hour, r8.facts);
+        DosaStats s9 = new DosaStats();
+        s9.load(s8.save(), t8 + 3000);
+        check("totals persist", s9.compute(t8 + 3000).dosasToday == 7 && s9.compute(t8 + 3000).kindsToday == 3, "");
+        check("hour labels", DosaStats.hourLabel(11).equals("11\u201312 PM") && DosaStats.hourLabel(0).equals("12\u20131 AM"),
+                DosaStats.hourLabel(11) + " " + DosaStats.hourLabel(0));
+
         if (failures > 0) { System.out.println(failures + " failure(s)"); System.exit(1); }
         System.out.println("All DosaStats checks passed");
     }

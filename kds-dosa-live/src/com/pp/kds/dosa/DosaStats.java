@@ -26,12 +26,26 @@ public final class DosaStats {
         final long createdMs;   // <= 0 when the created time could not be parsed
         final boolean ready;    // card has become Food Ready / dispatched
         final boolean cancelled;
+        final String[] names;   // Dosa item names on this KOT
+        final double[] qty;     // matching quantities
 
         public Entry(long id, long createdMs, boolean ready, boolean cancelled) {
+            this(id, createdMs, ready, cancelled, new String[0], new double[0]);
+        }
+
+        public Entry(long id, long createdMs, boolean ready, boolean cancelled, String[] names, double[] qty) {
             this.id = id;
             this.createdMs = createdMs;
             this.ready = ready;
             this.cancelled = cancelled;
+            this.names = names;
+            this.qty = qty;
+        }
+
+        double pieces() {
+            double p = 0;
+            for (double q : qty) p += q;
+            return p;
         }
     }
 
@@ -47,6 +61,11 @@ public final class DosaStats {
         public String etaLabel;         // customer-facing range, e.g. "15–18 min"
         public double oldestActiveMin;
         public double peakThroughputPerMin;
+        public int dosasToday;           // Dine-In Dosa pieces ordered today
+        public int runningDosas;         // Dosa pieces on KOTs still preparing
+        public int kindsToday;
+        public double fastestPrepMin;    // NaN when none
+        public List<String> facts = new ArrayList<String>();
         public long updatedAt;
         public List<String> history = new ArrayList<String>();
     }
@@ -69,6 +88,11 @@ public final class DosaStats {
     private final LinkedList<Long> recent = new LinkedList<Long>();
     private final LinkedList<String> history = new LinkedList<String>();
     private final Map<Long, Long> active = new HashMap<Long, Long>(); // id -> createdMs
+    private final Set<Long> seenToday = new HashSet<Long>();          // KOTs already in the totals
+    private final Map<String, Integer> kinds = new HashMap<String, Integer>(); // dosa name -> pieces
+    private final int[] hourly = new int[24];
+    private long fastestMs;
+    private int runningPieces;
 
     // ---- snapshot processing -------------------------------------------------------------
 
@@ -84,8 +108,22 @@ public final class DosaStats {
             changed = true;
         }
         Set<Long> seen = new HashSet<Long>();
+        int running = 0;
+        long dayStart = startOfDay(now);
         for (Entry e : snapshot) {
             seen.add(e.id);
+            if (!e.cancelled && !e.ready) running += (int) Math.round(e.pieces());
+            if (!e.cancelled && (e.createdMs <= 0 || e.createdMs >= dayStart) && seenToday.add(e.id)) {
+                for (int i = 0; i < e.names.length; i++) {
+                    int q = (int) Math.max(1, Math.round(e.qty[i]));
+                    Integer old = kinds.get(e.names[i]);
+                    kinds.put(e.names[i], (old == null ? 0 : old) + q);
+                    Calendar cal = Calendar.getInstance();
+                    cal.setTimeInMillis(e.createdMs > 0 ? e.createdMs : now);
+                    hourly[cal.get(Calendar.HOUR_OF_DAY)] += q;
+                }
+                changed = true;
+            }
             if (e.cancelled) {
                 if (active.remove(e.id) != null) changed = true;
             } else if (e.ready) {
@@ -98,6 +136,10 @@ public final class DosaStats {
                 Long prev = active.put(e.id, e.createdMs);
                 if (prev == null) changed = true;
             }
+        }
+        if (running != runningPieces) {
+            runningPieces = running;
+            changed = true;
         }
         Iterator<Map.Entry<Long, Long>> it = active.entrySet().iterator();
         while (it.hasNext()) {
@@ -118,6 +160,7 @@ public final class DosaStats {
         if (createdMs <= 0 || prep < 0 || prep > MAX_PREP_MS) return; // outlier / unknown
         completed++;
         totalPrepMs += prep;
+        if (fastestMs <= 0 || prep < fastestMs) fastestMs = prep;
         recent.add(now);
     }
 
@@ -135,6 +178,10 @@ public final class DosaStats {
         trackingSince = now;
         countedIds.clear();
         recent.clear();
+        seenToday.clear();
+        kinds.clear();
+        java.util.Arrays.fill(hourly, 0);
+        fastestMs = 0;
         return true;
     }
 
@@ -180,9 +227,77 @@ public final class DosaStats {
         r.etaMin = Math.min(eta, MAX_ETA_MIN);
         r.etaLabel = friendlyRange(r.etaMin);
 
+        int total = 0;
+        for (int q : kinds.values()) total += q;
+        r.dosasToday = total;
+        r.runningDosas = runningPieces;
+        r.kindsToday = kinds.size();
+        r.fastestPrepMin = fastestMs > 0 ? fastestMs / (double) MINUTE : Double.NaN;
+        r.facts = facts(r);
+
         r.history.add(historyLine(dateKey));
         r.history.addAll(history);
         return r;
+    }
+
+    static final String[] TRIVIA = {
+            "Dosa batter is rice and urad dal, fermented overnight for that gentle tang",
+            "A classic dosa is naturally gluten-free",
+            "The thinner the spread on a hot tawa, the crispier the dosa",
+            "Every dosa here is poured and spread by hand, one at a time",
+    };
+
+    /** Fun, order-based facts for the customer screen (plus a little trivia). */
+    List<String> facts(Result r) {
+        List<String> f = new ArrayList<String>();
+        List<Map.Entry<String, Integer>> top = new ArrayList<Map.Entry<String, Integer>>(kinds.entrySet());
+        java.util.Collections.sort(top, new java.util.Comparator<Map.Entry<String, Integer>>() {
+            @Override public int compare(Map.Entry<String, Integer> a, Map.Entry<String, Integer> b) {
+                return b.getValue() - a.getValue();
+            }
+        });
+        if (!top.isEmpty()) {
+            Map.Entry<String, Integer> t = top.get(0);
+            f.add(t.getKey() + " is today's favourite \u2014 " + t.getValue() + " served so far");
+            if (r.dosasToday >= 5) {
+                f.add(String.format(Locale.US, "%d%% of today's dosas are %s",
+                        Math.round(100.0 * t.getValue() / r.dosasToday), t.getKey()));
+            }
+        }
+        if (top.size() >= 2) {
+            Map.Entry<String, Integer> t2 = top.get(1);
+            f.add(top.size() + " different dosas ordered today \u2014 " + t2.getKey()
+                    + " is close behind with " + t2.getValue());
+        }
+        int bestHour = -1;
+        for (int h = 0; h < 24; h++) if (hourly[h] > 0 && (bestHour < 0 || hourly[h] > hourly[bestHour])) bestHour = h;
+        if (bestHour >= 0 && r.dosasToday >= 5) {
+            f.add("Busiest hour so far: " + hourLabel(bestHour) + " with " + hourly[bestHour] + " dosas");
+        }
+        if (!Double.isNaN(r.fastestPrepMin)) {
+            f.add(String.format(Locale.US, "Fastest Dosa order today was ready in just %.1f min", r.fastestPrepMin));
+        }
+        if (r.throughputPerMin > 0) {
+            f.add(String.format(Locale.US, "Right now our kitchen finishes a dosa order every %d seconds",
+                    Math.round(60 / r.throughputPerMin)));
+        }
+        if (r.runningDosas > 0) {
+            f.add(r.runningDosas + (r.runningDosas == 1 ? " dosa is" : " dosas are") + " sizzling on the tawa right now");
+        }
+        if (r.dosasToday >= 10) {
+            f.add(String.format(Locale.US, "Laid end to end, today's dosas would stretch about %d metres",
+                    Math.round(r.dosasToday * 0.35)));
+            f.add(String.format(Locale.US, "Around %.0f kg of batter has become crispy dosas today",
+                    Math.max(1, r.dosasToday * 0.12)));
+        }
+        for (String t : TRIVIA) f.add(t);
+        return f;
+    }
+
+    public static String hourLabel(int h) {
+        int a = h % 12 == 0 ? 12 : h % 12, b = (h + 1) % 12 == 0 ? 12 : (h + 1) % 12;
+        String ap = (h + 1) % 24 < 12 ? "AM" : "PM";
+        return a + "\u2013" + b + " " + ap;
     }
 
     /** 16.2 -> "15–18 min", 19 -> "18–21 min", 43 -> "40–45 min". */
@@ -220,6 +335,17 @@ public final class DosaStats {
         m.put("counted", join(countedIds, ","));
         m.put("recent", join(recent, ","));
         m.put("history", join(history, "\n"));
+        m.put("seen", join(seenToday, ","));
+        m.put("fastest", String.valueOf(fastestMs));
+        StringBuilder hs = new StringBuilder();
+        for (int h : hourly) hs.append(hs.length() == 0 ? "" : ",").append(h);
+        m.put("hourly", hs.toString());
+        StringBuilder ks = new StringBuilder();
+        for (Map.Entry<String, Integer> e : kinds.entrySet()) {
+            if (ks.length() > 0) ks.append('\n');
+            ks.append(e.getValue()).append('\t').append(e.getKey().replace('\n', ' ').replace('\t', ' '));
+        }
+        m.put("kinds", ks.toString());
         return m;
     }
 
@@ -233,6 +359,14 @@ public final class DosaStats {
             peakRate = parseDouble(m.get("peak"));
             for (String s : split(m.get("counted"), ",")) countedIds.add(parseLong(s));
             for (String s : split(m.get("recent"), ",")) recent.add(parseLong(s));
+            for (String s : split(m.get("seen"), ",")) seenToday.add(parseLong(s));
+            fastestMs = parseLong(m.get("fastest"));
+            List<String> hs = split(m.get("hourly"), ",");
+            for (int i = 0; i < hs.size() && i < 24; i++) hourly[i] = parseInt(hs.get(i));
+            for (String s : split(m.get("kinds"), "\n")) {
+                int tab = s.indexOf('\t');
+                if (tab > 0) kinds.put(s.substring(tab + 1), parseInt(s.substring(0, tab)));
+            }
         }
         for (String s : split(m.get("history"), "\n")) history.add(s);
         rollover(now);

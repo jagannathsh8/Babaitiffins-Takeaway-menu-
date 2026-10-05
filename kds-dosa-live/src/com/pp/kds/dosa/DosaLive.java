@@ -114,27 +114,35 @@ public final class DosaLive {
             Kot kot = card.getKot();
             if (kot == null || kot.getId() == null) continue;
             if (OrderType.Companion.fromId(kot.getOrderType()) != OrderType.DINE_IN) continue;
-            if (!hasDosa(kot)) continue;
+            List<String> names = new ArrayList<String>();
+            List<Double> qty = new ArrayList<Double>();
+            collectDosa(kot, names, qty);
+            if (names.isEmpty()) continue;
             String status = kot.getKotStatus();
             boolean cancelled = "0".equals(status);
             boolean ready = card.getState().isDispatch() || "9".equals(status) || "10".equals(status);
             Long created = BoardVisualsKt.parseCreatedMillis(kot.getCreatedTime());
-            out.add(new DosaStats.Entry(kot.getId(), created == null ? 0L : created, ready, cancelled));
+            double[] q = new double[qty.size()];
+            for (int i = 0; i < q.length; i++) q[i] = qty.get(i);
+            out.add(new DosaStats.Entry(kot.getId(), created == null ? 0L : created, ready, cancelled,
+                    names.toArray(new String[0]), q));
         }
         return out;
     }
 
-    private static boolean hasDosa(Kot kot) {
+    private static void collectDosa(Kot kot, List<String> names, List<Double> qty) {
         List<KotItem> items = kot.getItems();
-        if (items == null) return false;
+        if (items == null) return;
         for (KotItem item : items) {
             String cat = item.getCategory();
             if (cat != null && cat.toLowerCase(Locale.US).contains(DOSA)
                     && !BoardVisualsKt.isItemCancelled(item.getStatus())) {
-                return true;
+                String n = item.getName();
+                names.add(n == null || n.trim().isEmpty() ? "Dosa" : n.trim());
+                Double q = item.getQuantity();
+                qty.add(q == null || q <= 0 ? 1.0 : q);
             }
         }
-        return false;
     }
 
     private static DashboardUiState currentState() {
@@ -215,6 +223,7 @@ public final class DosaLive {
             ((ViewGroup) a.findViewById(android.R.id.content)).addView(view,
                     new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT));
+            view.bringToFront();
         }
 
         void bind(DosaStats.Result r) {
@@ -231,7 +240,7 @@ public final class DosaLive {
                 if (p.length < 5) continue;
                 sb.append(String.format(Locale.US, "%n%-10s %5s %8s %5s %8s", p[0], p[1], p[2], p[3], p[4]));
             }
-            view.setData(r.etaLabel, r.activeCount, r.avgPrepMin, time, sb.toString());
+            view.setData(r, time, sb.toString());
         }
 
         void close() {
