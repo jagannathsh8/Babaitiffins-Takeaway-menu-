@@ -103,10 +103,19 @@ final class DosaNeonView extends View {
     private final Typeface condensed = Typeface.create("sans-serif-condensed", Typeface.BOLD);
     private final DateFormat timeFormat;
 
-    private static final int EMBERS = 34;
+    private static final int EMBERS = 20;
     private final float[] ex = new float[EMBERS], ey = new float[EMBERS], es = new float[EMBERS],
             er = new float[EMBERS], ep = new float[EMBERS];
     private final int[] ec = new int[EMBERS];
+
+    // floating Andhra tiffin art
+    private static final int FOODS = 16;
+    private android.graphics.Bitmap[] food;
+    private final int[] fk = new int[FOODS];
+    private final float[] fx = new float[FOODS], fy = new float[FOODS], fs = new float[FOODS],
+            fsize = new float[FOODS], frot = new float[FOODS], fspin = new float[FOODS], fph = new float[FOODS];
+    private final Paint bmp = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final RectF dst = new RectF();
 
     private Shader background, blobA, blobB, halo;
     private float haloKey;
@@ -141,7 +150,22 @@ final class DosaNeonView extends View {
             logo = null;
         }
         setTheme(0);
+        try {
+            food = DosaFoodArt.renderAll();
+        } catch (Throwable ignored) {
+            food = null;
+        }
         Random rnd = new Random(7);
+        for (int i = 0; i < FOODS; i++) {
+            fk[i] = i % DosaFoodArt.KINDS;
+            fx[i] = (i + 0.5f) / FOODS + (rnd.nextFloat() - 0.5f) * 0.05f; // spread across width
+            fy[i] = rnd.nextFloat();
+            fs[i] = 0.010f + rnd.nextFloat() * 0.012f;                  // 45-100 s per climb
+            fsize[i] = 34 + rnd.nextFloat() * 30;                         // dp
+            frot[i] = rnd.nextFloat() * 360;
+            fspin[i] = (rnd.nextFloat() - 0.5f) * 14;                     // deg / s
+            fph[i] = rnd.nextFloat() * 6.28f;
+        }
         for (int i = 0; i < EMBERS; i++) {
             ex[i] = rnd.nextFloat();
             ey[i] = rnd.nextFloat();
@@ -323,6 +347,24 @@ final class DosaNeonView extends View {
         c.drawRect(0, 0, w, h, fill);
         fill.setShader(null);
 
+        if (food != null) {
+            drawCornerLeaves(c, w, h, t);
+            for (int i = 0; i < FOODS; i++) {
+                float life = (fy[i] + t * fs[i]) % 1f;
+                float x = (fx[i] + 0.025f * (float) Math.sin(t * 0.35f + fph[i])) * w;
+                float y = h * (1.12f - life * 1.24f);
+                float a = (float) Math.sin(Math.PI * life);
+                float size = fsize[i] * d;
+                c.save();
+                c.translate(x, y);
+                c.rotate(frot[i] + t * fspin[i]);
+                dst.set(-size / 2, -size / 2, size / 2, size / 2);
+                bmp.setAlpha((int) (95 * a));
+                c.drawBitmap(food[fk[i]], null, dst, bmp);
+                c.restore();
+            }
+        }
+
         for (int i = 0; i < EMBERS; i++) {
             float life = (ey[i] + t * es[i]) % 1f;
             float x = (ex[i] + 0.02f * (float) Math.sin(t * 0.6f + ep[i])) * w;
@@ -337,6 +379,40 @@ final class DosaNeonView extends View {
             c.drawCircle(x, y, r, fill);
         }
         fill.setAlpha(255);
+    }
+
+    /** Big banana leaves peeking in from the top-left and bottom-right corners, gently swaying. */
+    private void drawCornerLeaves(Canvas c, float w, float h, float t) {
+        float size = Math.min(w, h) * 0.55f;
+        float sway = 3f * (float) Math.sin(t * 2 * Math.PI / 7);
+        bmp.setAlpha(80);
+        c.save();
+        c.translate(-size * 0.12f, -size * 0.05f);
+        c.rotate(-20 + sway, size / 2, size / 2);
+        dst.set(0, 0, size, size);
+        c.drawBitmap(food[DosaFoodArt.LEAF], null, dst, bmp);
+        c.restore();
+        c.save();
+        c.translate(w - size * 0.88f, h - size * 0.92f);
+        c.rotate(160 - sway, size / 2, size / 2);
+        dst.set(0, 0, size, size);
+        c.drawBitmap(food[DosaFoodArt.LEAF], null, dst, bmp);
+        c.restore();
+        // small chilli & curry-leaf garnish near the leaves
+        bmp.setAlpha(110);
+        float g = size * 0.32f;
+        c.save();
+        c.translate(size * 0.42f, size * 0.30f);
+        c.rotate(25 + sway * 2);
+        dst.set(-g / 2, -g / 2, g / 2, g / 2);
+        c.drawBitmap(food[DosaFoodArt.CHILLI], null, dst, bmp);
+        c.restore();
+        c.save();
+        c.translate(w - size * 0.42f, h - size * 0.36f);
+        c.rotate(-150 - sway * 2);
+        dst.set(-g / 2, -g / 2, g / 2, g / 2);
+        c.drawBitmap(food[DosaFoodArt.CURRY_LEAVES], null, dst, bmp);
+        c.restore();
     }
 
     private void drawBorder(Canvas c, float w, float h, float t) {
