@@ -272,11 +272,16 @@ public final class DosaStats {
     }
 
     static final String[] TRIVIA = {
-            "Team Babai Tiffins is on the tawa right now, making your dosa",
+            // Babai Tiffins menu stories (owner-provided, trimmed for the screen; no recipe specifics)
+            "Our Ghee Idli melts in your mouth thanks to a light, slow-fermented urad dal batter",
+            "Our signature idli is layered three ways: warm ghee, Karam Podi and a dollop of white butter",
+            "Ghee Pesarattu Upma is two dishes in one \u2014 a crisp green-gram crepe filled with soft rava upma",
+            "The red layer in our Ghee Karam Dosa is roasted chilli-garlic karam, balanced by ghee on a hot tawa",
+            "Our Karam Podi is a house blend of dry-roasted dals, sesame and spices \u2014 not just chilli powder",
+            "Set Dosa is thick and porous \u2014 tiny air pockets keep it soft and spongy",
             "Pesarattu, the green-gram dosa, is a beloved Andhra breakfast classic",
             "Andhra food is famous for bold, spicy flavours \u2014 Guntur chillies are known worldwide",
-            "Dosa batter is rice and urad dal, fermented for that gentle tang",
-            "A classic dosa is naturally gluten-free",
+            "Team Babai Tiffins is on the tawa right now, making your dosa",
             "The thinner the spread on a hot tawa, the crispier the dosa",
             "Babai Tiffins \u2014 taste the Andhra style",
     };
@@ -318,8 +323,13 @@ public final class DosaStats {
             f.add(String.format(Locale.US, "Laid end to end, today's dosas would stretch about %d metres",
                     Math.round(r.servedToday * 0.35)));
         }
-        for (String t : TRIVIA) f.add(t);
-        return f;
+        // Interleave: a live (today's orders) fact between every menu story, so live ones recur.
+        List<String> out = new ArrayList<String>();
+        for (int i = 0; i < TRIVIA.length; i++) {
+            if (!f.isEmpty()) out.add(f.get(i % f.size()));
+            out.add(TRIVIA[i]);
+        }
+        return out;
     }
 
     public static String hourLabel(int h) {
