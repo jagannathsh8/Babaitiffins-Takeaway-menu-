@@ -273,10 +273,12 @@ public final class DosaStats {
 
     static final String[] TRIVIA = {
             "Team Babai Tiffins is on the tawa right now, making your dosa",
+            "Pesarattu, the green-gram dosa, is a beloved Andhra breakfast classic",
+            "Andhra food is famous for bold, spicy flavours \u2014 Guntur chillies are known worldwide",
             "Dosa batter is rice and urad dal, fermented for that gentle tang",
             "A classic dosa is naturally gluten-free",
             "The thinner the spread on a hot tawa, the crispier the dosa",
-            "Thank you for choosing Babai Tiffins, Varthur",
+            "Babai Tiffins \u2014 taste the Andhra style",
     };
 
     /**

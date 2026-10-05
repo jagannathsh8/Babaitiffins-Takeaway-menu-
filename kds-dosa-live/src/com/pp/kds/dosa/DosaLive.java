@@ -47,7 +47,7 @@ public final class DosaLive {
 
     /**
      * Real guest reviews shown as "Guest love" on the customer screen, e.g.
-     * "Crispiest ghee roast in Varthur! \u2014 Priya, Google review".
+     * "Crispiest ghee roast ever! \u2014 Priya, Google review".
      * Only add genuine reviews (with permission/public text); leave empty to show facts only.
      */
     static final String[] GUEST_LOVE = {};
@@ -224,8 +224,12 @@ public final class DosaLive {
             activity = a;
             view = new DosaNeonView(a);
             view.setElevation(24 * a.getResources().getDisplayMetrics().density);
+            final SharedPreferences ui = a.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
+            view.setTheme(ui.getInt("theme", 0));
             view.setListener(new DosaNeonView.Listener() {
                 @Override public void onClose() { close(); }
+
+                @Override public void onTheme(int index) { ui.edit().putInt("theme", index).apply(); }
             });
             ((ViewGroup) a.findViewById(android.R.id.content)).addView(view,
                     new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,

@@ -32,13 +32,43 @@ import java.util.Random;
  */
 final class DosaNeonView extends View {
 
-    // Babai Tiffins palette (brand orange #FF5200 from the menu site)
-    private static final int ORANGE = 0xFFFF5200;
-    private static final int SAFFRON = 0xFFFF8A00;
-    private static final int GOLD = 0xFFFFC107;
-    private static final int CREAM = 0xFFFFE8C7;
-    private static final int LEAF = 0xFF66BB6A;
-    private static final int CHILI = 0xFFFF3D00;
+    /** Selectable looks. Order = dots left to right. */
+    static final class Theme {
+        final String name;
+        final int P, S, T, L, M, R;     // primary, secondary, third, light, mid, review accent
+        final int bg0, bg1, bg2, surface;
+
+        Theme(String name, int p, int s, int t, int l, int m, int r, int bg0, int bg1, int bg2, int surface) {
+            this.name = name;
+            P = p; S = s; T = t; L = l; M = m; R = r;
+            this.bg0 = bg0; this.bg1 = bg1; this.bg2 = bg2; this.surface = surface;
+        }
+    }
+
+    static final Theme[] THEMES = {
+            // From the Babai Tiffins logo: turmeric-mustard circle, green angavastram, charcoal
+            new Theme("Babai Classic", 0xFFF5B21B, 0xFF8BCB8E, 0xFFF2C98A, 0xFFFFF4DC, 0xFFFFD54F, 0xFFFF6E40,
+                    0xFF2E2408, 0xFF16110A, 0xFF080604, 0xFF1C170B),
+            // Guntur chilli red-orange
+            new Theme("Guntur Chilli", 0xFFFF5200, 0xFFFFC107, 0xFF66BB6A, 0xFFFFE8C7, 0xFFFF8A00, 0xFFFF3D00,
+                    0xFF3A1606, 0xFF1E0B04, 0xFF0A0402, 0xFF1F0E06),
+            // Banana leaf green with turmeric
+            new Theme("Banana Leaf", 0xFF7CB342, 0xFFFFD54F, 0xFFFF8A65, 0xFFE8F5E9, 0xFFAED581, 0xFFFF7043,
+                    0xFF12301A, 0xFF0A1A0E, 0xFF030805, 0xFF0F2214),
+            // Temple-festival night neon
+            new Theme("Festival Neon", 0xFF00E5FF, 0xFFFF2BD6, 0xFFFFB300, 0xFFE0F7FA, 0xFF7C4DFF, 0xFFFF2BD6,
+                    0xFF241046, 0xFF120A2C, 0xFF05040D, 0xFF15112A),
+    };
+
+    private static final int LIVE_GREEN = 0xFF69F0AE;
+    private int ORANGE, SAFFRON, GOLD, CREAM, LEAF, CHILI;
+    private Theme theme;
+    private int themeIndex;
+    private long themeChangedAt = -10_000;
+    private final float[] dotX = new float[THEMES.length];
+    private float dotY;
+    private android.graphics.Bitmap logo;
+    private final RectF logoRect = new RectF();
 
     private static final String[] MESSAGES = {
             "Your dosa is being crafted fresh on the tawa",
@@ -54,6 +84,8 @@ final class DosaNeonView extends View {
 
     interface Listener {
         void onClose();
+
+        void onTheme(int index);
     }
 
     private final float d;
@@ -101,20 +133,45 @@ final class DosaNeonView extends View {
         super(c);
         d = c.getResources().getDisplayMetrics().density;
         timeFormat = android.text.format.DateFormat.getTimeFormat(c);
+        try {
+            java.io.InputStream in = c.getAssets().open("dosa_live_logo.png");
+            logo = android.graphics.BitmapFactory.decodeStream(in);
+            in.close();
+        } catch (Exception ignored) {
+            logo = null;
+        }
+        setTheme(0);
         Random rnd = new Random(7);
-        int[] palette = {ORANGE, SAFFRON, GOLD, CREAM};
         for (int i = 0; i < EMBERS; i++) {
             ex[i] = rnd.nextFloat();
             ey[i] = rnd.nextFloat();
             es[i] = 0.025f + rnd.nextFloat() * 0.05f;
             er[i] = 1.2f + rnd.nextFloat() * 2.6f;
             ep[i] = rnd.nextFloat() * 6.28f;
-            ec[i] = palette[rnd.nextInt(palette.length)];
+            ec[i] = rnd.nextInt(4);
         }
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeCap(Paint.Cap.ROUND);
         stroke.setStrokeJoin(Paint.Join.ROUND);
         setClickable(true);
+    }
+
+    void setTheme(int index) {
+        themeIndex = Math.max(0, Math.min(THEMES.length - 1, index));
+        theme = THEMES[themeIndex];
+        ORANGE = theme.P;
+        GOLD = theme.S;
+        LEAF = theme.T;
+        CREAM = theme.L;
+        SAFFRON = theme.M;
+        CHILI = theme.R;
+        background = null;  // rebuild shaders in the new colours
+        halo = null;
+        invalidate();
+    }
+
+    private static int alpha(int color, int a) {
+        return (color & 0x00FFFFFF) | (a << 24);
     }
 
     void setListener(Listener l) {
@@ -155,7 +212,15 @@ final class DosaNeonView extends View {
             downAt = SystemClock.uptimeMillis();
             downOnTitle = titleHit.contains(x, y);
         } else if (ev.getAction() == MotionEvent.ACTION_UP) {
-            if (Math.hypot(x - closeX, y - closeY) < closeR + 20 * d) {
+            int hit = -1;
+            for (int i = 0; i < THEMES.length; i++) {
+                if (Math.hypot(x - dotX[i], y - dotY) < 13 * d) hit = i;
+            }
+            if (hit >= 0) {
+                setTheme(hit);
+                themeChangedAt = SystemClock.uptimeMillis();
+                if (listener != null) listener.onTheme(hit);
+            } else if (Math.hypot(x - closeX, y - closeY) < closeR + 14 * d) {
                 if (listener != null) listener.onClose();
             } else if (downOnTitle && titleHit.contains(x, y)
                     && SystemClock.uptimeMillis() - downAt >= STAFF_HOLD_MS) {
@@ -210,6 +275,7 @@ final class DosaNeonView extends View {
         drawInfo(c, infoX, infoW, titleY, u, t);
         drawTrend(c, chartX, chartTop, chartW, chartBottom - chartTop, u, t);
         drawClose(c, w);
+        drawThemeDots(c, t);
         if (showStaff) drawStaff(c, w, h);
 
         postInvalidateOnAnimation();
@@ -232,21 +298,21 @@ final class DosaNeonView extends View {
         shaderH = h;
         float big = Math.max(w, h);
         background = new RadialGradient(w * 0.28f, h * 0.42f, big * 0.95f,
-                new int[]{0xFF3A1606, 0xFF1E0B04, 0xFF0A0402}, new float[]{0f, 0.45f, 1f},
+                new int[]{theme.bg0, theme.bg1, theme.bg2}, new float[]{0f, 0.45f, 1f},
                 Shader.TileMode.CLAMP);
         blobA = new RadialGradient(w * 0.85f, h * 0.12f, big * 0.38f,
-                new int[]{0x33FF5200, 0x00FF5200}, null, Shader.TileMode.CLAMP);
+                new int[]{alpha(ORANGE, 0x33), alpha(ORANGE, 0)}, null, Shader.TileMode.CLAMP);
         blobB = new RadialGradient(w * 0.12f, h * 0.95f, big * 0.35f,
-                new int[]{0x2AFFC107, 0x00FFC107}, null, Shader.TileMode.CLAMP);
+                new int[]{alpha(GOLD, 0x2A), alpha(GOLD, 0)}, null, Shader.TileMode.CLAMP);
         borderShader = new SweepGradient(w / 2f, h / 2f,
                 new int[]{ORANGE, GOLD, CREAM, SAFFRON, CHILI, ORANGE}, null);
         cometShader = new SweepGradient(0, 0,
-                new int[]{0x00FF5200, 0x00FF5200, ORANGE, GOLD, CREAM},
+                new int[]{alpha(ORANGE, 0), alpha(ORANGE, 0), ORANGE, GOLD, CREAM},
                 new float[]{0f, 0.15f, 0.55f, 0.85f, 1f});
     }
 
     private void drawBackground(Canvas c, float w, float h, float t) {
-        c.drawColor(0xFF0A0402);
+        c.drawColor(theme.bg2);
         fill.setColor(Color.BLACK);
         fill.setAlpha(255);
         fill.setShader(background);
@@ -263,7 +329,8 @@ final class DosaNeonView extends View {
             float y = h * (1.05f - life * 1.1f);
             float f = (float) Math.sin(Math.PI * life);
             float r = er[i] * d;
-            fill.setColor(ec[i]);
+            int[] pal = {ORANGE, SAFFRON, GOLD, CREAM};
+            fill.setColor(pal[ec[i]]);
             fill.setAlpha((int) (30 * f));
             c.drawCircle(x, y, r * 3.2f, fill);
             fill.setAlpha((int) (190 * f));
@@ -293,11 +360,12 @@ final class DosaNeonView extends View {
 
     private void drawRing(Canvas c, float cx, float cy, float r, float t) {
         float breath = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 4.5);
+        drawKolam(c, cx, cy, r, t);
 
         if (halo == null || haloKey != cx * 31 + cy * 17 + r) {
             haloKey = cx * 31 + cy * 17 + r;
             halo = new RadialGradient(cx, cy, r * 1.6f,
-                    new int[]{0x55FF5200, 0x18FFC107, 0x00000000}, new float[]{0.45f, 0.75f, 1f},
+                    new int[]{alpha(ORANGE, 0x55), alpha(GOLD, 0x18), 0x00000000}, new float[]{0.45f, 0.75f, 1f},
                     Shader.TileMode.CLAMP);
         }
         fill.setShader(halo);
@@ -343,7 +411,7 @@ final class DosaNeonView extends View {
         text.setTextAlign(Paint.Align.CENTER);
         text.setLetterSpacing(0.3f);
         text.setTextSize(r * 0.13f);
-        text.setColor(0xDDFFE0B2);
+        text.setColor(alpha(CREAM, 0xDD));
         c.drawText("ESTIMATED WAIT", cx, cy - r * 0.42f, text);
 
         text.setTypeface(thin);
@@ -368,17 +436,62 @@ final class DosaNeonView extends View {
         text.setLetterSpacing(0f);
     }
 
+    /** Faint muggulu (kolam) motif: dot grid and interlaced loops, slowly turning. */
+    private void drawKolam(Canvas c, float cx, float cy, float r, float t) {
+        c.save();
+        c.rotate(t * 3f, cx, cy);
+        stroke.setShader(null);
+        stroke.setColor(CREAM);
+        stroke.setStrokeWidth(1.2f * d);
+        stroke.setAlpha(26);
+        for (int k = 0; k < 8; k++) {
+            double a = Math.toRadians(k * 45);
+            c.drawCircle(cx + (float) Math.cos(a) * r * 1.32f, cy + (float) Math.sin(a) * r * 1.32f,
+                    r * 0.42f, stroke);
+        }
+        fill.setShader(null);
+        fill.setColor(CREAM);
+        fill.setAlpha(40);
+        for (int k = 0; k < 16; k++) {
+            double a = Math.toRadians(k * 22.5);
+            c.drawCircle(cx + (float) Math.cos(a) * r * 1.75f, cy + (float) Math.sin(a) * r * 1.75f,
+                    2.2f * d, fill);
+        }
+        c.restore();
+        fill.setAlpha(255);
+        stroke.setAlpha(255);
+    }
+
     // ---- title, message, cards, facts ----------------------------------------------------
 
     private void drawInfo(Canvas c, float x, float width, float titleY, float u, float t) {
         text.setTextAlign(Paint.Align.LEFT);
 
+        // logo badge
+        float badge = u * 0.19f;
+        float bcx = x + badge / 2f, bcy = titleY - u * 0.03f;
+        float breathe = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 4.5);
+        fill.setShader(null);
+        fill.setColor(ORANGE);
+        fill.setAlpha((int) (40 + 40 * breathe));
+        c.drawCircle(bcx, bcy, badge * 0.56f, fill);
+        fill.setAlpha(255);
+        if (logo != null) {
+            logoRect.set(bcx - badge / 2f, bcy - badge / 2f, bcx + badge / 2f, bcy + badge / 2f);
+            c.drawBitmap(logo, null, logoRect, fill);
+        }
+        x += badge + 14 * d;
+        width -= badge + 14 * d;
+
         // brand line
         text.setTypeface(condensed);
-        text.setLetterSpacing(0.35f);
-        text.setTextSize(u * 0.028f);
-        text.setColor(0xCCFFE8C7);
-        c.drawText("BABAI TIFFINS  •  VARTHUR", x, titleY - u * 0.085f, text);
+        text.setLetterSpacing(0.3f);
+        text.setTextSize(u * 0.026f);
+        String brand = "BABAI TIFFINS  \u2022  TASTE THE ANDHRA STYLE";
+        float bw = text.measureText(brand);
+        if (bw > width) text.setTextSize(text.getTextSize() * width / bw);
+        text.setColor(alpha(CREAM, 0xCC));
+        c.drawText(brand, x, titleY - u * 0.085f, text);
 
         float ts = u * 0.085f;
         text.setTypeface(medium);
@@ -386,7 +499,7 @@ final class DosaNeonView extends View {
         text.setTextSize(ts);
         String a = "DOSA ", b = "LIVE";
         float aw = text.measureText(a);
-        text.setColor(0xFFFFE0B2);
+        text.setColor(CREAM);
         text.setShadowLayer(16 * d, 0, 0, ORANGE);
         c.drawText(a, x, titleY, text);
         text.setColor(Color.WHITE);
@@ -398,11 +511,11 @@ final class DosaNeonView extends View {
 
         float pulse = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 1.6);
         float dx = x + titleW + ts * 0.45f, dy = titleY - ts * 0.36f;
-        fill.setColor(LEAF);
+        fill.setColor(LIVE_GREEN);
         fill.setAlpha((int) (60 * pulse));
         c.drawCircle(dx, dy, ts * (0.16f + 0.12f * pulse), fill);
         fill.setAlpha(255);
-        fill.setShadowLayer(10 * d, 0, 0, LEAF);
+        fill.setShadowLayer(10 * d, 0, 0, LIVE_GREEN);
         c.drawCircle(dx, dy, ts * 0.11f, fill);
         fill.clearShadowLayer();
 
@@ -418,13 +531,15 @@ final class DosaNeonView extends View {
         text.setTypeface(light);
         text.setLetterSpacing(0.02f);
         text.setTextSize(u * 0.036f);
-        text.setColor(0xFFF3E5D8);
+        text.setColor(alpha(CREAM, 0xF0));
         text.setAlpha((int) (255 * alpha));
-        drawWrapped(c, msg, x, titleY + u * 0.075f, width, u * 0.045f, 1);
+        drawWrapped(c, msg, x, titleY + u * 0.06f, width, u * 0.045f, 1);
         text.setAlpha(255);
+        x -= badge + 14 * d;
+        width += badge + 14 * d;
 
         float gap = 10 * d;
-        float cardTop = titleY + u * 0.12f;
+        float cardTop = titleY + u * 0.115f;
         float cardH = u * 0.21f;
         float cw = (width - 2 * gap) / 3f;
         drawCard(c, x, cardTop, cw, cardH, String.valueOf(Math.round(shownRunning)), null,
@@ -441,7 +556,7 @@ final class DosaNeonView extends View {
         float r = 16 * d;
         rect.set(x, y, x + w, y + h);
         fill.setShader(null);
-        fill.setColor(0xFF1F0E06);
+        fill.setColor(theme.surface);
         c.drawRoundRect(rect, r, r, fill);
         stroke.setShader(null);
         stroke.setColor(color);
@@ -524,7 +639,7 @@ final class DosaNeonView extends View {
         float r = 14 * d;
         rect.set(x, y, x + w, y + h);
         fill.setShader(null);
-        fill.setColor(0xFF1A0B05);
+        fill.setColor(theme.surface);
         c.drawRoundRect(rect, r, r, fill);
         stroke.setShader(null);
         stroke.setColor(accent);
@@ -564,7 +679,7 @@ final class DosaNeonView extends View {
         float r = 14 * d;
         rect.set(x, y, x + w, y + h);
         fill.setShader(null);
-        fill.setColor(0xCC140804);
+        fill.setColor(alpha(theme.surface, 0xCC));
         c.drawRoundRect(rect, r, r, fill);
         stroke.setShader(null);
         stroke.setColor(ORANGE);
@@ -638,7 +753,7 @@ final class DosaNeonView extends View {
         area.lineTo(lastX, py + ph);
         area.lineTo(firstX, py + ph);
         area.close();
-        fill.setShader(new LinearGradient(0, py, 0, py + ph, 0x66FF5200, 0x00FF5200, Shader.TileMode.CLAMP));
+        fill.setShader(new LinearGradient(0, py, 0, py + ph, alpha(ORANGE, 0x66), alpha(ORANGE, 0), Shader.TileMode.CLAMP));
         c.drawPath(area, fill);
         fill.setShader(null);
 
@@ -679,6 +794,39 @@ final class DosaNeonView extends View {
 
     // ---- close & staff -------------------------------------------------------------------
 
+    private void drawThemeDots(Canvas c, float t) {
+        dotY = closeY;
+        for (int i = 0; i < THEMES.length; i++) {
+            dotX[i] = closeX - closeR - 24 * d - (THEMES.length - 1 - i) * 24 * d;
+            boolean sel = i == themeIndex;
+            fill.setShader(null);
+            fill.setColor(THEMES[i].P);
+            c.drawCircle(dotX[i], dotY, (sel ? 7 : 5.5f) * d, fill);
+            if (sel) {
+                stroke.setShader(null);
+                stroke.setColor(Color.WHITE);
+                stroke.setStrokeWidth(1.6f * d);
+                stroke.setAlpha(220);
+                c.drawCircle(dotX[i], dotY, 11 * d, stroke);
+                stroke.setAlpha(255);
+            }
+        }
+        long since = SystemClock.uptimeMillis() - themeChangedAt;
+        if (since < 2500) {
+            text.setTypeface(condensed);
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setLetterSpacing(0.2f);
+            text.setTextSize(11 * d);
+            text.setColor(Color.WHITE);
+            text.setAlpha((int) (255 * Math.min(1f, (2500 - since) / 600f)));
+            c.drawText(theme.name.toUpperCase(Locale.US), (dotX[0] + dotX[THEMES.length - 1]) / 2f,
+                    dotY + 28 * d, text);
+            text.setAlpha(255);
+            text.setLetterSpacing(0f);
+            text.setTextAlign(Paint.Align.LEFT);
+        }
+    }
+
     private void drawClose(Canvas c, float w) {
         closeR = 18 * d;
         closeX = w - 46 * d;
@@ -706,9 +854,9 @@ final class DosaNeonView extends View {
         float bh = lines.length * lh + 16 * d;
         rect.set(28 * d, h - 28 * d - bh, w - 28 * d, h - 28 * d);
         fill.setShader(null);
-        fill.setColor(0xF00A0402);
+        fill.setColor(alpha(theme.bg2, 0xF0));
         c.drawRoundRect(rect, 10 * d, 10 * d, fill);
-        text.setColor(0xFFFFE0B2);
+        text.setColor(CREAM);
         float y = rect.top + 8 * d + lh * 0.8f;
         for (String line : lines) {
             c.drawText(line, rect.left + 12 * d, y, text);
