@@ -24,6 +24,8 @@ final class TokenBoard {
     static final long GATHER_MS = 3_000L;
     /** A KOT missing from the board this long is treated as gone (protects against reload blips). */
     static final long MISSING_MS = 5_000L;
+    /** A KOT that is already ready when first seen and older than this is a leftover: not shown. */
+    static final long STALE_MS = 30 * 60_000L;
     static final int MAX_PER_CALL = 8;
 
     /** One Dine-In Dosa KOT as read from the board. */
@@ -32,6 +34,7 @@ final class TokenBoard {
         final String label;   // what the screen shows: "680", or "T4" when there is no token
         final String spoken;  // what the voice says: "680", "table 4"
         final long createdMs;
+        /** ready = Dosa part done; dispatched = KOT dispatched OR every Dosa item item-dispatched. */
         final boolean ready, dispatched, cancelled;
         final int dosas;
 
@@ -58,24 +61,34 @@ final class TokenBoard {
         int dosas;
         /** Still preparing although a newer order is already ready (e.g. a bigger order). */
         boolean overtaken;
+        final List<Rec> recs = new ArrayList<Rec>();
 
         Token(String label) {
             this.label = label;
         }
     }
 
-    private static final class Rec {
+    static final class Rec {
         Kot kot;
         long missingSince;
+        long readyAt;       // when this tracker saw the KOT's Dosa part become ready (0 = not ready)
+        boolean released;   // collected / auto-cleared / leftover: hidden while it stays on the board
     }
 
-    private final Map<Long, Rec> kots = new HashMap<Long, Rec>();
+    private final Map<Long, Rec> kots = new LinkedHashMap<Long, Rec>();
     private final Map<String, Token> tokens = new LinkedHashMap<String, Token>();
     private final List<Token> pending = new ArrayList<Token>();
     private long pendingSince;
     private boolean initialised;
+    private boolean lastAnnounce;
+    private long autoClearMs = 10 * 60_000L;
     private List<Token> readyList = new ArrayList<Token>();
     private List<Token> preparingList = new ArrayList<Token>();
+
+    /** Ready tokens leave the screen after this long even if nobody presses Dispatch (0 = never). */
+    void setAutoClearMinutes(int minutes) {
+        autoClearMs = Math.max(0, minutes) * 60_000L;
+    }
 
     /**
      * @param announce false while nobody is watching the Order Ready screen: tokens that become
@@ -90,6 +103,17 @@ final class TokenBoard {
             if (r == null) {
                 r = new Rec();
                 kots.put(k.id, r);
+                if (k.ready) {
+                    r.readyAt = now;
+                    // Already ready long after it was ordered: a leftover that was collected
+                    // without Dispatch being pressed. Don't put it on the TV.
+                    if (k.createdMs > 0 && now - k.createdMs > STALE_MS) r.released = true;
+                }
+            } else if (k.ready && r.readyAt == 0) {
+                r.readyAt = now;
+            } else if (!k.ready) {
+                r.readyAt = 0;
+                r.released = false; // something was added to it: it is cooking again
             }
             r.kot = k;
             r.missingSince = 0;
@@ -105,10 +129,28 @@ final class TokenBoard {
             }
         }
         for (Long id : drop) kots.remove(id);
+        rebuild(now, announce);
+    }
 
-        // Group live KOTs by token.
+    /** Re-evaluates auto-clear without a new board (call every tick). */
+    void refresh(long now) {
+        if (initialised) rebuild(now, lastAnnounce);
+    }
+
+    /** Staff marked a token as collected (long-press on the TV). */
+    void collect(String label, long now) {
+        Token t = tokens.get(label);
+        if (t == null || !t.ready) return;
+        for (Rec r : t.recs) r.released = true;
+        rebuild(now, lastAnnounce);
+    }
+
+    private void rebuild(long now, boolean announce) {
+        lastAnnounce = announce;
+        // Group live, unreleased KOTs by token.
         Map<String, Token> next = new LinkedHashMap<String, Token>();
         for (Rec r : kots.values()) {
+            if (r.released) continue;
             Kot k = r.kot;
             Token t = next.get(k.label);
             if (t == null) {
@@ -118,24 +160,30 @@ final class TokenBoard {
                 t.ready = true;
                 next.put(k.label, t);
             }
+            t.recs.add(r);
             if (k.createdMs > 0 && (t.createdMs <= 0 || k.createdMs < t.createdMs)) t.createdMs = k.createdMs;
             t.ready &= k.ready;
+            t.readyAt = Math.max(t.readyAt, r.readyAt);
             t.dosas += Math.max(1, k.dosas);
+        }
+        // Auto-clear tokens that have been ready for too long.
+        if (autoClearMs > 0) {
+            List<String> expired = new ArrayList<String>();
+            for (Token t : next.values()) {
+                if (t.ready && t.readyAt > 0 && now - t.readyAt >= autoClearMs) {
+                    for (Rec r : t.recs) r.released = true;
+                    expired.add(t.label);
+                }
+            }
+            for (String l : expired) next.remove(l);
         }
 
         for (Token t : next.values()) {
             Token old = tokens.get(t.label);
             boolean wasReady = old != null && old.ready;
-            if (t.ready) {
-                if (wasReady) {
-                    t.readyAt = old.readyAt;
-                } else {
-                    t.readyAt = now;
-                    if (announce && initialised) {
-                        if (pending.isEmpty()) pendingSince = now;
-                        pending.add(t);
-                    }
-                }
+            if (t.ready && !wasReady && announce && initialised) {
+                if (pending.isEmpty()) pendingSince = now;
+                pending.add(t);
             }
         }
         // Drop calls for tokens that are gone or went back to preparing (e.g. a dosa was added).

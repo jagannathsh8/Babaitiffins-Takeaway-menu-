@@ -85,6 +85,47 @@ public final class TokenBoardTest {
         check("overtaken", ob.preparing().get(0).overtaken && !ob.preparing().get(1).overtaken,
                 ob.preparing().get(0).label + "/" + ob.preparing().get(1).label);
 
+        // --- release rules ---
+        long T = 10_000_000_000L;
+        TokenBoard rb = new TokenBoard();
+        // Leftover at start: ready and ordered 2 h ago -> never shown. Fresh ready one is shown.
+        List<TokenBoard.Kot> rbBoard = new ArrayList<TokenBoard.Kot>();
+        rbBoard.add(k(100, "300", T - 120 * 60_000L, true));
+        rbBoard.add(k(101, "301", T - 6 * 60_000L, true));
+        rb.update(rbBoard, T, true);
+        check("stale leftover hidden", labels(rb.ready()).equals("301"), labels(rb.ready()));
+        // Dosa items item-dispatched (KOT still open for other items) -> released.
+        rbBoard.set(1, new TokenBoard.Kot(101, "301", "301", T - 6 * 60_000L, true, true, false, 1));
+        rb.update(rbBoard, T + 2_000, true);
+        check("dosa-dispatched released", rb.ready().isEmpty(), labels(rb.ready()));
+        // Auto-clear after 10 min ready.
+        rbBoard.add(k(102, "302", T, false));
+        rb.update(rbBoard, T + 4_000, true);
+        rbBoard.set(2, k(102, "302", T, true));
+        rb.update(rbBoard, T + 6_000, true);
+        rb.refresh(T + 6_000 + 9 * 60_000L);
+        check("still ready at 9 min", labels(rb.ready()).equals("302"), labels(rb.ready()));
+        rb.refresh(T + 6_000 + 10 * 60_000L);
+        check("auto-cleared at 10 min", rb.ready().isEmpty(), labels(rb.ready()));
+        // Manual collect + later reuse of the same token number by a new KOT.
+        rbBoard.add(k(103, "303", T + 700_000, true));
+        rb.update(rbBoard, T + 700_000, true);
+        rb.collect("303", T + 701_000);
+        check("collected", rb.ready().isEmpty(), labels(rb.ready()));
+        rbBoard.add(k(104, "303", T + 800_000, false)); // same number, new order (old KOT still on board)
+        rb.update(rbBoard, T + 800_000, true);
+        check("reused number = new order only", labels(rb.preparing()).equals("303") && rb.preparing().get(0).dosas == 1,
+                labels(rb.preparing()));
+        rbBoard.set(rbBoard.size() - 1, k(104, "303", T + 800_000, true));
+        rb.update(rbBoard, T + 802_000, true);
+        check("reused number called", labels(rb.takeCall(T + 806_000)).equals("303"), "");
+        // Auto-clear off.
+        TokenBoard off = new TokenBoard();
+        off.setAutoClearMinutes(0);
+        off.update(Arrays.asList(k(1, "9", T, true)), T, true);
+        off.refresh(T + 60 * 60_000L);
+        check("auto-clear off keeps", labels(off.ready()).equals("9"), labels(off.ready()));
+
         // Table fallback in the phrase.
         TokenBoard.Token tt = new TokenBoard.Token("T4");
         tt.spoken = "table 4";

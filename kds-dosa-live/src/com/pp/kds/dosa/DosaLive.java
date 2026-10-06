@@ -160,6 +160,7 @@ public final class DosaLive {
     private static void start(Context ctx) {
         if (handler != null) return; // already running (activity recreated)
         prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        tokens.setAutoClearMinutes(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("autoclear_min", 10));
         stats = new DosaStats();
         Map<String, String> saved = new HashMap<String, String>();
         for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
@@ -214,6 +215,8 @@ public final class DosaLive {
         } catch (Throwable ignored) {
         }
         try {
+            tokens.refresh(now); // auto-clear long-ready tokens even when the board is quiet
+            if (panel != null) panel.bindTokens();
             List<TokenBoard.Token> call = tokens.takeCall(now);
             if (!call.isEmpty() && panel != null) panel.announce(call);
         } catch (Throwable ignored) {
@@ -250,8 +253,10 @@ public final class DosaLive {
             int dosas = 0;
             for (double v : q) dosas += (int) Math.max(1, Math.round(v));
             String[] tok = tokenLabel(kot);
+            // Released when the KOT is dispatched, or when every Dosa item on it was dispatched
+            // (the KOT can stay open on the board for its other items).
             tokenOut.add(new TokenBoard.Kot(kot.getId(), tok[0], tok[1], created == null ? 0L : created, ready,
-                    "10".equals(status), cancelled, dosas));
+                    "10".equals(status) || dosaDispatched(kot), cancelled, dosas));
         }
         return out;
     }
@@ -276,6 +281,22 @@ public final class DosaLive {
         String id = String.valueOf(kot.getId());
         if (id.length() > 3) id = id.substring(id.length() - 3);
         return new String[]{"#" + id, "order " + id};
+    }
+
+    /** True when every (non-cancelled) Dosa item on the KOT has item status 10 = dispatched. */
+    private static boolean dosaDispatched(Kot kot) {
+        List<KotItem> items = kot.getItems();
+        if (items == null) return false;
+        boolean any = false;
+        for (KotItem item : items) {
+            String cat = item.getCategory();
+            if (cat == null || !cat.toLowerCase(Locale.US).contains(DOSA)) continue;
+            Integer st = item.getStatus();
+            if (BoardVisualsKt.isItemCancelled(st)) continue;
+            if (st == null || st != 10) return false;
+            any = true;
+        }
+        return any;
     }
 
     /** Collects the Dosa items; returns true when every one of them is marked ready. */
@@ -428,6 +449,18 @@ public final class DosaLive {
 
                         @Override public void onDosaLive() { setMode(DOSA_LIVE); }
 
+                        @Override public void onCollected(String label) {
+                            tokens.collect(label, System.currentTimeMillis());
+                            bindTokens();
+                        }
+
+                        @Override public void onAutoClear(int minutes) {
+                            ui.edit().putInt("autoclear_min", minutes).apply();
+                            tokens.setAutoClearMinutes(minutes);
+                            tokens.refresh(System.currentTimeMillis());
+                            bindTokens();
+                        }
+
                         @Override public void onVoice(boolean on) {
                             ui.edit().putBoolean("voice", on).apply();
                             if (!on) {
@@ -444,6 +477,7 @@ public final class DosaLive {
                 }
                 board.setTheme(ui.getInt("theme", 0));
                 board.setVoice(voiceOn());
+                board.setAutoClear(ui.getInt("autoclear_min", 10));
                 board.setVisibility(View.VISIBLE);
                 board.bringToFront();
                 view.setVisibility(View.INVISIBLE);

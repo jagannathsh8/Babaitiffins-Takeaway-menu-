@@ -44,6 +44,11 @@ final class TokenBoardView extends View {
         void onDosaLive();
 
         void onVoice(boolean on);
+
+        /** Staff long-pressed a ready token: collected, take it off the screen. */
+        void onCollected(String label);
+
+        void onAutoClear(int minutes);
     }
 
     private static final int GREEN = 0xFF69F0AE, GREEN_DEEP = 0xFF1B5E20, GREEN_DARK = 0xFF0F3D16, MINT = 0xFFC8FFE0;
@@ -94,7 +99,15 @@ final class TokenBoardView extends View {
     private List<TokenBoard.Token> call;
     private long callAt;
     private long controlsAt = SystemClock.uptimeMillis();
-    private final RectF hitDosa = new RectF(), hitVoice = new RectF(), hitClose = new RectF();
+    private final RectF hitDosa = new RectF(), hitVoice = new RectF(), hitClose = new RectF(), hitClear = new RectF();
+    private static final int[] CLEAR_CHOICES = {5, 10, 15, 20, 30, 0};
+    private static final long HOLD_MS = 800L;
+    private int autoClearMin = 10;
+    private final List<RectF> cardRects = new ArrayList<RectF>();
+    private final List<String> cardLabels = new ArrayList<String>();
+    private int cardCount;
+    private String pressLabel;
+    private long pressAt;
 
     private static final int SPARKS = 26;
     private final float[] sx = new float[SPARKS], sy = new float[SPARKS], ss = new float[SPARKS], sr = new float[SPARKS];
@@ -177,12 +190,79 @@ final class TokenBoardView extends View {
         invalidate();
     }
 
+    void setAutoClear(int minutes) {
+        autoClearMin = minutes;
+        invalidate();
+    }
+
+    private String cardAt(float x, float y) {
+        for (int i = cardCount - 1; i >= 0; i--) if (cardRects.get(i).contains(x, y)) return cardLabels.get(i);
+        return null;
+    }
+
+    private void addCardHit(float x, float y, float w, float h, String label) {
+        if (cardRects.size() <= cardCount) cardRects.add(new RectF());
+        if (cardLabels.size() <= cardCount) cardLabels.add(label);
+        cardRects.get(cardCount).set(x, y, x + w, y + h);
+        cardLabels.set(cardCount, label);
+        cardCount++;
+    }
+
+    /** 0..1 while a ready card is being held down (draws the "collected" fill). */
+    private float holdProgress(String label) {
+        if (pressLabel == null || !pressLabel.equals(label)) return 0f;
+        return Math.min(1f, (SystemClock.uptimeMillis() - pressAt) / (float) HOLD_MS);
+    }
+
+    private void drawHold(Canvas c, float x, float y, float w, float h, float r, String label) {
+        float p = holdProgress(label);
+        if (p <= 0f) return;
+        rect.set(x, y + h * (1 - p), x + w, y + h);
+        c.save();
+        path.reset();
+        dst.set(x, y, x + w, y + h);
+        path.addRoundRect(dst, r, r, Path.Direction.CW);
+        c.clipPath(path);
+        fill.setShader(null);
+        fill.setColor(alpha(Color.WHITE, (int) (110 * p)));
+        c.drawRect(rect, fill);
+        c.restore();
+        if (p >= 1f) {
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTypeface(bold);
+            text.setTextSize(fit("\u2713 COLLECTED", Math.min(28 * s, h * 0.3f), w - 10 * s));
+            text.setColor(GREEN_DARK);
+            c.drawText("\u2713 COLLECTED", x + w / 2f, y + h / 2f + text.getTextSize() * 0.36f, text);
+            text.setTextAlign(Paint.Align.LEFT);
+        }
+        fill.setAlpha(255);
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
-        if (ev.getAction() == MotionEvent.ACTION_UP) {
+        int act = ev.getActionMasked();
+        if (act == MotionEvent.ACTION_DOWN) {
+            pressLabel = cardAt(ev.getX(), ev.getY());
+            pressAt = SystemClock.uptimeMillis();
+        } else if (act == MotionEvent.ACTION_CANCEL) {
+            pressLabel = null;
+        } else if (act == MotionEvent.ACTION_MOVE && pressLabel != null
+                && !pressLabel.equals(cardAt(ev.getX(), ev.getY()))) {
+            pressLabel = null; // finger slid off the card
+        }
+        if (act == MotionEvent.ACTION_UP) {
             float x = ev.getX(), y = ev.getY();
             boolean visible = controlsAlpha() > 0.3f;
-            if (visible && hitClose.contains(x, y)) {
+            String held = pressLabel != null && SystemClock.uptimeMillis() - pressAt >= HOLD_MS ? pressLabel : null;
+            pressLabel = null;
+            if (held != null) {
+                if (listener != null) listener.onCollected(held);
+            } else if (visible && hitClear.contains(x, y)) {
+                int i = 0;
+                while (i < CLEAR_CHOICES.length && CLEAR_CHOICES[i] != autoClearMin) i++;
+                autoClearMin = CLEAR_CHOICES[(i + 1) % CLEAR_CHOICES.length];
+                if (listener != null) listener.onAutoClear(autoClearMin);
+            } else if (visible && hitClose.contains(x, y)) {
                 if (listener != null) listener.onClose();
             } else if (visible && hitDosa.contains(x, y)) {
                 if (listener != null) listener.onDosaLive();
@@ -221,6 +301,7 @@ final class TokenBoardView extends View {
         boolean land = w >= h;
         s = land ? Math.min(w / 1920f, h / 1080f) : Math.min(w / 1080f, h / 1920f);
 
+        cardCount = 0;
         drawBackground(c, w, h, t);
         drawBorder(c, w, h, t);
         float pad = 44 * s;
@@ -338,7 +419,7 @@ final class TokenBoardView extends View {
             text.setTypeface(bold);
             text.setLetterSpacing(0.3f);
             text.setTextSize(36 * s);
-            text.setColor(Color.WHITE);
+            text.setColor(alpha(Color.WHITE, (int) (255 * (1f - 0.92f * controlsAlpha()))));
             text.setShadowLayer(18 * s, 0, 0, theme.P);
             c.drawText("ORDER READY", x + w * 0.52f, cy + 12 * s, text);
             text.clearShadowLayer();
@@ -508,19 +589,21 @@ final class TokenBoardView extends View {
         // info column
         float ix = x + 48 * s + nw + 46 * s;
         float iw = x + w - 2 * bellR - 60 * s - ix;
+        float k = Math.min(1f, h / (330 * s));        // shrinks with the card when many are ready
+        float fk = Math.max(0.72f, k);
         float iy = y + h * 0.36f;
-        pill(c, ix, iy - 22 * s, "DINE-IN", 22 * s, 0x24FFFFFF, Color.WHITE);
+        pill(c, ix, iy - 22 * s * k, "DINE-IN", 22 * s * fk, 0x24FFFFFF, Color.WHITE);
         text.setTypeface(bold);
-        text.setTextSize(fit("Your dosa is ready!", 46 * s, iw));
+        text.setTextSize(fit("Your dosa is ready!", 46 * s * fk, iw));
         text.setColor(Color.WHITE);
-        c.drawText("Your dosa is ready!", ix, iy + 70 * s, text);
+        c.drawText("Your dosa is ready!", ix, iy + 70 * s * k, text);
         text.setTypeface(medium);
-        text.setTextSize(fit("Please collect at the counter", 24 * s, iw));
+        text.setTextSize(fit("Please collect at the counter", 24 * s * fk, iw));
         text.setColor(MINT);
-        c.drawText("Please collect at the counter", ix, iy + 108 * s, text);
-        text.setTextSize(20 * s);
+        c.drawText("Please collect at the counter", ix, iy + 106 * s * k, text);
+        text.setTextSize(20 * s * fk);
         text.setColor(alpha(MINT, 0xBB));
-        c.drawText(ago(tk.readyAt), ix, iy + 140 * s, text);
+        c.drawText(ago(tk.readyAt), ix, Math.min(iy + 138 * s * k, y + h - 12 * s), text);
 
         // bell with ripples
         float bx = x + w - bellR - 40 * s, by = y + h / 2f;
@@ -543,7 +626,9 @@ final class TokenBoardView extends View {
         c.drawText("\uD83D\uDD14", bx, by + bellR * 0.32f, text);
         c.restore();
         text.setTextAlign(Paint.Align.LEFT);
+        drawHold(c, x, y, w, h, r, tk.label);
         c.restore();
+        addCardHit(x, y, w, h, tk.label);
     }
 
     private void drawReadyCard(Canvas c, float x, float y, float w, float h, TokenBoard.Token tk, long now, float t,
@@ -602,7 +687,9 @@ final class TokenBoardView extends View {
             }
         }
         text.setTextAlign(Paint.Align.LEFT);
+        drawHold(c, x, y, w, h, r, tk.label);
         c.restore();
+        addCardHit(x, y, w, h, tk.label);
     }
 
     // ---- PREPARING -----------------------------------------------------------------------
@@ -879,6 +966,7 @@ final class TokenBoardView extends View {
         hitDosa.setEmpty();
         hitVoice.setEmpty();
         hitClose.setEmpty();
+        hitClear.setEmpty();
         if (a <= 0f) return;
         float h = 40 * s, y = 86 * s - h / 2f;
         text.setTypeface(bold);
@@ -898,7 +986,9 @@ final class TokenBoardView extends View {
         stroke.setAlpha(255);
         String v = voiceOn ? "\uD83D\uDD0A  VOICE ON" : "\uD83D\uDD07  VOICE OFF";
         float vw = button(c, bx - 12 * s, y, h, v, voiceOn ? 0xFF2E7D32 : 0xFF5D4037, a, hitVoice);
-        button(c, bx - 12 * s - vw - 12 * s, y, h, "\u2726  DOSA LIVE", 0xFFE65100, a, hitDosa);
+        float dw = button(c, bx - 12 * s - vw - 12 * s, y, h, "\u2726  DOSA LIVE", 0xFFE65100, a, hitDosa);
+        String cl = autoClearMin > 0 ? "\u23F1  CLEAR AFTER " + autoClearMin + " MIN" : "\u23F1  AUTO-CLEAR OFF";
+        button(c, bx - 12 * s - vw - 12 * s - dw - 12 * s, y, h, cl, 0xFF37474F, a, hitClear);
     }
 
     /** Right-aligned pill button ending at {@code right}; returns its width. */
