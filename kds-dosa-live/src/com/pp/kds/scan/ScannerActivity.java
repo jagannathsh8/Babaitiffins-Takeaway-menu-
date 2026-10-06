@@ -169,6 +169,12 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
         if (lastCount > 0) {
             lastTitle.setText("\u2713 FOOD READY \u2022 " + lastCount + (lastCount == 1 ? " order" : " orders"));
             lastTitle.setTextColor(0xFF69F0AE);
+        } else if (lastCount == NOT_CONNECTED) {
+            lastTitle.setText("\u26A0 KDS not connected \u2014 not marked");
+            lastTitle.setTextColor(0xFFFF8A65);
+        } else if (lastCount == FAILED) {
+            lastTitle.setText("\u26A0 Could not mark \u2014 scan again");
+            lastTitle.setTextColor(0xFFFF8A65);
         } else {
             lastTitle.setText("\u2715 No preparing order ending " + tail);
             lastTitle.setTextColor(0xFFFFB300);
@@ -367,7 +373,11 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
             final String code = text;
             main.post(new Runnable() {
                 @Override public void run() {
-                    onCode(code, "camera");
+                    try {
+                        onCode(code, "camera");
+                    } catch (Throwable ignored) {
+                        // never leave scan mode because of a marking problem
+                    }
                 }
             });
         }
@@ -376,6 +386,7 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
     // ---- result ----------------------------------------------------------------------------
 
     private void onCode(String code, String source) {
+        if (isFinishing()) return;
         int n = record(this, code, source);
         showLast();
         overlay.flash(n > 0 ? 0xFF69F0AE : 0xFFFFB300);
@@ -387,9 +398,41 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
         }
     }
 
-    /** Marks the order(s) and remembers the scan. Used by the camera, HID scanners and the board. */
+    static final int NOT_CONNECTED = -2, FAILED = -3;
+    private static java.lang.reflect.Field vmField;
+
+    /** True when the KDS board (and its order list) is loaded, i.e. connected to the POS. */
+    static boolean boardReady() {
+        try {
+            if (vmField == null) {
+                vmField = ScannerBridge.class.getDeclaredField("dashboardViewModel");
+                vmField.setAccessible(true);
+            }
+            Object vm = vmField.get(null);
+            if (vm == null) return false;
+            Object st = ((com.pp.kds.feature.dashboard.DashboardViewModel) vm).getState().getValue();
+            return st != null && ((com.pp.kds.feature.dashboard.DashboardUiState) st).getCards() != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Marks the order(s) and remembers the scan. Used by the camera, HID scanners and the board.
+     * Never throws: when the board is not connected it reports NOT_CONNECTED instead of letting
+     * ScannerBridge fall back to a missing field (which used to crash the app).
+     */
     public static int record(Context ctx, String code, String source) {
-        int n = ScannerBridge.markFromBarcode(ctx, code);
+        int n;
+        if (!boardReady()) {
+            n = NOT_CONNECTED;
+        } else {
+            try {
+                n = ScannerBridge.markFromBarcode(ctx, code);
+            } catch (Throwable t) {
+                n = FAILED;
+            }
+        }
         lastCode = code;
         lastCount = n;
         lastAt = System.currentTimeMillis();
@@ -400,6 +443,8 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
     public static String lastSummary() {
         if (lastCode == null) return null;
         String tail = lastCode.length() > 4 ? lastCode.substring(lastCode.length() - 4) : lastCode;
+        if (lastCount == NOT_CONNECTED) return "\u26A0 KDS not connected \u2014 \u2026" + tail + " not marked";
+        if (lastCount == FAILED) return "\u26A0 Could not mark \u2026" + tail + " \u2014 scan again";
         return lastCount > 0 ? "\u2713 FOOD READY \u2022 " + lastCount + (lastCount == 1 ? " order" : " orders") + " \u2022 \u2026" + tail
                 : "\u2715 No preparing order ending " + tail;
     }
@@ -417,7 +462,12 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
         }
         if (e.getAction() == KeyEvent.ACTION_DOWN) {
             if (k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_NUMPAD_ENTER || k == KeyEvent.KEYCODE_TAB) {
-                if (keyBuf.length() >= 4) onCode(keyBuf.toString(), "USB/BT scanner");
+                if (keyBuf.length() >= 4) {
+                    try {
+                        onCode(keyBuf.toString(), "USB/BT scanner");
+                    } catch (Throwable ignored) {
+                    }
+                }
                 keyBuf.setLength(0);
                 return true;
             }
