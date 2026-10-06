@@ -61,6 +61,7 @@ public final class DosaLive {
     private static Field vmField;
     private static Panel panel;
     private static SharedPreferences prefs;
+    private static View buttonRow;
     private static boolean seedApplied;
 
     private DosaLive() {}
@@ -72,6 +73,85 @@ public final class DosaLive {
         } catch (Throwable ignored) {
             // Never let the add-on break the KDS.
         }
+        try {
+            setupAutoHide(activity);
+            android.view.Window w = activity.getWindow();
+            w.setCallback(new KeyScanCallback(w.getCallback(), activity)); // USB/BT scanner + touch
+        } catch (Throwable ignored) {
+        }
+    }
+
+    // ---- auto-hiding buttons + scan banner ---------------------------------------------------
+
+    private static final long CONTROLS_VISIBLE_MS = 6000;
+    private static final List<View> controls = new ArrayList<View>();
+    private static Handler uiHandler;
+    private static final Runnable hideControls = new Runnable() {
+        @Override public void run() {
+            for (final View v : controls) {
+                v.animate().alpha(0f).setDuration(600).withEndAction(new Runnable() {
+                    @Override public void run() {
+                        if (v.getAlpha() < 0.05f) v.setVisibility(View.INVISIBLE);
+                    }
+                }).start();
+            }
+        }
+    };
+
+    /** Camera button + DOSA LIVE / PREP LIVE fade out after a few seconds; any tap brings them back. */
+    private static void setupAutoHide(Activity a) {
+        uiHandler = new Handler(Looper.getMainLooper());
+        controls.clear();
+        if (buttonRow != null) controls.add(buttonRow);
+        ViewGroup content = (ViewGroup) a.findViewById(android.R.id.content);
+        for (int i = 0; i < content.getChildCount(); i++) {
+            View v = content.getChildAt(i);
+            CharSequence cd = v.getContentDescription();
+            if (v instanceof android.widget.ImageButton && cd != null && cd.toString().startsWith("Scan order")) controls.add(v);
+        }
+        onUserTouch();
+    }
+
+    static void onUserTouch() {
+        if (uiHandler == null) return;
+        uiHandler.removeCallbacks(hideControls);
+        for (View v : controls) {
+            v.animate().cancel();
+            v.setVisibility(View.VISIBLE);
+            v.setAlpha(1f);
+        }
+        uiHandler.postDelayed(hideControls, CONTROLS_VISIBLE_MS);
+    }
+
+    private static TextView banner;
+
+    /** Short result banner on the board after a USB/Bluetooth scanner scan. */
+    static void showScanBanner(Activity a, String msg, boolean ok) {
+        if (msg == null) return;
+        float d = a.getResources().getDisplayMetrics().density;
+        ViewGroup content = (ViewGroup) a.findViewById(android.R.id.content);
+        if (banner == null || banner.getParent() == null) {
+            banner = new TextView(a);
+            banner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+            banner.setTypeface(Typeface.DEFAULT_BOLD);
+            banner.setPadding((int) (20 * d), (int) (10 * d), (int) (20 * d), (int) (10 * d));
+            banner.setElevation(40 * d);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+            lp.topMargin = (int) (10 * d);
+            content.addView(banner, lp);
+        }
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(14 * d);
+        bg.setColor(ok ? 0xF01B5E20 : 0xF0E65100);
+        banner.setBackground(bg);
+        banner.setTextColor(Color.WHITE);
+        banner.setText(msg);
+        banner.bringToFront();
+        banner.animate().cancel();
+        banner.setAlpha(1f);
+        banner.setVisibility(View.VISIBLE);
+        banner.animate().alpha(0f).setStartDelay(4000).setDuration(700).start();
     }
 
     // ---- live tracking -------------------------------------------------------------------
@@ -229,6 +309,7 @@ public final class DosaLive {
         lp.leftMargin = (int) (activity.getResources().getDisplayMetrics().widthPixels * 0.14f + 52 * d);
         lp.topMargin = (int) (7 * d);
         ((ViewGroup) activity.findViewById(android.R.id.content)).addView(row, lp);
+        buttonRow = row;
     }
 
     private static TextView pill(Activity a, String label, int[] colors, int glow) {

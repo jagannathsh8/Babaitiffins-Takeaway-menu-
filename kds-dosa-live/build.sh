@@ -6,12 +6,13 @@
 # tools dir must contain: apktool.jar (2.10+), jadx-1.5.1-all.jar (provides D8),
 # android-all.jar (Robolectric android-all 14, compile-only), uber-apk-signer.jar
 #
-# Only two things change in the APK:
-#   1. classes4.dex  - MainActivity.onCreate gets ONE extra line: DosaLive.install(this)
-#   2. classes7.dex  - new, contains com.pp.kds.dosa.* (this folder's src/)
+# What changes in the APK:
+#   1. classes4.dex  - MainActivity.onCreate gets ONE extra line: DosaLive.install(this);
+#                      the old camera ScannerActivity is removed (replaced from src/)
+#   2. classes7.dex  - new, contains com.pp.kds.dosa.* and the new com.pp.kds.scan.ScannerActivity
 #   3. assets/ - mascot, food photos, prep_profile.json + prep_days.txt (make_prep_profile.py)
 # All other dex files, resources and the manifest are copied byte-for-byte from the input,
-# so the scanner (com.pp.kds.scan.*) and the board logic are untouched.
+# ScannerBridge (marks Food Ready) and the board logic are untouched.
 set -euo pipefail
 
 IN=$(realpath "$1"); OUT=$(realpath -m "$2"); TOOLS=$(realpath "$3")
@@ -49,6 +50,9 @@ if "DosaLive" not in s:
     open(p, "w").write(s)
 PY
 grep -q "DosaLive;->install" "$SMALI"
+# The camera scan screen is replaced by src/com/pp/kds/scan/ScannerActivity.java (same class name,
+# so the manifest and the KDS camera button stay as they are). ScannerBridge is kept unchanged.
+rm -f "$WORK"/dec/smali_classes4/com/pp/kds/scan/ScannerActivity*.smali
 # Keep only the classes4 sources for the rebuild; every other dex is reused unchanged.
 for d in "$WORK"/dec/smali*; do [ "$(basename "$d")" = smali_classes4 ] || rm -rf "$d"; done
 mv "$WORK/dec/smali_classes4" "$WORK/dec/smali"
