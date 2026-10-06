@@ -57,24 +57,48 @@ final class RemoteNav {
             if (e.getAction() == KeyEvent.ACTION_UP) closer.run();
             return true;
         }
+        View scope = topOverlay(content);
+        if (scope != null) {
+            // One of our full-screen windows is open: keep the remote inside it.
+            if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                prepare(scope);
+                View focused = content.findFocus();
+                List<View> roots = new ArrayList<View>();
+                roots.add(scope);
+                if (focused == null || !insideAny(focused, roots)) {
+                    View first = firstFocusable(deepestOverlay(scope));
+                    if (first == null) first = firstFocusable(scope);
+                    if (first != null) {
+                        first.requestFocus();
+                        return true; // this press only puts the highlight on screen
+                    }
+                }
+            }
+            return false;
+        }
+        // On the KDS board / Petpooja settings: never take focus away from the KDS itself.
+        List<View> ours = DosaLive.controlViews();
+        for (View r : ours) prepare(r); // reachable by normal arrow navigation
+        boolean menu = k == KeyEvent.KEYCODE_MENU;
         if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
-            DosaLive.onUserTouch(); // bring the faded buttons back
-            View scope = topOverlay(content);
-            List<View> roots = new ArrayList<View>();
-            if (scope != null) roots.add(scope);
-            else roots.addAll(DosaLive.controlViews());
-            for (View r : roots) prepare(r);
             View focused = content.findFocus();
-            if (focused == null || !insideAny(focused, roots)) {
-                View first = scope != null ? firstFocusable(deepestOverlay(scope)) : firstFocusableIn(roots);
+            if (menu || (focused == null && k != KeyEvent.KEYCODE_ENTER && k != KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                // MENU = jump to DOSA LIVE; or nothing on screen has focus yet.
+                DosaLive.onUserTouch();
+                View first = firstFocusableIn(ours);
                 if (first != null) {
                     first.requestFocus();
-                    return true; // this press only puts the highlight on screen
+                    return true;
                 }
             }
         }
-        if (k == KeyEvent.KEYCODE_MENU) return true;
-        return false; // normal Android focus navigation / click from here
+        if (focusedIsOurs(content, ours)) DosaLive.onUserTouch(); // keep our buttons visible while used
+        return menu;
+    }
+
+    private static boolean focusedIsOurs(ViewGroup content, List<View> ours) {
+        View f = content.findFocus();
+        return f != null && insideAny(f, ours);
     }
 
     /** Makes clickable views focusable with a visible focus highlight. */
