@@ -56,6 +56,8 @@ final class TokenBoard {
         long readyAt;
         boolean ready;
         int dosas;
+        /** Still preparing although a newer order is already ready (e.g. a bigger order). */
+        boolean overtaken;
 
         Token(String label) {
             this.label = label;
@@ -156,6 +158,9 @@ final class TokenBoard {
         Collections.sort(preparing, new Comparator<Token>() {
             @Override public int compare(Token a, Token b) { return Long.compare(a.createdMs, b.createdMs); }
         });
+        long newestReady = 0;
+        for (Token t : ready) newestReady = Math.max(newestReady, t.createdMs);
+        for (Token t : preparing) t.overtaken = t.createdMs > 0 && t.createdMs < newestReady;
         readyList = ready;
         preparingList = preparing;
     }

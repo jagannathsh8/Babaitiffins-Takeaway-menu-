@@ -84,6 +84,11 @@ final class TokenBoardView extends View {
     // animation state
     private final Map<String, Long> firstSeen = new HashMap<String, Long>();
     private final Map<String, Float> rowY = new HashMap<String, Float>();
+    private final Map<String, float[]> cardPos = new HashMap<String, float[]>();
+    private static final float READY_PAGE_SECONDS = 7f;
+    private int readyPage;
+    private long readyPageAt;
+    private float[] flowX = new float[0], flowY = new float[0], flowW = new float[0], flowH = new float[0];
     private String spotLabel;
     private long spotAt;
     private List<TokenBoard.Token> call;
@@ -148,6 +153,10 @@ final class TokenBoardView extends View {
         for (TokenBoard.Token t : preparing) live.add("P" + t.label);
         firstSeen.keySet().retainAll(live);
         rowY.keySet().retainAll(live);
+        List<String> liveCards = new ArrayList<String>();
+        for (TokenBoard.Token t : ready) liveCards.add("R" + t.label);
+        for (TokenBoard.Token t : preparing) liveCards.add("C" + t.label);
+        cardPos.keySet().retainAll(liveCards);
         String top = ready.isEmpty() ? null : ready.get(0).label;
         if (top != null && !top.equals(spotLabel)) spotAt = now;
         spotLabel = top;
@@ -239,18 +248,23 @@ final class TokenBoardView extends View {
     private void drawBackground(Canvas c, float w, float h, float t) {
         c.drawColor(theme.bg2);
         int n = photos == null ? 0 : photos.length;
+        float tint = 1f;
         if (n > 0) {
             float slide = 12f;
             int k = (int) (t / slide);
             drawPhoto(c, w, h, t, k, n, slide, 255);
             float local = t - k * slide;
-            if (local > slide - 2f) drawPhoto(c, w, h, t, k + 1, n, slide, (int) (255 * (local - slide + 2f) / 2f));
+            float mix = local > slide - 2f ? (local - slide + 2f) / 2f : 0f;
+            if (mix > 0) drawPhoto(c, w, h, t, k + 1, n, slide, (int) (255 * mix));
+            tint = DosaNeonView.tintScale(k, k + 1, mix); // same brightness on every photo
         }
         fill.setShader(new RadialGradient(w * 0.3f, h * 0.4f, Math.max(w, h),
-                new int[]{alpha(theme.bg0, 0xCC), alpha(theme.bg1, 0xE6), alpha(theme.bg2, 0xF8)},
+                new int[]{alpha(theme.bg0, 0xB0), alpha(theme.bg1, 0xCC), alpha(theme.bg2, 0xEA)},
                 new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
+        fill.setAlpha((int) (255 * tint));
         c.drawRect(0, 0, w, h, fill);
         fill.setShader(null);
+        fill.setAlpha(255);
         // drifting embers
         for (int i = 0; i < SPARKS; i++) {
             float life = (sy[i] + t * ss[i]) % 1f;
@@ -354,43 +368,65 @@ final class TokenBoardView extends View {
 
     // ---- READY ---------------------------------------------------------------------------
 
-    private void drawReady(Canvas c, float x, float y, float w, float h, long now, float t, int cols) {
-        sectionTitle(c, x, y + 26 * s, w, "\u2713  READY \u2014 PLEASE COLLECT", GREEN,
-                ready.isEmpty() ? null : (ready.size() == 1 ? "1 ready" : ready.size() + " ready"));
-        float top = y + 52 * s;
-        float spotH = Math.min(330 * s, h * 0.46f);
-        drawSpotlight(c, x, top, w, spotH, now, t);
-
-        float gap = 16 * s;
-        float gy = top + spotH + 20 * s;
-        float cardH = 150 * s;
-        int rows = Math.max(1, (int) ((y + h - gy + gap) / (cardH + gap)));
-        float cw = (w - (cols - 1) * gap) / cols;
-        int slots = rows * cols;
+    private void drawReady(Canvas c, float x, float y, float w, float h, long now, float t, int maxCols) {
         int others = Math.max(0, ready.size() - 1);
-        boolean overflow = others > slots;
-        int shown = Math.min(others, overflow ? slots - 1 : slots);
-        for (int i = 0; i < shown; i++) {
-            TokenBoard.Token tk = ready.get(i + 1);
-            float cx = x + (i % cols) * (cw + gap);
-            float cy = gy + (i / cols) * (cardH + gap);
-            drawReadyCard(c, cx, cy, cw, cardH, tk, now, t);
+        float top = y + 52 * s;
+        float spotFull = Math.min(330 * s, h * 0.46f);
+        float spotH = others <= 8 ? spotFull : others <= 16 ? Math.min(250 * s, h * 0.36f) : Math.min(200 * s, h * 0.28f);
+        float gy = top + spotH + 18 * s, gh = y + h - gy;
+        float gap = 14 * s;
+
+        // Auto-size: the column count that gives the biggest cards while fitting every token.
+        int cols = 1;
+        float ch = 0;
+        for (int k = 1; k <= Math.max(1, Math.min(others, 12)); k++) {
+            int rows = (others + k - 1) / k;
+            float cw = (w - (k - 1) * gap) / k;
+            float hh = Math.min(Math.min((gh - (rows - 1) * gap) / Math.max(rows, 1), 150 * s), cw * 0.72f);
+            if (hh > ch) {
+                ch = hh;
+                cols = k;
+            }
         }
-        if (overflow) {
-            int i = slots - 1;
-            float cx = x + (i % cols) * (cw + gap);
-            float cy = gy + (i / cols) * (cardH + gap);
-            panel(c, cx, cy, cw, cardH, 22 * s, alpha(GREEN_DARK, 0xCC), alpha(GREEN, 0x77));
-            text.setTextAlign(Paint.Align.CENTER);
-            text.setTypeface(bold);
-            text.setTextSize(48 * s);
-            text.setColor(Color.WHITE);
-            c.drawText("+" + (others - shown), cx + cw / 2f, cy + cardH * 0.52f, text);
-            text.setTypeface(condensed);
-            text.setTextSize(18 * s);
-            text.setColor(MINT);
-            c.drawText("MORE READY", cx + cw / 2f, cy + cardH * 0.78f, text);
-            text.setTextAlign(Paint.Align.LEFT);
+        int perPage = Math.max(others, 1), pages = 1;
+        float minH = 58 * s;
+        if (others > 0 && ch < minH) { // too many even for small cards: page through them
+            ch = minH;
+            cols = Math.max(1, (int) ((w + gap) / (ch * 1.45f + gap)));
+            int rows = Math.max(1, (int) ((gh + gap) / (ch + gap)));
+            perPage = cols * rows;
+            pages = (others + perPage - 1) / perPage;
+        }
+        int page = pages > 1 ? (int) (t / READY_PAGE_SECONDS) % pages : 0;
+        if (page != readyPage) {
+            readyPage = page;
+            readyPageAt = now;
+            cardPos.clear();
+        }
+        String count = ready.isEmpty() ? null : (ready.size() == 1 ? "1 ready" : ready.size() + " ready");
+        if (count != null && pages > 1) count += "  \u00B7  " + (page + 1) + "/" + pages;
+        sectionTitle(c, x, y + 26 * s, w, "\u2713  READY \u2014 PLEASE COLLECT", GREEN, count);
+        drawSpotlight(c, x, top, w, spotH, now, t);
+        if (others == 0) return;
+
+        float cw = (w - (cols - 1) * gap) / cols;
+        int from = page * perPage, to = Math.min(others, from + perPage);
+        for (int i = from; i < to; i++) {
+            int j = i - from;
+            TokenBoard.Token tk = ready.get(i + 1);
+            float tx = x + (j % cols) * (cw + gap);
+            float ty = gy + (j / cols) * (ch + gap);
+            String key = "R" + tk.label;
+            float[] p = cardPos.get(key);
+            if (p == null) {
+                p = new float[]{tx, ty + ch * 0.6f};
+                cardPos.put(key, p);
+            }
+            p[0] += (tx - p[0]) * 0.14f;
+            p[1] += (ty - p[1]) * 0.14f;
+            // staggered fade-in when a page (or the layout) changes
+            float in = Math.max(0f, Math.min(1f, (now - readyPageAt - j * 45) / 400f));
+            drawReadyCard(c, p[0], p[1], cw, ch, tk, now, t, in);
         }
     }
 
@@ -510,15 +546,17 @@ final class TokenBoardView extends View {
         c.restore();
     }
 
-    private void drawReadyCard(Canvas c, float x, float y, float w, float h, TokenBoard.Token tk, long now, float t) {
+    private void drawReadyCard(Canvas c, float x, float y, float w, float h, TokenBoard.Token tk, long now, float t,
+                               float in) {
         Long seen = firstSeen.get("R" + tk.label);
         long age = seen == null ? 10_000 : now - seen;
         float pop = popScale(age);
         float mins = (System.currentTimeMillis() - tk.readyAt) / 60_000f;
-        int a = mins < 3 ? 255 : mins < 6 ? 215 : 170;
+        int a = (int) ((mins < 3 ? 255 : mins < 6 ? 215 : 170) * in);
+        if (a <= 0) return;
         c.save();
         c.scale(pop, pop, x + w / 2f, y + h / 2f);
-        float r = 22 * s;
+        float r = Math.min(22 * s, h * 0.2f);
         rect.set(x, y, x + w, y + h);
         fill.setColor(0xD8142816);
         fill.setAlpha(Math.min(255, a));
@@ -527,29 +565,56 @@ final class TokenBoardView extends View {
         float flash = age < 1500 ? 1f - age / 1500f : 0f;
         stroke.setColor(GREEN);
         stroke.setStrokeWidth((2 + 4 * flash) * s);
-        stroke.setAlpha((int) (a * 0.6f + 100 * flash));
+        stroke.setAlpha((int) (a * 0.6f + 100 * flash * in));
         c.drawRoundRect(rect, r, r, stroke);
         stroke.setAlpha(255);
 
         text.setTextAlign(Paint.Align.LEFT);
         text.setTypeface(bold);
-        text.setTextSize(fit(tk.label, 76 * s, w - 40 * s));
-        text.setColor(alpha(Color.WHITE, a));
-        c.drawText(tk.label, x + 20 * s, y + h * 0.5f + 16 * s, text);
-        float bw = pill(c, x + 18 * s, y + h - 46 * s, "DINE-IN", 15 * s, alpha(0xFFFFFFFF, 0x1F), alpha(MINT, a));
-        text.setTypeface(medium);
-        text.setTextAlign(Paint.Align.RIGHT);
-        text.setTextSize(18 * s);
-        text.setColor(alpha(MINT, a));
         String agoText = ago(tk.readyAt);
-        if (x + 18 * s + bw + 10 * s + text.measureText(agoText) < x + w - 18 * s) {
-            c.drawText(agoText, x + w - 18 * s, y + h - 26 * s, text);
+        if (h >= 120 * s) {
+            // roomy card: number on top, DINE-IN badge + time below
+            text.setTextSize(fit(tk.label, Math.min(76 * s, h * 0.5f), w - 40 * s));
+            text.setColor(alpha(Color.WHITE, a));
+            c.drawText(tk.label, x + 20 * s, y + h * 0.5f + 16 * s, text);
+            float bw = pill(c, x + 18 * s, y + h - 46 * s, "DINE-IN", 15 * s, alpha(0xFFFFFFFF, (int) (0x1F * in)), alpha(MINT, a));
+            text.setTypeface(medium);
+            text.setTextAlign(Paint.Align.RIGHT);
+            text.setTextSize(18 * s);
+            text.setColor(alpha(MINT, a));
+            if (x + 18 * s + bw + 10 * s + text.measureText(agoText) < x + w - 18 * s) {
+                c.drawText(agoText, x + w - 18 * s, y + h - 26 * s, text);
+            }
+        } else {
+            // compact card: big centred number, minutes underneath when there is room
+            boolean showAgo = h >= 78 * s;
+            float numSize = fit(tk.label, h * (showAgo ? 0.5f : 0.62f), w - 20 * s);
+            text.setTextSize(numSize);
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setColor(alpha(Color.WHITE, a));
+            float base = showAgo ? y + h * 0.56f : y + h / 2f + numSize * 0.36f;
+            c.drawText(tk.label, x + w / 2f, base, text);
+            if (showAgo) {
+                text.setTypeface(medium);
+                text.setTextSize(fit(agoText, Math.min(16 * s, h * 0.18f), w - 16 * s));
+                text.setColor(alpha(MINT, a));
+                c.drawText(agoText, x + w / 2f, y + h * 0.84f, text);
+            }
         }
         text.setTextAlign(Paint.Align.LEFT);
         c.restore();
     }
 
     // ---- PREPARING -----------------------------------------------------------------------
+
+    private static final int ROWS = 10;
+    private static final String[] KIND_WORDS = {
+            "\u2764 Made fresh just for you \u2014 almost there!",
+            "\u2764 Extra crisp on its way \u2014 thank you for waiting",
+            "\u2764 Worth the wait \u2014 coming right up",
+            "\u2764 Your dosa is getting a little extra love",
+    };
+    private static final String BIG_ORDER = "\u2764 Bigger order, more dosas on the tawa \u2014 nearly done!";
 
     private void drawPreparing(Canvas c, float x, float y, float w, float h, long now, float t) {
         panel(c, x, y, w, h, 26 * s, alpha(0xFF140F08, 0xC0), alpha(Color.WHITE, 0x22));
@@ -566,11 +631,11 @@ final class TokenBoardView extends View {
             text.setTextAlign(Paint.Align.LEFT);
             return;
         }
-        float minRow = 58 * s;
-        int fit = Math.max(1, (int) ((bottom - top) / minRow));
-        boolean more = preparing.size() > fit;
-        int shown = more ? fit - 1 : preparing.size();
-        float rowH = Math.min(86 * s, (bottom - top - (more ? minRow : 0)) / Math.max(shown, 1));
+        int n = preparing.size();
+        boolean flow = n > ROWS;
+        int shown = Math.min(n, ROWS);
+        float rowsArea = flow ? (bottom - top) * 0.68f : bottom - top;
+        float rowH = Math.min(86 * s, rowsArea / (flow ? ROWS : Math.max(shown, 4)));
         long wall = System.currentTimeMillis();
         for (int i = 0; i < shown; i++) {
             TokenBoard.Token tk = preparing.get(i);
@@ -586,16 +651,106 @@ final class TokenBoardView extends View {
             double left = TokenBoard.minutesLeft(i, elapsed, avgPrep, perMin);
             drawRow(c, ix, yy, iw, rowH, tk, elapsed, left, i == 0, appear, t);
         }
-        if (more) {
-            text.setTextAlign(Paint.Align.CENTER);
-            text.setTypeface(medium);
-            text.setTextSize(21 * s);
-            text.setColor(alpha(theme.L, 0xCC));
-            int rest = preparing.size() - shown;
-            c.drawText("+ " + rest + (rest == 1 ? " more order" : " more orders") + " being prepared",
-                    x + w / 2f, top + shown * rowH + minRow * 0.6f, text);
-            text.setTextAlign(Paint.Align.LEFT);
+        if (flow) drawQueueFlow(c, ix, top + ROWS * rowH + 12 * s, iw, bottom - (top + ROWS * rowH + 12 * s), now, t);
+    }
+
+    /**
+     * Tokens after the first 10: cards flowing left-to-right, large to small, one after another.
+     * When they don't all fit the area scrolls up slowly in a loop, so 50+ tokens stay visible.
+     */
+    private void drawQueueFlow(Canvas c, float x, float y, float w, float h, long now, float t) {
+        int rest = preparing.size() - ROWS;
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.2f);
+        text.setTextSize(15 * s);
+        text.setColor(alpha(theme.L, 0xBB));
+        c.drawText("NEXT IN LINE  \u00B7  " + rest + (rest == 1 ? " MORE" : " MORE"), x, y + 16 * s, text);
+        text.setLetterSpacing(0f);
+        float areaTop = y + 26 * s, areaH = h - 26 * s;
+        if (areaH <= 10 * s) return;
+
+        // layout in content coordinates
+        float gap = 8 * s;
+        int m = rest;
+        if (flowX.length < m) {
+            flowX = new float[m * 2];
+            flowY = new float[m * 2];
+            flowW = new float[m * 2];
+            flowH = new float[m * 2];
         }
+        float cx = 0, cy = 0, lineH = 0;
+        for (int j = 0; j < m; j++) {
+            float chh = (58 - 26 * Math.min(1f, j / 30f)) * s; // large -> small
+            TokenBoard.Token tk = preparing.get(ROWS + j);
+            text.setTypeface(bold);
+            text.setTextSize(chh * 0.55f);
+            float cww = Math.max(chh * 1.5f, text.measureText(tk.label) + chh * 0.8f);
+            if (cx > 0 && cx + cww > w) {
+                cx = 0;
+                cy += lineH + gap;
+                lineH = 0;
+            }
+            flowX[j] = cx;
+            flowY[j] = cy;
+            flowW[j] = cww;
+            flowH[j] = chh;
+            cx += cww + gap;
+            lineH = Math.max(lineH, chh);
+        }
+        float contentH = cy + lineH;
+        boolean scroll = contentH > areaH;
+        float loop = contentH + 40 * s;
+        float off = scroll ? (t * 16 * s) % loop : 0;
+
+        c.save();
+        c.clipRect(x - 4 * s, areaTop, x + w + 4 * s, areaTop + areaH);
+        for (int copy = 0; copy < (scroll ? 2 : 1); copy++) {
+            float base = areaTop - off + copy * loop;
+            for (int j = 0; j < m; j++) {
+                float yy = base + flowY[j];
+                if (yy > areaTop + areaH || yy + flowH[j] < areaTop) continue;
+                TokenBoard.Token tk = preparing.get(ROWS + j);
+                String key = "C" + tk.label;
+                float[] p = cardPos.get(key);
+                if (p == null) {
+                    p = new float[]{flowX[j], flowY[j] + 30 * s};
+                    cardPos.put(key, p);
+                }
+                if (copy == 0) {
+                    p[0] += (flowX[j] - p[0]) * 0.12f;
+                    p[1] += (flowY[j] - p[1]) * 0.12f;
+                }
+                Long seen = firstSeen.get("P" + tk.label);
+                float appear = seen == null ? 1f : Math.min(1f, (now - seen) / 600f);
+                float fade = 1f - 0.45f * Math.min(1f, j / 40f);
+                drawChip(c, x + p[0], base + p[1], flowW[j], flowH[j], tk.label, appear * fade, popScale(seen == null ? 10_000 : now - seen));
+            }
+        }
+        c.restore();
+    }
+
+    private void drawChip(Canvas c, float x, float y, float w, float h, String label, float a, float pop) {
+        int ia = (int) (255 * a);
+        c.save();
+        c.scale(pop, pop, x + w / 2f, y + h / 2f);
+        rect.set(x, y, x + w, y + h);
+        fill.setShader(null);
+        fill.setColor(alpha(theme.surface, (int) (0xE0 * a)));
+        c.drawRoundRect(rect, h * 0.3f, h * 0.3f, fill);
+        stroke.setShader(null);
+        stroke.setColor(alpha(theme.P, (int) (0xAA * a)));
+        stroke.setStrokeWidth(1.5f * s);
+        c.drawRoundRect(rect, h * 0.3f, h * 0.3f, stroke);
+        stroke.setAlpha(255);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTypeface(bold);
+        text.setTextSize(h * 0.55f);
+        text.setColor(alpha(Color.WHITE, ia));
+        c.drawText(label, x + w / 2f, y + h / 2f + h * 0.2f, text);
+        text.setTextAlign(Paint.Align.LEFT);
+        fill.setAlpha(255);
+        c.restore();
     }
 
     private void drawRow(Canvas c, float x, float y, float w, float h, TokenBoard.Token tk, double elapsed,
@@ -620,6 +775,15 @@ final class TokenBoardView extends View {
         text.setTextSize(Math.min(15 * s, h * 0.22f));
         text.setColor(alpha(0xFFCBBF9F, a));
         String sub = "DINE-IN \u00B7 " + (tk.dosas == 1 ? "1 DOSA" : tk.dosas + " DOSAS") + (next ? "  \u00B7  NEXT UP" : "");
+        if (tk.overtaken) {
+            // A newer order came out first: a warm word instead of the plain details.
+            int k = (int) (t / 6f) + Math.abs(tk.label.hashCode());
+            sub = tk.dosas > 1 && k % 3 == 0 ? BIG_ORDER : KIND_WORDS[k % KIND_WORDS.length];
+            text.setLetterSpacing(0.02f);
+            text.setTypeface(medium);
+            text.setTextSize(fit(sub, Math.min(17 * s, h * 0.26f), bw));
+            text.setColor(alpha(theme.T, a));
+        }
         c.drawText(sub, bx, y + h * 0.42f, text);
         text.setLetterSpacing(0f);
 

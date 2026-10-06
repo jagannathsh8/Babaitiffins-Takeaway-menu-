@@ -203,6 +203,7 @@ final class DosaNeonView extends View {
     private static synchronized void loadPhotos(Context c) {
         if (photos != null) return;
         List<android.graphics.Bitmap> list = new ArrayList<android.graphics.Bitmap>();
+        List<Float> lumas = new ArrayList<Float>();
         android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
         o.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565; // half the memory
         for (String f : PHOTO_FILES) {
@@ -210,11 +211,92 @@ final class DosaNeonView extends View {
                 java.io.InputStream in = c.getAssets().open(f);
                 android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeStream(in, null, o);
                 in.close();
-                if (b != null) list.add(b);
+                if (b != null) {
+                    lastLuma = PHOTO_LUMA;
+                    list.add(evenBrightness(b));
+                    lumas.add(lastLuma);
+                }
             } catch (Throwable ignored) {
             }
         }
+        float[] l = new float[lumas.size()];
+        for (int i = 0; i < l.length; i++) l[i] = lumas.get(i);
+        photoLuma = l;
         photos = list.toArray(new android.graphics.Bitmap[0]);
+    }
+
+    /** Target average brightness for every food photo (0..1), so slides never jump bright/dark. */
+    private static final float PHOTO_LUMA = 0.58f;
+
+    /**
+     * Scales a photo so its average brightness matches PHOTO_LUMA. Photos differ a lot (dark
+     * coffee vs bright idli), which made the screen pulse brighter/darker at every change.
+     */
+    private static float lastLuma = PHOTO_LUMA;
+    private static float[] photoLuma = new float[0];
+
+    /**
+     * How strongly to draw the dark overlay for the photo(s) on screen: darker photos get a
+     * lighter overlay so the screen keeps the same brightness through every slide change.
+     */
+    static float tintScale(int k, int next, float mix) {
+        return tintFor(k) * (1 - mix) + tintFor(next) * mix;
+    }
+
+    private static float tintFor(int k) {
+        if (photoLuma.length == 0) return 1f;
+        float l = Math.max(0.05f, photoLuma[((k % photoLuma.length) + photoLuma.length) % photoLuma.length]);
+        float r = PHOTO_LUMA / l;          // > 1 for a darker photo
+        return Math.max(0.72f, Math.min(1f, (1f - 0.2f * r) / 0.8f));
+    }
+
+    static android.graphics.Bitmap evenBrightness(android.graphics.Bitmap b) {
+        try {
+            int w = b.getWidth(), h = b.getHeight();
+            double[] luma = new double[40 * 40];
+            int n = 0;
+            for (int yy = 0; yy < 40; yy++) {
+                for (int xx = 0; xx < 40; xx++) {
+                    int c = b.getPixel(xx * (w - 1) / 39, yy * (h - 1) / 39);
+                    luma[n++] = (0.2126 * Color.red(c) + 0.7152 * Color.green(c) + 0.0722 * Color.blue(c)) / 255.0;
+                }
+            }
+            // Gamma curve (not a flat multiply) so dark photos lift without blowing out highlights.
+            double lo = 0.6, hi = 1.6, g = 1.0; // limits keep photos natural (no wash-out)
+            for (int it = 0; it < 30; it++) {
+                g = (lo + hi) / 2;
+                double m = 0;
+                for (double v : luma) m += Math.pow(v, g);
+                if (m / n > PHOTO_LUMA) lo = g; else hi = g;
+            }
+            double after = 0;
+            for (double v : luma) after += Math.pow(v, g);
+            lastLuma = (float) (after / n);
+            if (Math.abs(g - 1.0) < 0.05) return b;
+            int[] lut = new int[256];
+            for (int i = 0; i < 256; i++) lut[i] = (int) Math.round(255 * Math.pow(i / 255.0, g));
+            android.graphics.Bitmap out = b.isMutable() ? b : b.copy(b.getConfig(), true);
+            int[] row = new int[w];
+            for (int yy = 0; yy < h; yy++) {
+                out.getPixels(row, 0, w, 0, yy, w, 1);
+                for (int xx = 0; xx < w; xx++) {
+                    int c = row[xx];
+                    row[xx] = (c & 0xFF000000) | (lut[(c >> 16) & 0xFF] << 16) | (lut[(c >> 8) & 0xFF] << 8) | lut[c & 0xFF];
+                }
+                out.setPixels(row, 0, w, 0, yy, w, 1);
+            }
+            if (out != b) b.recycle();
+            return out;
+        } catch (Throwable t) {
+            return b;
+        }
+    }
+
+    private static float slideTint(float t) {
+        int k = (int) (t / SLIDE_SECONDS);
+        float local = t - k * SLIDE_SECONDS;
+        float mix = local > SLIDE_SECONDS - FADE_SECONDS ? (local - (SLIDE_SECONDS - FADE_SECONDS)) / FADE_SECONDS : 0f;
+        return tintScale(k, k + 1, mix);
     }
 
     private void drawSlideshow(Canvas c, float w, float h, float t) {
@@ -426,9 +508,10 @@ final class DosaNeonView extends View {
         c.drawColor(theme.bg2);
         drawSlideshow(c, w, h, t);
         fill.setColor(Color.BLACK);
-        fill.setAlpha(255);
+        fill.setAlpha((int) (255 * slideTint(t)));
         fill.setShader(background);
         c.drawRect(0, 0, w, h, fill);
+        fill.setAlpha(255);
         fill.setShader(blobA);
         c.drawRect(0, 0, w, h, fill);
         fill.setShader(blobB);

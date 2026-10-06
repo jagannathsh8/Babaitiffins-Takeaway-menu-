@@ -79,6 +79,12 @@ public final class TokenBoardTest {
         b.update(board, t0 + 82_000, true);
         check("token ready", labels(b.takeCall(t0 + 86_000)).equals("12"), "");
 
+        // Older order still cooking while a newer one is ready -> flagged for a friendly note.
+        TokenBoard ob = new TokenBoard();
+        ob.update(Arrays.asList(k(1, "40", t0, false), k(2, "41", t0 + 60_000, true), k(3, "42", t0 + 120_000, false)), t0, true);
+        check("overtaken", ob.preparing().get(0).overtaken && !ob.preparing().get(1).overtaken,
+                ob.preparing().get(0).label + "/" + ob.preparing().get(1).label);
+
         // Table fallback in the phrase.
         TokenBoard.Token tt = new TokenBoard.Token("T4");
         tt.spoken = "table 4";
