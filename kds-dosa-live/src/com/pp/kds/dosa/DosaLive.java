@@ -350,53 +350,166 @@ public final class DosaLive {
 
     // ---- UI ------------------------------------------------------------------------------
 
+    /** Phones get a compact row; tablets / TVs the full size. Independent of the font-size setting. */
+    private static boolean compact(Activity a) {
+        return a.getResources().getConfiguration().smallestScreenWidthDp < 600;
+    }
+
     private static void addButton(final Activity activity) {
-        float d = activity.getResources().getDisplayMetrics().density;
-        LinearLayout row = new LinearLayout(activity);
+        final float d = activity.getResources().getDisplayMetrics().density;
+        final boolean small = compact(activity);
+        final int h = (int) ((small ? 28 : 36) * d);
+        final LinearLayout row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
         row.setElevation(8 * d);
-        TextView dosa = pill(activity, "\u2726 DOSA LIVE", new int[]{0xFFFF5200, 0xFFFF8A00, 0xFFFFC107}, 0xFFFF5200);
+
+        // Grip: shows the group can be dragged anywhere on the screen.
+        TextView grip = new TextView(activity);
+        grip.setText("\u2807\u2807");
+        grip.setTextColor(Color.WHITE);
+        grip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, small ? 12 : 14);
+        grip.setGravity(Gravity.CENTER);
+        GradientDrawable gb = new GradientDrawable();
+        gb.setColor(0xCC37474F);
+        gb.setCornerRadius(h / 2f);
+        grip.setBackground(gb);
+        grip.setContentDescription("Drag to move the Dosa Live buttons");
+        row.addView(grip, new LinearLayout.LayoutParams((int) ((small ? 22 : 28) * d), h));
+
+        TextView dosa = pill(activity, small ? "\u2726 DOSA" : "\u2726 DOSA LIVE",
+                new int[]{0xFFFF5200, 0xFFFF8A00, 0xFFFFC107}, 0xFFFF5200);
         dosa.setContentDescription("Dosa Live Wait");
         dosa.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 showPanel(activity);
             }
         });
-        row.addView(dosa, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (int) (36 * d)));
-        TextView prep = pill(activity, "\u25C9 PREP LIVE", new int[]{0xFF2E7D32, 0xFF43A047, 0xFF8BC34A}, 0xFF43A047);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, h);
+        dlp.leftMargin = (int) (5 * d);
+        row.addView(dosa, dlp);
+        TextView prep = pill(activity, small ? "\u25C9 PREP" : "\u25C9 PREP LIVE",
+                new int[]{0xFF2E7D32, 0xFF43A047, 0xFF8BC34A}, 0xFF43A047);
         prep.setContentDescription("Prep Live production");
         prep.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 PrepLive.open(activity);
             }
         });
-        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (int) (36 * d));
-        plp.leftMargin = (int) (8 * d);
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, h);
+        plp.leftMargin = (int) (5 * d);
         row.addView(prep, plp);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+
+        final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.gravity = Gravity.TOP | Gravity.START;
-        // Just right of the scanner camera button (which sits at 14% width, 44dp wide).
+        // Default: just right of the scanner camera button (which sits at 14% width, 44dp wide).
         lp.leftMargin = (int) (activity.getResources().getDisplayMetrics().widthPixels * 0.14f + 52 * d);
         lp.topMargin = (int) (7 * d);
-        ((ViewGroup) activity.findViewById(android.R.id.content)).addView(row, lp);
+        final ViewGroup content = (ViewGroup) activity.findViewById(android.R.id.content);
+        content.addView(row, lp);
         buttonRow = row;
+
+        // Restore the spot the user dragged it to (saved per orientation, as screen fractions).
+        final SharedPreferences ui = activity.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
+        final String key = activity.getResources().getConfiguration().orientation
+                == android.content.res.Configuration.ORIENTATION_LANDSCAPE ? "btn_land" : "btn_port";
+        row.post(new Runnable() {
+            @Override public void run() {
+                String saved = ui.getString(key, null);
+                if (saved == null) return;
+                try {
+                    String[] p = saved.split(",");
+                    place(row, content, Float.parseFloat(p[0]) * content.getWidth(),
+                            Float.parseFloat(p[1]) * content.getHeight());
+                } catch (Throwable ignored) {
+                }
+            }
+        });
+
+        // Drag from anywhere on the group; a short tap still clicks the button under the finger.
+        final int slop = android.view.ViewConfiguration.get(activity).getScaledTouchSlop();
+        View.OnTouchListener drag = new View.OnTouchListener() {
+            float downX, downY, startL, startT;
+            boolean dragging;
+
+            @Override public boolean onTouch(View v, android.view.MotionEvent e) {
+                switch (e.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        downX = e.getRawX();
+                        downY = e.getRawY();
+                        FrameLayout.LayoutParams cur = (FrameLayout.LayoutParams) row.getLayoutParams();
+                        startL = cur.leftMargin;
+                        startT = cur.topMargin;
+                        dragging = false;
+                        v.setPressed(true);
+                        onUserTouch();
+                        return true;
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        float dx = e.getRawX() - downX, dy = e.getRawY() - downY;
+                        if (!dragging && Math.hypot(dx, dy) > slop) {
+                            dragging = true;
+                            v.setPressed(false);
+                            row.animate().scaleX(1.06f).scaleY(1.06f).setDuration(100).start();
+                        }
+                        if (dragging) {
+                            place(row, content, startL + dx, startT + dy);
+                            onUserTouch();
+                        }
+                        return true;
+                    case android.view.MotionEvent.ACTION_UP:
+                        v.setPressed(false);
+                        if (dragging) {
+                            row.animate().scaleX(1f).scaleY(1f).setDuration(100).start();
+                            FrameLayout.LayoutParams fin = (FrameLayout.LayoutParams) row.getLayoutParams();
+                            if (content.getWidth() > 0 && content.getHeight() > 0) {
+                                ui.edit().putString(key, (fin.leftMargin / (float) content.getWidth()) + ","
+                                        + (fin.topMargin / (float) content.getHeight())).apply();
+                            }
+                        } else if (v.hasOnClickListeners()) {
+                            v.performClick();
+                        }
+                        return true;
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        v.setPressed(false);
+                        row.animate().scaleX(1f).scaleY(1f).setDuration(100).start();
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        };
+        grip.setOnTouchListener(drag);
+        dosa.setOnTouchListener(drag);
+        prep.setOnTouchListener(drag);
+    }
+
+    /** Moves the button group, kept fully on screen. */
+    private static void place(View row, ViewGroup content, float left, float top) {
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) row.getLayoutParams();
+        int maxL = Math.max(0, content.getWidth() - row.getWidth());
+        int maxT = Math.max(0, content.getHeight() - row.getHeight());
+        lp.leftMargin = (int) Math.max(0, Math.min(maxL, left));
+        lp.topMargin = (int) Math.max(0, Math.min(maxT, top));
+        row.setLayoutParams(lp);
     }
 
     private static TextView pill(Activity a, String label, int[] colors, int glow) {
         float d = a.getResources().getDisplayMetrics().density;
+        boolean small = compact(a);
         TextView b = new TextView(a);
         b.setText(label);
         b.setTextColor(Color.WHITE);
         b.setTypeface(Typeface.DEFAULT_BOLD);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_DIP, small ? 11 : 13); // ignores the phone's font-size setting
+        b.setIncludeFontPadding(false);
         b.setGravity(Gravity.CENTER);
-        b.setPadding((int) (12 * d), 0, (int) (12 * d), 0);
+        b.setPadding((int) ((small ? 9 : 12) * d), 0, (int) ((small ? 9 : 12) * d), 0);
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors);
         bg.setCornerRadius(18 * d);
         bg.setStroke((int) (1.5f * d), 0xCCFFFFFF);
         b.setBackground(bg);
-        b.setShadowLayer(8 * d, 0, 0, glow);
+        b.setShadowLayer((small ? 5 : 8) * d, 0, 0, glow);
         return b;
     }
 
