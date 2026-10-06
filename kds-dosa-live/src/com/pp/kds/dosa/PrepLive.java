@@ -267,6 +267,7 @@ final class PrepLive {
         }
         if (screen != null) screen.close();
         screen = new Screen(a);
+        DosaLive.remember(a, "prep");
         tick(System.currentTimeMillis(), true);
     }
 
@@ -367,7 +368,7 @@ final class PrepLive {
             TextView close = text(a, "  \u2715  ", 18, CREAM, true);
             close.setPadding((int) (12 * d), (int) (6 * d), (int) (6 * d), (int) (6 * d));
             close.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) { close(); }
+                @Override public void onClick(View v) { closeByUser(); }
             });
             header.addView(close);
             col.addView(header);
@@ -405,7 +406,7 @@ final class PrepLive {
             coverage = coverageHolder[0];
             col.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
             root.addView(col);
-            root.setTag((Runnable) this::close); // remote BACK closes Prep Live
+            root.setTag((Runnable) this::closeByUser); // remote BACK closes Prep Live
             ((ViewGroup) a.findViewById(android.R.id.content)).addView(root,
                     new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             root.bringToFront();
@@ -435,6 +436,12 @@ final class PrepLive {
             if (coverage != null) coverage.setText(sb.toString());
             if (detail != null) detail.bind(r.items[detail.index]);
             if (picker != null) picker.refreshSelection();
+        }
+
+        /** Closed with the close button / Back: next app start opens on the KDS board. */
+        void closeByUser() {
+            DosaLive.remember(root.getContext(), "");
+            close();
         }
 
         void close() {

@@ -75,6 +75,10 @@ public final class DosaLive {
             // Never let the add-on break the KDS.
         }
         try {
+            restoreLastScreen(activity);
+        } catch (Throwable ignored) {
+        }
+        try {
             setupAutoHide(activity);
             android.view.Window w = activity.getWindow();
             w.setCallback(new KeyScanCallback(w.getCallback(), activity)); // USB/BT scanner + touch
@@ -513,7 +517,38 @@ public final class DosaLive {
         return b;
     }
 
+    // ---- reopen the screen that was showing when the app was closed ---------------------------
+
+    private static final String LAST = "last_screen";
+
+    /** "dosa" (Dosa Live / Order Ready, mode kept separately), "prep", or "" for the KDS board. */
+    static void remember(Context c, String screen) {
+        c.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).edit().putString(LAST, screen).apply();
+    }
+
+    private static void restoreLastScreen(final Activity a) {
+        final String last = a.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getString(LAST, "");
+        if (last.isEmpty()) return;
+        final Handler h = new Handler(Looper.getMainLooper());
+        final long until = System.currentTimeMillis() + 30_000L;
+        h.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (a.isFinishing()) return;
+                try {
+                    if ("dosa".equals(last)) {
+                        if (panel == null || panel.activity != a) showPanel(a);
+                    } else if ("prep".equals(last)) {
+                        if (PrepLive.available()) PrepLive.open(a);
+                        else if (System.currentTimeMillis() < until) h.postDelayed(this, 500); // history still loading
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }, 800);
+    }
+
     private static void showPanel(Activity activity) {
+        remember(activity, "dosa");
         if (panel != null) panel.close();
         panel = new Panel(activity);
         if (last == null && stats != null) last = stats.compute(System.currentTimeMillis());
@@ -547,7 +582,7 @@ public final class DosaLive {
             view.setKeepScreenOn(true);
             view.setTheme(ui.getInt("theme", 0));
             view.setListener(new DosaNeonView.Listener() {
-                @Override public void onClose() { close(); }
+                @Override public void onClose() { closeByUser(); }
 
                 @Override public void onTheme(int index) { ui.edit().putInt("theme", index).apply(); }
 
@@ -569,7 +604,7 @@ public final class DosaLive {
                     board.setElevation(26 * activity.getResources().getDisplayMetrics().density);
                     board.setKeepScreenOn(true);
                     board.setListener(new TokenBoardView.Listener() {
-                        @Override public void onClose() { close(); }
+                        @Override public void onClose() { closeByUser(); }
 
                         @Override public void onDosaLive() { setMode(DOSA_LIVE); }
 
@@ -651,6 +686,12 @@ public final class DosaLive {
                 sb.append(String.format(Locale.US, "%n%-10s %5s %8s %5s %8s", p[0], p[1], p[2], p[3], p[4]));
             }
             view.setData(r, time, sb.toString());
+        }
+
+        /** Closed with the close button / Back: next app start opens on the KDS board. */
+        void closeByUser() {
+            remember(activity, "");
+            close();
         }
 
         void close() {
