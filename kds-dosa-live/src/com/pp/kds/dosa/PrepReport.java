@@ -110,6 +110,7 @@ public final class PrepReport {
         vs.addView(hs);
         col.addView(vs, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         overlay.addView(col);
+        overlay.setTag((Runnable) () -> host.removeView(overlay)); // remote BACK
         host.addView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
 

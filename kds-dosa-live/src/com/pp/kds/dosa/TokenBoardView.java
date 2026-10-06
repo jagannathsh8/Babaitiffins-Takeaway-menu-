@@ -108,6 +108,9 @@ final class TokenBoardView extends View {
     private int cardCount;
     private String pressLabel;
     private long pressAt;
+    /** Remote focus: control index (0 clear, 1 dosa live, 2 voice, 3 close) or a ready card. */
+    private int focusCtl = -1;
+    private String focusCard;
 
     private static final int SPARKS = 26;
     private final float[] sx = new float[SPARKS], sy = new float[SPARKS], ss = new float[SPARKS], sr = new float[SPARKS];
@@ -238,6 +241,167 @@ final class TokenBoardView extends View {
         fill.setAlpha(255);
     }
 
+    private RectF controlRect(int i) {
+        return i == 0 ? hitClear : i == 1 ? hitDosa : i == 2 ? hitVoice : hitClose;
+    }
+
+    private void activateControl(int i) {
+        if (i == 0) {
+            int j = 0;
+            while (j < CLEAR_CHOICES.length && CLEAR_CHOICES[j] != autoClearMin) j++;
+            autoClearMin = CLEAR_CHOICES[(j + 1) % CLEAR_CHOICES.length];
+            if (listener != null) listener.onAutoClear(autoClearMin);
+        } else if (i == 1) {
+            if (listener != null) listener.onDosaLive();
+        } else if (i == 2) {
+            voiceOn = !voiceOn;
+            if (listener != null) listener.onVoice(voiceOn);
+        } else if (listener != null) {
+            listener.onClose();
+        }
+    }
+
+    private int cardIndex(String label) {
+        for (int i = 0; i < cardCount; i++) if (cardLabels.get(i).equals(label)) return i;
+        return -1;
+    }
+
+    /**
+     * TV remote: LEFT/RIGHT move across the buttons, DOWN goes into the ready tokens, UP back;
+     * OK presses a button; on a token, HOLD OK marks it collected; BACK closes.
+     */
+    boolean handleKey(android.view.KeyEvent e) {
+        int k = e.getKeyCode();
+        boolean down = e.getAction() == android.view.KeyEvent.ACTION_DOWN;
+        long now = SystemClock.uptimeMillis();
+        if (focusCard != null && cardIndex(focusCard) < 0) focusCard = null; // token left the screen
+        boolean onCards = focusCard != null;
+        switch (k) {
+            case android.view.KeyEvent.KEYCODE_BACK:
+                if (!down && listener != null) listener.onClose();
+                return true;
+            case android.view.KeyEvent.KEYCODE_DPAD_LEFT:
+            case android.view.KeyEvent.KEYCODE_DPAD_RIGHT:
+                if (down) {
+                    int dir = k == android.view.KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1;
+                    if (onCards) {
+                        int i = cardIndex(focusCard);
+                        focusCard = cardLabels.get(Math.max(0, Math.min(cardCount - 1, i + dir)));
+                    } else if (focusCtl < 0 || controlsAlpha() < 0.3f) {
+                        focusCtl = 1;
+                    } else {
+                        focusCtl = Math.max(0, Math.min(3, focusCtl + dir));
+                    }
+                    if (!onCards) controlsAt = now;
+                    invalidate();
+                }
+                return true;
+            case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
+                if (down) {
+                    if (!onCards && cardCount > 0) {
+                        focusCard = cardLabels.get(0);
+                    } else if (onCards) {
+                        int i = cardIndex(focusCard);
+                        focusCard = cardLabels.get(Math.min(cardCount - 1, i + 1));
+                    }
+                    invalidate();
+                }
+                return true;
+            case android.view.KeyEvent.KEYCODE_DPAD_UP:
+                if (down) {
+                    if (onCards) {
+                        int i = cardIndex(focusCard);
+                        if (i <= 0) {
+                            focusCard = null;
+                            if (focusCtl < 0) focusCtl = 1;
+                            controlsAt = now;
+                        } else {
+                            focusCard = cardLabels.get(i - 1);
+                        }
+                    } else {
+                        if (focusCtl < 0) focusCtl = 1;
+                        controlsAt = now;
+                    }
+                    invalidate();
+                }
+                return true;
+            case android.view.KeyEvent.KEYCODE_DPAD_CENTER:
+            case android.view.KeyEvent.KEYCODE_ENTER:
+            case android.view.KeyEvent.KEYCODE_NUMPAD_ENTER:
+            case android.view.KeyEvent.KEYCODE_BUTTON_A:
+                if (onCards) {
+                    if (down && e.getRepeatCount() == 0) {
+                        pressLabel = focusCard;
+                        pressAt = now;
+                    } else if (!down) {
+                        String held = pressLabel != null && now - pressAt >= HOLD_MS ? pressLabel : null;
+                        pressLabel = null;
+                        if (held != null && listener != null) {
+                            listener.onCollected(held);
+                            focusCard = null;
+                        }
+                    }
+                } else if (!down) {
+                    if (focusCtl < 0 || controlsAlpha() < 0.3f) focusCtl = 1;
+                    else activateControl(focusCtl);
+                    controlsAt = now;
+                } else if (call != null) {
+                    call = null;
+                }
+                invalidate();
+                return true;
+            default:
+                if (down) {
+                    controlsAt = now;
+                    invalidate();
+                }
+                return true; // keep remote keys away from the board underneath
+        }
+    }
+
+    private void drawFocus(Canvas c) {
+        stroke.setShader(null);
+        stroke.setColor(Color.WHITE);
+        stroke.setStrokeWidth(3 * s);
+        if (focusCard != null) {
+            int i = cardIndex(focusCard);
+            if (i < 0) {
+                focusCard = null;
+            } else {
+                RectF r = cardRects.get(i);
+                rect.set(r);
+                rect.inset(-6 * s, -6 * s);
+                c.drawRoundRect(rect, 24 * s, 24 * s, stroke);
+                String hint = "HOLD OK = COLLECTED";
+                text.setTypeface(condensed);
+                text.setLetterSpacing(0.1f);
+                text.setTextSize(15 * s);
+                float hw = text.measureText(hint) + 24 * s;
+                float hy = Math.min(rect.bottom + 4 * s, getHeight() - 30 * s);
+                rect.set(r.centerX() - hw / 2f, hy, r.centerX() + hw / 2f, hy + 26 * s);
+                fill.setShader(null);
+                fill.setColor(0xEE000000);
+                c.drawRoundRect(rect, 13 * s, 13 * s, fill);
+                text.setTextAlign(Paint.Align.CENTER);
+                text.setColor(Color.WHITE);
+                c.drawText(hint, rect.centerX(), rect.centerY() + 5 * s, text);
+                text.setTextAlign(Paint.Align.LEFT);
+                text.setLetterSpacing(0f);
+                fill.setAlpha(255);
+            }
+            return;
+        }
+        float a = controlsAlpha();
+        if (focusCtl < 0 || a <= 0f) return;
+        RectF r = controlRect(focusCtl);
+        if (r.isEmpty()) return;
+        rect.set(r);
+        rect.inset(focusCtl == 3 ? 6 * s : 2 * s, 6 * s);
+        stroke.setAlpha((int) (255 * a));
+        c.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, stroke);
+        stroke.setAlpha(255);
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
         int act = ev.getActionMasked();
@@ -322,6 +486,7 @@ final class TokenBoardView extends View {
         }
         drawFooter(c, pad, footY, w - 2 * pad, footH, t);
         drawControls(c, w, t);
+        drawFocus(c);
         drawCall(c, w, h, now, t);
         postInvalidateOnAnimation();
     }

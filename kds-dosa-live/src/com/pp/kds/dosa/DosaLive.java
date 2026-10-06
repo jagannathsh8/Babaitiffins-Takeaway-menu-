@@ -113,6 +113,17 @@ public final class DosaLive {
         onUserTouch();
     }
 
+    /** The board buttons (camera, DOSA LIVE, PREP LIVE) for remote navigation. */
+    static List<View> controlViews() {
+        return new ArrayList<View>(controls);
+    }
+
+    /** Remote keys go straight to the open Dosa Live / Order Ready screen. */
+    static boolean panelKey(android.view.KeyEvent e) {
+        if (panel == null) return false;
+        return panel.mode == Panel.ORDER_READY && panel.board != null ? panel.board.handleKey(e) : panel.view.handleKey(e);
+    }
+
     static void onUserTouch() {
         if (uiHandler == null) return;
         uiHandler.removeCallbacks(hideControls);

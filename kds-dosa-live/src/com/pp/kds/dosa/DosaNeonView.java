@@ -148,6 +148,8 @@ final class DosaNeonView extends View {
     private boolean showStaff;
     private float closeX, closeY, closeR;
     private final RectF modeHit = new RectF();
+    /** Remote focus: 0..THEMES-1 theme dots, THEMES = ORDER READY, THEMES+1 = close; -1 none. */
+    private int focus = -1;
     private long downAt;
     private boolean downOnTitle;
 
@@ -392,6 +394,75 @@ final class DosaNeonView extends View {
         invalidate();
     }
 
+    /** TV remote: arrows move between theme dots / ORDER READY / close, OK selects, BACK closes. */
+    boolean handleKey(android.view.KeyEvent e) {
+        int k = e.getKeyCode();
+        boolean down = e.getAction() == android.view.KeyEvent.ACTION_DOWN;
+        int items = THEMES.length + 2;
+        switch (k) {
+            case android.view.KeyEvent.KEYCODE_BACK:
+                if (!down && listener != null) listener.onClose();
+                return true;
+            case android.view.KeyEvent.KEYCODE_DPAD_LEFT:
+            case android.view.KeyEvent.KEYCODE_DPAD_UP:
+            case android.view.KeyEvent.KEYCODE_DPAD_RIGHT:
+            case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
+                if (down) {
+                    boolean back = k == android.view.KeyEvent.KEYCODE_DPAD_LEFT || k == android.view.KeyEvent.KEYCODE_DPAD_UP;
+                    if (focus < 0 || closeAlpha() < 0.3f) focus = THEMES.length; // first press: ORDER READY
+                    else focus = (focus + (back ? items - 1 : 1)) % items;
+                    closeShownAt = SystemClock.uptimeMillis();
+                    invalidate();
+                }
+                return true;
+            case android.view.KeyEvent.KEYCODE_DPAD_CENTER:
+            case android.view.KeyEvent.KEYCODE_ENTER:
+            case android.view.KeyEvent.KEYCODE_NUMPAD_ENTER:
+            case android.view.KeyEvent.KEYCODE_BUTTON_A:
+                if (!down) {
+                    if (focus < 0 || closeAlpha() < 0.3f) {
+                        focus = THEMES.length;
+                    } else if (focus < THEMES.length) {
+                        setTheme(focus);
+                        themeChangedAt = SystemClock.uptimeMillis();
+                        if (listener != null) listener.onTheme(focus);
+                    } else if (focus == THEMES.length) {
+                        if (listener != null) listener.onOrderReady();
+                    } else if (listener != null) {
+                        listener.onClose();
+                    }
+                    closeShownAt = SystemClock.uptimeMillis();
+                    invalidate();
+                }
+                return true;
+            default:
+                if (down) {
+                    closeShownAt = SystemClock.uptimeMillis();
+                    invalidate();
+                }
+                return true; // keep remote keys away from the board underneath
+        }
+    }
+
+    private void drawFocus(Canvas c) {
+        float a = closeAlpha();
+        if (focus < 0 || a <= 0f) return;
+        stroke.setShader(null);
+        stroke.setColor(Color.WHITE);
+        stroke.setStrokeWidth(2.5f * d);
+        stroke.setAlpha((int) (255 * a));
+        if (focus < THEMES.length) {
+            c.drawCircle(dotX[focus], dotY, 10 * d, stroke);
+        } else if (focus == THEMES.length) {
+            rect.set(modeHit);
+            rect.inset(5 * d, 5 * d);
+            c.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, stroke);
+        } else {
+            c.drawCircle(closeX, closeY, closeR + 5 * d, stroke);
+        }
+        stroke.setAlpha(255);
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
         float x = ev.getX(), y = ev.getY();
@@ -468,6 +539,7 @@ final class DosaNeonView extends View {
         drawUpdated(c, w, t);
         drawThemeDots(c, t);
         drawModePill(c);
+        drawFocus(c);
         if (showStaff) drawStaff(c, w, h);
 
         postInvalidateOnAnimation();

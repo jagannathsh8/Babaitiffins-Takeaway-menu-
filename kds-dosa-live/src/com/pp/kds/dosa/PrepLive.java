@@ -405,6 +405,7 @@ final class PrepLive {
             coverage = coverageHolder[0];
             col.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
             root.addView(col);
+            root.setTag((Runnable) this::close); // remote BACK closes Prep Live
             ((ViewGroup) a.findViewById(android.R.id.content)).addView(root,
                     new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             root.bringToFront();
@@ -596,6 +597,7 @@ final class PrepLive {
                 sc.addView(list);
                 col.addView(sc, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
                 overlay.addView(col);
+                overlay.setTag((Runnable) this::close);
                 root.addView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT));
             }
@@ -688,6 +690,7 @@ final class PrepLive {
                         (int) Math.min(760 * d, a.getResources().getDisplayMetrics().widthPixels * 0.94f),
                         ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
                 overlay.addView(sc, lp);
+                overlay.setTag((Runnable) this::close);
                 root.addView(overlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT));
             }

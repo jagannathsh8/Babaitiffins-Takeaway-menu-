@@ -61,6 +61,8 @@ final class KeyScanCallback extends WindowCallbackWrapper {
                     }
                 }
             }
+            // TV remote: arrows / OK / Back for the add-on screens and buttons.
+            if (RemoteNav.isRemoteKey(e.getKeyCode()) && RemoteNav.dispatch(activity, e)) return true;
         } catch (Throwable ignored) {
         }
         return super.dispatchKeyEvent(e);
