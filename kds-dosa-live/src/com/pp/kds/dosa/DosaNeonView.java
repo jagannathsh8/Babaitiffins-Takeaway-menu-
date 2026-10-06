@@ -73,9 +73,9 @@ final class DosaNeonView extends View {
     private static final String[] MESSAGES = {
             "Your dosa is being crafted fresh on the tawa",
             "Golden. Crispy. Worth every minute.",
-            "Good food takes a little time — thank you for waiting",
+            "Good food takes a little time \u2014 thank you for waiting",
             "Batter, heat and a lot of love in progress",
-            "Sit back and relax — we'll serve it piping hot",
+            "Sit back and relax \u2014 we'll serve it piping hot",
     };
     private static final float MESSAGE_SECONDS = 6f;
     private static final float PANEL_SECONDS = 7f;
@@ -85,6 +85,8 @@ final class DosaNeonView extends View {
         void onClose();
 
         void onTheme(int index);
+
+        void onOrderReady();
     }
 
     private final float d;
@@ -136,7 +138,7 @@ final class DosaNeonView extends View {
     private static final long CLOSE_VISIBLE_MS = 5000, CLOSE_FADE_MS = 800;
     private int count, running, served;
     private float shownRunning, shownServed;
-    private String avg = "—";
+    private String avg = "\u2014";
     private String fastest = "";
     private String updated = "";
     private String staff = "";
@@ -145,6 +147,7 @@ final class DosaNeonView extends View {
     private float[] trendEta = new float[0];
     private boolean showStaff;
     private float closeX, closeY, closeR;
+    private final RectF modeHit = new RectF();
     private long downAt;
     private boolean downOnTitle;
 
@@ -189,6 +192,12 @@ final class DosaNeonView extends View {
         stroke.setStrokeCap(Paint.Cap.ROUND);
         stroke.setStrokeJoin(Paint.Join.ROUND);
         setClickable(true);
+    }
+
+    /** Food photos (decoded once, shared with the Order Ready screen). */
+    static synchronized android.graphics.Bitmap[] photos(Context c) {
+        loadPhotos(c);
+        return photos;
     }
 
     private static synchronized void loadPhotos(Context c) {
@@ -280,8 +289,8 @@ final class DosaNeonView extends View {
         count = r.activeCount;
         running = r.runningDosas;
         served = r.servedToday;
-        avg = Double.isNaN(r.avgPrepMin) ? "—" : String.format(Locale.US, "%.1f", r.avgPrepMin);
-        fastest = Double.isNaN(r.fastestPrepMin) ? "fastest —"
+        avg = Double.isNaN(r.avgPrepMin) ? "\u2014" : String.format(Locale.US, "%.1f", r.avgPrepMin);
+        fastest = Double.isNaN(r.fastestPrepMin) ? "fastest \u2014"
                 : String.format(Locale.US, "fastest %.1f min", r.fastestPrepMin);
         updated = updatedText;
         staff = staffText;
@@ -318,6 +327,8 @@ final class DosaNeonView extends View {
                 if (listener != null) listener.onTheme(hit);
             } else if (closeAlpha() > 0.3f && Math.hypot(x - closeX, y - closeY) < closeR + 14 * d) {
                 if (listener != null) listener.onClose();
+            } else if (closeAlpha() > 0.3f && modeHit.contains(x, y)) {
+                if (listener != null) listener.onOrderReady();
             } else if (downOnTitle && titleHit.contains(x, y)
                     && SystemClock.uptimeMillis() - downAt >= STAFF_HOLD_MS) {
                 showStaff = !showStaff;
@@ -374,6 +385,7 @@ final class DosaNeonView extends View {
         drawClose(c, w);
         drawUpdated(c, w, t);
         drawThemeDots(c, t);
+        drawModePill(c);
         if (showStaff) drawStaff(c, w, h);
 
         postInvalidateOnAnimation();
@@ -731,7 +743,7 @@ final class DosaNeonView extends View {
         text.setTextSize(vs);
         float unitW = 0;
         Paint up = null;
-        if (unit != null && !"—".equals(value)) {
+        if (unit != null && !"\u2014".equals(value)) {
             up = new Paint(text);
             up.setTextSize(vs * 0.4f);
             up.setTypeface(condensed);
@@ -816,14 +828,14 @@ final class DosaNeonView extends View {
         text.setTextSize(u * 0.025f);
         text.setColor(accent);
         text.setAlpha((int) (255 * alpha));
-        c.drawText(review ? "♥ GUEST LOVE" : "✦ DID YOU KNOW", tx, y + h * 0.3f, text);
+        c.drawText(review ? "\u2665 GUEST LOVE" : "\u2726 DID YOU KNOW", tx, y + h * 0.3f, text);
 
         text.setTypeface(review ? Typeface.create("serif", Typeface.ITALIC) : light);
         text.setLetterSpacing(0.01f);
         text.setTextSize(u * 0.032f);
         text.setColor(Color.WHITE);
         text.setAlpha((int) (255 * alpha));
-        drawWrapped(c, review ? "“" + body + "”" : body, tx, y + h * 0.58f, w - 36 * d,
+        drawWrapped(c, review ? "\u201C" + body + "\u201D" : body, tx, y + h * 0.58f, w - 36 * d,
                 u * 0.04f, 2);
         text.setAlpha(255);
         text.setLetterSpacing(0f);
@@ -851,7 +863,7 @@ final class DosaNeonView extends View {
         text.setLetterSpacing(0.25f);
         text.setTextSize(u * 0.024f);
         text.setColor(GOLD);
-        c.drawText("WAIT TREND  •  LAST 3 HOURS", x + pad, y + pad + u * 0.018f, text);
+        c.drawText("WAIT TREND  \u2022  LAST 3 HOURS", x + pad, y + pad + u * 0.018f, text);
         text.setTextAlign(Paint.Align.RIGHT);
         text.setTypeface(light);
         text.setLetterSpacing(0.12f);
@@ -868,7 +880,7 @@ final class DosaNeonView extends View {
             text.setTypeface(light);
             text.setTextSize(u * 0.03f);
             text.setColor(0xAAFFFFFF);
-            c.drawText("The trend draws itself as dosa orders flow in…", x + w / 2f, py + ph * 0.6f, text);
+            c.drawText("The trend draws itself as dosa orders flow in\u2026", x + w / 2f, py + ph * 0.6f, text);
             text.setTextAlign(Paint.Align.LEFT);
             return;
         }
@@ -984,6 +996,38 @@ final class DosaNeonView extends View {
         }
     }
 
+    /** "ORDER READY" switch under the theme dots; fades with the close button. */
+    private void drawModePill(Canvas c) {
+        float a = closeAlpha();
+        modeHit.setEmpty();
+        if (a <= 0f) return;
+        String label = "\u25A6  ORDER READY";
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.12f);
+        text.setTextSize(12 * d);
+        float pw = text.measureText(label) + 24 * d, ph = 26 * d;
+        float x = 24 * d, y = 44 * d;
+        rect.set(x, y, x + pw, y + ph);
+        modeHit.set(x - 8 * d, y - 8 * d, x + pw + 8 * d, y + ph + 8 * d);
+        fill.setShader(null);
+        fill.setColor(alpha(0xFF2E7D32, (int) (235 * a)));
+        c.drawRoundRect(rect, ph / 2f, ph / 2f, fill);
+        stroke.setShader(null);
+        stroke.setColor(Color.WHITE);
+        stroke.setStrokeWidth(1.2f * d);
+        stroke.setAlpha((int) (170 * a));
+        c.drawRoundRect(rect, ph / 2f, ph / 2f, stroke);
+        stroke.setAlpha(255);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setColor(Color.WHITE);
+        text.setAlpha((int) (255 * a));
+        c.drawText(label, rect.centerX(), y + ph / 2f + 4.2f * d, text);
+        text.setAlpha(255);
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setLetterSpacing(0f);
+        fill.setAlpha(255);
+    }
+
     /** Close button is visible for 5 s after opening or any tap, then fades out. */
     private float closeAlpha() {
         long since = SystemClock.uptimeMillis() - closeShownAt;
@@ -991,7 +1035,7 @@ final class DosaNeonView extends View {
         return Math.max(0f, 1f - (since - CLOSE_VISIBLE_MS) / (float) CLOSE_FADE_MS);
     }
 
-    /** "● LIVE · UPDATED 9:42 PM" pinned at the top right. */
+    /** "\u25CF LIVE \u00B7 UPDATED 9:42 PM" pinned at the top right. */
     private void drawUpdated(Canvas c, float w, float t) {
         float y = 30 * d;
         float right = w - 40 * d - closeAlpha() * (closeR * 2 + 12 * d);

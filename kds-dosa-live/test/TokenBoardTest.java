@@ -1,0 +1,99 @@
+package com.pp.kds.dosa;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+/** Plain-JVM checks for TokenBoard. Run: see build.sh (exits non-zero on failure). */
+public final class TokenBoardTest {
+    static int failures;
+
+    static void check(String name, boolean ok, Object detail) {
+        System.out.println((ok ? "PASS " : "FAIL ") + name + "  " + detail);
+        if (!ok) failures++;
+    }
+
+    static TokenBoard.Kot k(long id, String tok, long created, boolean ready) {
+        return new TokenBoard.Kot(id, tok, tok, created, ready, false, false, 1);
+    }
+
+    static String labels(List<TokenBoard.Token> l) {
+        StringBuilder sb = new StringBuilder();
+        for (TokenBoard.Token t : l) sb.append(sb.length() == 0 ? "" : ",").append(t.label);
+        return sb.toString();
+    }
+
+    public static void main(String[] a) {
+        TokenBoard b = new TokenBoard();
+        long t0 = 1_000_000L;
+        // Startup snapshot: an already-ready token is NOT announced.
+        b.update(Arrays.asList(k(1, "5", t0, true), k(2, "6", t0 + 1, false)), t0, true);
+        check("no backlog call", b.takeCall(t0 + 10_000).isEmpty(), "");
+        check("lists", labels(b.ready()).equals("5") && labels(b.preparing()).equals("6"),
+                labels(b.ready()) + " | " + labels(b.preparing()));
+
+        // Five tokens turn ready within a few seconds -> one call, in the order they became ready.
+        List<TokenBoard.Kot> board = new ArrayList<TokenBoard.Kot>();
+        board.add(k(1, "5", t0, true));
+        board.add(k(2, "6", t0, false));
+        board.add(k(11, "1", t0, true));
+        board.add(k(12, "2", t0, true));
+        b.update(board, t0 + 20_000, true);
+        check("gather wait", b.takeCall(t0 + 21_000).isEmpty(), "");
+        board.set(1, k(2, "6", t0, true));
+        board.add(k(14, "4", t0, true));
+        b.update(board, t0 + 22_000, true);
+        List<TokenBoard.Token> call = b.takeCall(t0 + 23_100);
+        check("batched call", labels(call).equals("1,2,6,4"), labels(call));
+        check("phrase", TokenBoard.phrase(call).equals("Token number 1, 2, 6, 4, dosa ready, kindly collect."),
+                TokenBoard.phrase(call));
+        check("called once", b.takeCall(t0 + 40_000).isEmpty(), "");
+        check("ready newest first", labels(b.ready()).startsWith("6,4") || labels(b.ready()).startsWith("4,6"),
+                labels(b.ready()));
+
+        // Dispatch removes the token immediately; a vanished card goes after MISSING_MS.
+        board.set(0, new TokenBoard.Kot(1, "5", "5", t0, true, true, false, 1));
+        b.update(board, t0 + 50_000, true);
+        check("dispatched removed", !labels(b.ready()).contains("5"), labels(b.ready()));
+        board.remove(0);
+        board.remove(0); // KOT 2 (token 6) disappears from the board
+        b.update(board, t0 + 51_000, true);
+        check("blip kept", labels(b.ready()).contains("6"), labels(b.ready()));
+        b.update(board, t0 + 57_000, true);
+        check("gone removed", !labels(b.ready()).contains("6"), labels(b.ready()));
+
+        // Not watching: ready tokens are silently marked, nothing replayed later.
+        board.add(k(20, "9", t0, false));
+        b.update(board, t0 + 60_000, true);
+        board.set(board.size() - 1, k(20, "9", t0, true));
+        b.update(board, t0 + 62_000, false);
+        b.update(board, t0 + 64_000, true);
+        check("silent when hidden", b.takeCall(t0 + 70_000).isEmpty(), "");
+
+        // Two KOTs on one token: ready only when both are.
+        board.add(k(30, "12", t0, true));
+        board.add(k(31, "12", t0, false));
+        b.update(board, t0 + 80_000, true);
+        check("token waits for all KOTs", labels(b.preparing()).contains("12"), labels(b.preparing()));
+        board.set(board.size() - 1, k(31, "12", t0, true));
+        b.update(board, t0 + 82_000, true);
+        check("token ready", labels(b.takeCall(t0 + 86_000)).equals("12"), "");
+
+        // Table fallback in the phrase.
+        TokenBoard.Token tt = new TokenBoard.Token("T4");
+        tt.spoken = "table 4";
+        TokenBoard.Token t7 = new TokenBoard.Token("7");
+        t7.spoken = "7";
+        check("table phrase", TokenBoard.phrase(Arrays.asList(t7, tt)).equals("Token number 7, table 4, dosa ready, kindly collect."),
+                TokenBoard.phrase(Arrays.asList(t7, tt)));
+
+        // Minutes left: real figures only.
+        check("no data -> NaN", Double.isNaN(TokenBoard.minutesLeft(0, 2, Double.NaN, 0)), "");
+        check("avg based", Math.abs(TokenBoard.minutesLeft(0, 2, 5.5, 0) - 3.5) < 1e-9, TokenBoard.minutesLeft(0, 2, 5.5, 0));
+        check("queue based", Math.abs(TokenBoard.minutesLeft(9, 2, 5.5, 1.0) - 10) < 1e-9, TokenBoard.minutesLeft(9, 2, 5.5, 1.0));
+        check("cap 40", TokenBoard.minutesLeft(99, 0, 5, 0.5) == 40, TokenBoard.minutesLeft(99, 0, 5, 0.5));
+
+        System.out.println(failures == 0 ? "ALL PASS" : failures + " FAILED");
+        if (failures > 0) System.exit(1);
+    }
+}

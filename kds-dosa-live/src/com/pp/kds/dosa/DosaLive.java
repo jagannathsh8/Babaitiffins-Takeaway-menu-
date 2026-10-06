@@ -63,6 +63,7 @@ public final class DosaLive {
     private static SharedPreferences prefs;
     private static View buttonRow;
     private static boolean seedApplied;
+    private static final TokenBoard tokens = new TokenBoard();
 
     private DosaLive() {}
 
@@ -190,7 +191,13 @@ public final class DosaLive {
             List<KotCard> cards = state.getCards();
             if (cards != null && cards != lastCards) { // StateFlow emits a new list on every change
                 lastCards = cards;
-                changed = stats.update(dosaEntries(cards), now, cards.size() >= BOARD_CAP - 5);
+                List<TokenBoard.Kot> tk = new ArrayList<TokenBoard.Kot>();
+                changed = stats.update(dosaEntries(cards, tk), now, cards.size() >= BOARD_CAP - 5);
+                try {
+                    tokens.update(tk, now, panel != null && panel.mode == Panel.ORDER_READY);
+                    if (panel != null) panel.bindTokens();
+                } catch (Throwable ignored) {
+                }
                 try {
                     PrepLive.onBoard(cards, now);
                 } catch (Throwable ignored) {
@@ -206,6 +213,11 @@ public final class DosaLive {
             PrepLive.tick(now, false);
         } catch (Throwable ignored) {
         }
+        try {
+            List<TokenBoard.Token> call = tokens.takeCall(now);
+            if (!call.isEmpty() && panel != null) panel.announce(call);
+        } catch (Throwable ignored) {
+        }
         if (changed || now - lastComputeAt >= RECOMPUTE_MS) {
             lastComputeAt = now;
             last = stats.compute(now);
@@ -214,7 +226,7 @@ public final class DosaLive {
         }
     }
 
-    private static List<DosaStats.Entry> dosaEntries(List<KotCard> cards) {
+    private static List<DosaStats.Entry> dosaEntries(List<KotCard> cards, List<TokenBoard.Kot> tokenOut) {
         List<DosaStats.Entry> out = new ArrayList<DosaStats.Entry>();
         for (KotCard card : cards) {
             Kot kot = card.getKot();
@@ -235,8 +247,35 @@ public final class DosaLive {
             for (int i = 0; i < q.length; i++) q[i] = qty.get(i);
             out.add(new DosaStats.Entry(kot.getId(), created == null ? 0L : created, ready, cancelled,
                     names.toArray(new String[0]), q));
+            int dosas = 0;
+            for (double v : q) dosas += (int) Math.max(1, Math.round(v));
+            String[] tok = tokenLabel(kot);
+            tokenOut.add(new TokenBoard.Kot(kot.getId(), tok[0], tok[1], created == null ? 0L : created, ready,
+                    "10".equals(status), cancelled, dosas));
         }
         return out;
+    }
+
+    /** {screen label, spoken form}: the KOT token number, else the table, else the KOT number. */
+    private static String[] tokenLabel(Kot kot) {
+        Long tn = null;
+        try {
+            tn = kot.getTokenNo();
+        } catch (Throwable ignored) {
+        }
+        if (tn != null && tn > 0) return new String[]{String.valueOf(tn), String.valueOf(tn)};
+        String table = null;
+        try {
+            table = kot.getTableNo();
+        } catch (Throwable ignored) {
+        }
+        if (table != null && !table.trim().isEmpty()) {
+            table = table.trim();
+            return new String[]{"T" + table, "table " + table};
+        }
+        String id = String.valueOf(kot.getId());
+        if (id.length() > 3) id = id.substring(id.length() - 3);
+        return new String[]{"#" + id, "order " + id};
     }
 
     /** Collects the Dosa items; returns true when every one of them is marked ready. */
@@ -338,28 +377,105 @@ public final class DosaLive {
 
     private static void render() {
         if (panel != null && last != null) panel.bind(last);
+        if (panel != null) panel.bindTokens();
     }
 
-    /** Full-screen neon overlay inside MainActivity (no new Activity / manifest change needed). */
+    /**
+     * Full-screen overlay inside MainActivity (no new Activity / manifest change needed) with two
+     * modes: the Dosa Live wait screen and the Order Ready token board (with voice calls).
+     */
     private static final class Panel {
+        static final int DOSA_LIVE = 0, ORDER_READY = 1;
         final Activity activity;
+        final SharedPreferences ui;
         final DosaNeonView view;
+        TokenBoardView board;
+        TokenVoice voice;
+        int mode;
 
         Panel(Activity a) {
             activity = a;
+            float d = a.getResources().getDisplayMetrics().density;
+            ui = a.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
             view = new DosaNeonView(a);
-            view.setElevation(24 * a.getResources().getDisplayMetrics().density);
-            final SharedPreferences ui = a.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
+            view.setElevation(24 * d);
+            view.setKeepScreenOn(true);
             view.setTheme(ui.getInt("theme", 0));
             view.setListener(new DosaNeonView.Listener() {
                 @Override public void onClose() { close(); }
 
                 @Override public void onTheme(int index) { ui.edit().putInt("theme", index).apply(); }
+
+                @Override public void onOrderReady() { setMode(ORDER_READY); }
             });
-            ((ViewGroup) a.findViewById(android.R.id.content)).addView(view,
-                    new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT));
+            ViewGroup root = (ViewGroup) a.findViewById(android.R.id.content);
+            root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
             view.bringToFront();
+            setMode(ui.getInt("mode", DOSA_LIVE));
+        }
+
+        void setMode(int m) {
+            mode = m;
+            ui.edit().putInt("mode", m).apply();
+            if (m == ORDER_READY) {
+                if (board == null) {
+                    board = new TokenBoardView(activity);
+                    board.setElevation(26 * activity.getResources().getDisplayMetrics().density);
+                    board.setKeepScreenOn(true);
+                    board.setListener(new TokenBoardView.Listener() {
+                        @Override public void onClose() { close(); }
+
+                        @Override public void onDosaLive() { setMode(DOSA_LIVE); }
+
+                        @Override public void onVoice(boolean on) {
+                            ui.edit().putBoolean("voice", on).apply();
+                            if (!on) {
+                                tokens.clearPending();
+                                if (voice != null) voice.stop();
+                            } else if (voice == null) {
+                                voice = new TokenVoice(activity);
+                            }
+                        }
+                    });
+                    ((ViewGroup) activity.findViewById(android.R.id.content)).addView(board,
+                            new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT));
+                }
+                board.setTheme(ui.getInt("theme", 0));
+                board.setVoice(voiceOn());
+                board.setVisibility(View.VISIBLE);
+                board.bringToFront();
+                view.setVisibility(View.INVISIBLE);
+                if (voiceOn() && voice == null) voice = new TokenVoice(activity);
+                bindTokens();
+            } else {
+                view.setVisibility(View.VISIBLE);
+                view.bringToFront();
+                if (board != null) board.setVisibility(View.GONE);
+                if (voice != null) voice.stop();
+                tokens.clearPending();
+            }
+        }
+
+        boolean voiceOn() {
+            return ui.getBoolean("voice", true);
+        }
+
+        void bindTokens() {
+            if (mode == ORDER_READY && board != null) {
+                board.setTheme(ui.getInt("theme", 0)); // follows the Dosa Live theme / auto theme
+                board.setData(tokens.ready(), tokens.preparing(), last);
+            }
+        }
+
+        void announce(List<TokenBoard.Token> call) {
+            if (mode != ORDER_READY || board == null) return;
+            board.showCall(call);
+            if (voiceOn()) {
+                if (voice == null) voice = new TokenVoice(activity);
+                voice.say(TokenBoard.phrase(call));
+            }
         }
 
         void bind(DosaStats.Result r) {
@@ -382,6 +498,10 @@ public final class DosaLive {
         void close() {
             ViewGroup parent = (ViewGroup) view.getParent();
             if (parent != null) parent.removeView(view);
+            if (board != null && board.getParent() != null) ((ViewGroup) board.getParent()).removeView(board);
+            if (voice != null) voice.shutdown();
+            voice = null;
+            tokens.clearPending();
             if (panel == this) panel = null;
         }
     }
