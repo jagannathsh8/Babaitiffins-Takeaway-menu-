@@ -17,12 +17,11 @@ import java.util.Set;
 /**
  * Speaks "Token number 1, 2, 6, dosa ready, kindly collect." on the TV, in English, using the
  * device's offline text-to-speech. A soft two-note chime plays first so people look up.
- * While speaking, the media volume is raised to at least 90 % and put back afterwards.
+ * Loudness follows the TV / device media volume (the remote's volume keys).
  */
 final class TokenVoice {
 
     private static final int RATE = 22050;
-    private static final float MIN_VOLUME = 0.9f;
 
     private final Context app;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -97,7 +96,6 @@ final class TokenVoice {
             return;
         }
         boolean busy = tts.isSpeaking();
-        boost();
         if (!busy) playChime();
         main.postDelayed(new Runnable() {
             @Override public void run() {
@@ -108,20 +106,6 @@ final class TokenVoice {
                 tts.speak(phrase, TextToSpeech.QUEUE_ADD, p, "tok" + System.nanoTime());
             }
         }, busy ? 0 : 850);
-    }
-
-    private void boost() {
-        try {
-            main.removeCallbacks(restore);
-            int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-            int cur = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
-            int want = (int) Math.ceil(max * MIN_VOLUME);
-            if (cur < want) {
-                if (restoreVolume < 0) restoreVolume = cur;
-                audio.setStreamVolume(AudioManager.STREAM_MUSIC, want, 0);
-            }
-        } catch (Throwable ignored) {
-        }
     }
 
     private final Runnable restore = new Runnable() {
@@ -144,8 +128,8 @@ final class TokenVoice {
             if (chime == null) {
                 int n = (int) (RATE * 0.8f);
                 short[] pcm = new short[n];
-                note(pcm, 0, 1318.5, 0.45f);
-                note(pcm, (int) (RATE * 0.28f), 1046.5, 0.45f);
+                note(pcm, 0, 1318.5, 0.30f);
+                note(pcm, (int) (RATE * 0.28f), 1046.5, 0.30f);
                 chime = new AudioTrack(AudioManager.STREAM_MUSIC, RATE, AudioFormat.CHANNEL_OUT_MONO,
                         AudioFormat.ENCODING_PCM_16BIT, n * 2, AudioTrack.MODE_STATIC);
                 chime.write(pcm, 0, n);

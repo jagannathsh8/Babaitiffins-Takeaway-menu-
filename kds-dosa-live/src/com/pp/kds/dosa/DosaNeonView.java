@@ -165,6 +165,7 @@ final class DosaNeonView extends View {
             logo = null;
         }
         loadPhotos(c);
+        lite = isLowEnd(c);
         setTheme(0);
         try {
             food = DosaFoodArt.renderAll();
@@ -234,6 +235,52 @@ final class DosaNeonView extends View {
      * Scales a photo so its average brightness matches PHOTO_LUMA. Photos differ a lot (dark
      * coffee vs bright idli), which made the screen pulse brighter/darker at every change.
      */
+    // ---- cached drawing resources (TV boxes stutter when these are rebuilt every frame) ----
+    private SlideBackdrop backdrop;
+    private LinearGradient trendFill, trendLine;
+    private float trendKey;
+    private long trendNowVal = Long.MIN_VALUE, trendLabelMin = -1;
+    private String trendNowStr, trendFrom, trendTo;
+    /** TV / low-memory box: fewer floating sprites and embers. */
+    private boolean lite;
+
+    /** Android TV, or a low-memory device: use the lighter animation set. */
+    static boolean isLowEnd(Context c) {
+        try {
+            android.app.UiModeManager ui = (android.app.UiModeManager) c.getSystemService(Context.UI_MODE_SERVICE);
+            if (ui != null && ui.getCurrentModeType() == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION) {
+                return true;
+            }
+            android.app.ActivityManager am = (android.app.ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null && am.isLowRamDevice()) return true;
+            return c.getPackageManager().hasSystemFeature("android.software.leanback");
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** Paints one background slide: base colour, food photo, theme tint and the two glows. */
+    private final SlideBackdrop.Painter slidePainter = new SlideBackdrop.Painter() {
+        @Override public void paint(Canvas c, int w, int h, int k, android.graphics.Bitmap photo) {
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+            c.drawColor(theme.bg2);
+            SlideBackdrop.cover(c, photo, w, h, p);
+            float big = Math.max(w, h);
+            p.setShader(new RadialGradient(w * 0.28f, h * 0.42f, big * 0.95f,
+                    new int[]{alpha(theme.bg0, 0xB8), alpha(theme.bg1, 0xCC), alpha(theme.bg2, 0xEC)},
+                    new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
+            p.setAlpha((int) (255 * tintScale(k, k, 0f))); // same brightness on every photo
+            c.drawRect(0, 0, w, h, p);
+            p.setAlpha(255);
+            p.setShader(new RadialGradient(w * 0.85f, h * 0.12f, big * 0.38f,
+                    new int[]{alpha(ORANGE, 0x33), alpha(ORANGE, 0)}, null, Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, w, h, p);
+            p.setShader(new RadialGradient(w * 0.12f, h * 0.95f, big * 0.35f,
+                    new int[]{alpha(GOLD, 0x2A), alpha(GOLD, 0)}, null, Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, w, h, p);
+        }
+    };
+
     private static float lastLuma = PHOTO_LUMA;
     private static float[] photoLuma = new float[0];
 
@@ -339,6 +386,7 @@ final class DosaNeonView extends View {
         SAFFRON = theme.M;
         CHILI = theme.R;
         background = null;  // rebuild shaders in the new colours
+        if (backdrop != null) backdrop.invalidate();
         halo = null;
         invalidate();
     }
@@ -577,22 +625,15 @@ final class DosaNeonView extends View {
     }
 
     private void drawBackground(Canvas c, float w, float h, float t) {
-        c.drawColor(theme.bg2);
-        drawSlideshow(c, w, h, t);
-        fill.setColor(Color.BLACK);
-        fill.setAlpha((int) (255 * slideTint(t)));
-        fill.setShader(background);
-        c.drawRect(0, 0, w, h, fill);
-        fill.setAlpha(255);
-        fill.setShader(blobA);
-        c.drawRect(0, 0, w, h, fill);
-        fill.setShader(blobB);
-        c.drawRect(0, 0, w, h, fill);
+        // Photo + tint + glows are pre-painted once per slide (one bitmap draw per frame).
+        if (backdrop == null) backdrop = new SlideBackdrop(photos, SLIDE_SECONDS, FADE_SECONDS);
+        backdrop.draw(c, w, h, t, slidePainter);
         fill.setShader(null);
+        fill.setAlpha(255);
 
         if (food != null) {
             drawCornerLeaves(c, w, h, t);
-            for (int i = 0; i < FOODS; i++) {
+            for (int i = 0; i < (lite ? FOODS / 2 : FOODS); i++) {
                 float life = (fy[i] + t * fs[i]) % 1f;
                 float x = (fx[i] + 0.025f * (float) Math.sin(t * 0.35f + fph[i])) * w;
                 float y = h * (1.12f - life * 1.24f);
@@ -608,7 +649,7 @@ final class DosaNeonView extends View {
             }
         }
 
-        for (int i = 0; i < EMBERS; i++) {
+        for (int i = 0; i < (lite ? EMBERS / 2 : EMBERS); i++) {
             float life = (ey[i] + t * es[i]) % 1f;
             float x = (ex[i] + 0.02f * (float) Math.sin(t * 0.6f + ep[i])) * w;
             float y = h * (1.05f - life * 1.1f);
@@ -899,7 +940,8 @@ final class DosaNeonView extends View {
         float unitW = 0;
         Paint up = null;
         if (unit != null && !"\u2014".equals(value)) {
-            up = new Paint(text);
+            up = unitPaint;
+            up.set(text);
             up.setTextSize(vs * 0.4f);
             up.setTypeface(condensed);
             unitW = up.measureText(" " + unit);
@@ -1076,11 +1118,17 @@ final class DosaNeonView extends View {
         area.lineTo(lastX, py + ph);
         area.lineTo(firstX, py + ph);
         area.close();
-        fill.setShader(new LinearGradient(0, py, 0, py + ph, alpha(ORANGE, 0x66), alpha(ORANGE, 0), Shader.TileMode.CLAMP));
+        float tk = py * 31 + ph * 17 + px * 7 + pw + ORANGE + SAFFRON * 3 + GOLD;
+        if (trendFill == null || trendKey != tk) {
+            trendKey = tk;
+            trendFill = new LinearGradient(0, py, 0, py + ph, alpha(ORANGE, 0x66), alpha(ORANGE, 0), Shader.TileMode.CLAMP);
+            trendLine = new LinearGradient(px, 0, px + pw, 0, SAFFRON, GOLD, Shader.TileMode.CLAMP);
+        }
+        fill.setShader(trendFill);
         c.drawPath(area, fill);
         fill.setShader(null);
 
-        stroke.setShader(new LinearGradient(px, 0, px + pw, 0, SAFFRON, GOLD, Shader.TileMode.CLAMP));
+        stroke.setShader(trendLine);
         stroke.setStrokeWidth(7 * d);
         stroke.setAlpha(45);
         c.drawPath(path, stroke);
@@ -1101,7 +1149,12 @@ final class DosaNeonView extends View {
         text.setTypeface(condensed);
         text.setTextSize(u * 0.026f);
         text.setColor(CREAM);
-        c.drawText(String.format(Locale.US, "now ~%.0fm", trendEta[n - 1]), lastX - 10 * d,
+        long nowM = Math.round(trendEta[n - 1]);
+        if (nowM != trendNowVal || trendNowStr == null) {
+            trendNowVal = nowM;
+            trendNowStr = "now ~" + nowM + "m";
+        }
+        c.drawText(trendNowStr, lastX - 10 * d,
                 Math.max(py + u * 0.03f, lastY - 8 * d), text);
 
         // x labels
@@ -1109,9 +1162,14 @@ final class DosaNeonView extends View {
         text.setTextSize(u * 0.021f);
         text.setColor(0x88FFFFFF);
         text.setTextAlign(Paint.Align.LEFT);
-        c.drawText(timeFormat.format(new Date(t1 - span)), px, y + h - pad * 0.25f, text);
+        if (t1 / 60_000L != trendLabelMin || trendFrom == null) {
+            trendLabelMin = t1 / 60_000L;
+            trendFrom = timeFormat.format(new Date(t1 - span));
+            trendTo = timeFormat.format(new Date(t1));
+        }
+        c.drawText(trendFrom, px, y + h - pad * 0.25f, text);
         text.setTextAlign(Paint.Align.RIGHT);
-        c.drawText(timeFormat.format(new Date(t1)), px + pw, y + h - pad * 0.25f, text);
+        c.drawText(trendTo, px + pw, y + h - pad * 0.25f, text);
         text.setTextAlign(Paint.Align.LEFT);
     }
 
@@ -1251,7 +1309,32 @@ final class DosaNeonView extends View {
         }
     }
 
+    private final Paint unitPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private String wrapKey;
+    private List<String> wrapLines;
+    private float wrapSize, wrapK = 1f;
+
     private float drawWrapped(Canvas c, String s, float x, float y, float maxW, float lineH, int maxLines) {
+        // The same fact is drawn for several seconds: wrap it once, not on every frame.
+        String key = s + '|' + (int) maxW + '|' + (int) text.getTextSize() + '|' + maxLines;
+        if (!key.equals(wrapKey)) {
+            float startSize = text.getTextSize();
+            layoutWrapped(s, maxW, maxLines);
+            wrapKey = key;
+            wrapSize = text.getTextSize();
+            wrapK = wrapSize / Math.max(1f, startSize);
+        }
+        text.setTextSize(wrapSize);
+        float baseline = y;
+        for (int i = 0; i < wrapLines.size(); i++) {
+            baseline = y + i * lineH * wrapK;
+            c.drawText(wrapLines.get(i), x, baseline, text);
+        }
+        return baseline;
+    }
+
+    /** Word-wraps {@code s} into wrapLines, shrinking the text size until it fits maxLines. */
+    private float layoutWrapped(String s, float maxW, int maxLines) {
         List<String> lines = new ArrayList<String>();
         StringBuilder cur = new StringBuilder();
         for (String word : s.split(" ")) {
@@ -1266,15 +1349,10 @@ final class DosaNeonView extends View {
         if (cur.length() > 0) lines.add(cur.toString());
         // shrink to fit instead of cutting words off
         if (lines.size() > maxLines && text.getTextSize() > 8 * d) {
-            float k = 0.9f;
-            text.setTextSize(text.getTextSize() * k);
-            return drawWrapped(c, s, x, y, maxW, lineH * k, maxLines);
+            text.setTextSize(text.getTextSize() * 0.9f);
+            return layoutWrapped(s, maxW, maxLines);
         }
-        float baseline = y;
-        for (int i = 0; i < lines.size(); i++) {
-            baseline = y + i * lineH;
-            c.drawText(lines.get(i), x, baseline, text);
-        }
-        return baseline;
+        wrapLines = lines;
+        return 0;
     }
 }

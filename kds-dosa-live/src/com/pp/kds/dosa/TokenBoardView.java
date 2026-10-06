@@ -119,6 +119,7 @@ final class TokenBoardView extends View {
         super(c);
         d = c.getResources().getDisplayMetrics().density;
         clock = android.text.format.DateFormat.getTimeFormat(c);
+        lite = DosaNeonView.isLowEnd(c);
         try {
             java.io.InputStream in = c.getAssets().open("dosa_live_logo.png");
             logo = android.graphics.BitmapFactory.decodeStream(in);
@@ -148,7 +149,9 @@ final class TokenBoardView extends View {
     }
 
     void setTheme(int index) {
-        theme = DosaNeonView.THEMES[Math.max(0, Math.min(DosaNeonView.THEMES.length - 1, index))];
+        DosaNeonView.Theme nt = DosaNeonView.THEMES[Math.max(0, Math.min(DosaNeonView.THEMES.length - 1, index))];
+        if (nt != theme && backdrop != null) backdrop.invalidate();
+        theme = nt;
         invalidate();
     }
 
@@ -492,27 +495,10 @@ final class TokenBoardView extends View {
     }
 
     private void drawBackground(Canvas c, float w, float h, float t) {
-        c.drawColor(theme.bg2);
-        int n = photos == null ? 0 : photos.length;
-        float tint = 1f;
-        if (n > 0) {
-            float slide = 12f;
-            int k = (int) (t / slide);
-            drawPhoto(c, w, h, t, k, n, slide, 255);
-            float local = t - k * slide;
-            float mix = local > slide - 2f ? (local - slide + 2f) / 2f : 0f;
-            if (mix > 0) drawPhoto(c, w, h, t, k + 1, n, slide, (int) (255 * mix));
-            tint = DosaNeonView.tintScale(k, k + 1, mix); // same brightness on every photo
-        }
-        fill.setShader(new RadialGradient(w * 0.3f, h * 0.4f, Math.max(w, h),
-                new int[]{alpha(theme.bg0, 0xB0), alpha(theme.bg1, 0xCC), alpha(theme.bg2, 0xEA)},
-                new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
-        fill.setAlpha((int) (255 * tint));
-        c.drawRect(0, 0, w, h, fill);
-        fill.setShader(null);
-        fill.setAlpha(255);
+        if (backdrop == null) backdrop = new SlideBackdrop(photos, 12f, 2f);
+        backdrop.draw(c, w, h, t, slidePainter);
         // drifting embers
-        for (int i = 0; i < SPARKS; i++) {
+        for (int i = 0; i < (lite ? SPARKS / 2 : SPARKS); i++) {
             float life = (sy[i] + t * ss[i]) % 1f;
             float x = (sx[i] + 0.02f * (float) Math.sin(t * 0.5f + i)) * w;
             float y = h * (1.05f - life * 1.1f);
@@ -526,21 +512,13 @@ final class TokenBoardView extends View {
         fill.setAlpha(255);
     }
 
-    private void drawPhoto(Canvas c, float w, float h, float t, int k, int n, float slide, int a) {
-        Bitmap b = photos[k % n];
-        float p = Math.max(0f, Math.min(1f, (t - k * slide) / (slide + 2f)));
-        float sc = Math.max(w / b.getWidth(), h / b.getHeight()) * (1.05f + 0.1f * p);
-        float dw = b.getWidth() * sc, dh = b.getHeight() * sc;
-        float x = (w - dw) / 2f + (dw - w) / 2f * (k % 2 == 0 ? 1 : -1) * (p - 0.5f) * 0.8f;
-        float y = (h - dh) / 2f;
-        dst.set(x, y, x + dw, y + dh);
-        bmp.setAlpha(a);
-        c.drawBitmap(b, null, dst, bmp);
-    }
-
     private void drawBorder(Canvas c, float w, float h, float t) {
-        SweepGradient g = new SweepGradient(w / 2f, h / 2f,
-                new int[]{theme.P, theme.L, theme.T, theme.M, theme.R, theme.P}, null);
+        if (borderShader == null || borderKey != w * 7 + h * 13 + theme.P) {
+            borderKey = w * 7 + h * 13 + theme.P;
+            borderShader = new SweepGradient(w / 2f, h / 2f,
+                    new int[]{theme.P, theme.L, theme.T, theme.M, theme.R, theme.P}, null);
+        }
+        SweepGradient g = borderShader;
         borderMatrix.setRotate(t * 12f, w / 2f, h / 2f);
         g.setLocalMatrix(borderMatrix);
         stroke.setShader(g);
@@ -584,8 +562,9 @@ final class TokenBoardView extends View {
             text.setTypeface(bold);
             text.setLetterSpacing(0.3f);
             text.setTextSize(36 * s);
-            text.setColor(alpha(Color.WHITE, (int) (255 * (1f - 0.92f * controlsAlpha()))));
-            text.setShadowLayer(18 * s, 0, 0, theme.P);
+            float ca = controlsAlpha();
+            text.setColor(alpha(Color.WHITE, (int) (255 * (1f - 0.92f * ca))));
+            if (ca == 0f) text.setShadowLayer(18 * s, 0, 0, theme.P); // glow only when steady
             c.drawText("ORDER READY", x + w * 0.52f, cy + 12 * s, text);
             text.clearShadowLayer();
         }
@@ -596,7 +575,7 @@ final class TokenBoardView extends View {
         text.setLetterSpacing(0f);
         text.setTextSize(44 * s);
         text.setColor(Color.WHITE);
-        c.drawText(clock.format(new Date()), x + w, cy + 4 * s, text);
+        c.drawText(clockText(), x + w, cy + 4 * s, text);
         text.setTypeface(condensed);
         text.setLetterSpacing(0.3f);
         text.setTextSize(16 * s);
@@ -705,21 +684,21 @@ final class TokenBoardView extends View {
             c.drawRoundRect(rect, r + i * 7 * s, r + i * 7 * s, fill);
         }
         rect.set(x, y, x + w, y + h);
-        fill.setShader(new LinearGradient(x, y, x + w, y + h, 0xEE1B5E20, 0xF0103416, Shader.TileMode.CLAMP));
+        fill.setShader(diag(0xEE1B5E20, 0xF0103416, x, y, w, h));
         fill.setAlpha(255);
         c.drawRoundRect(rect, r, r, fill);
-        fill.setShader(null);
-        // shimmer sweep
-        c.save();
-        path.reset();
-        path.addRoundRect(rect, r, r, Path.Direction.CW);
-        c.clipPath(path);
+        // shimmer sweep: a cached band shader slid across (no clipping needed)
         float sweep = ((t % 3.2f) / 3.2f) * (w + h) * 1.6f - h;
-        fill.setShader(new LinearGradient(x + sweep, y, x + sweep + h * 0.6f, y + h,
-                new int[]{0x00FFFFFF, 0x2EFFFFFF, 0x00FFFFFF}, null, Shader.TileMode.CLAMP));
-        c.drawRect(rect, fill);
+        if (shimmer == null) {
+            shimmer = new LinearGradient(0, 0, 0.6f, 1f, new int[]{0x00FFFFFF, 0x2EFFFFFF, 0x00FFFFFF}, null,
+                    Shader.TileMode.CLAMP);
+        }
+        shaderMatrix.setScale(h, h);
+        shaderMatrix.postTranslate(x + sweep, y);
+        shimmer.setLocalMatrix(shaderMatrix);
+        fill.setShader(shimmer);
+        c.drawRoundRect(rect, r, r, fill);
         fill.setShader(null);
-        c.restore();
         stroke.setColor(GREEN);
         stroke.setStrokeWidth(3 * s);
         stroke.setAlpha(200 + (int) (55 * pulse));
@@ -1053,9 +1032,11 @@ final class TokenBoardView extends View {
         boolean hot = p > 0.7f;
         int c0 = hot ? theme.S : 0xFFFF8A00, c1 = hot ? GREEN : 0xFFFFE082;
         rect.set(bx, barY, Math.max(bx + barH, fx), barY + barH);
-        fill.setShader(new LinearGradient(bx, 0, fx, 0, alpha(c0, a), alpha(c1, a), Shader.TileMode.CLAMP));
+        fill.setShader(horiz(tk.label, c0, c1, bx, Math.max(1f, fx - bx)));
+        fill.setAlpha(a);
         c.drawRoundRect(rect, barH / 2f, barH / 2f, fill);
         fill.setShader(null);
+        fill.setAlpha(255);
         // travelling sparkle on the bar
         float sp = (t * 0.6f + tk.label.hashCode() * 0.013f) % 1f;
         float sxp = bx + (fx - bx) * sp;
@@ -1136,7 +1117,7 @@ final class TokenBoardView extends View {
         float h = 40 * s, y = 86 * s - h / 2f;
         text.setTypeface(bold);
         text.setTextSize(44 * s);
-        float right = w - 44 * s - text.measureText(clock.format(new Date())) - 28 * s;
+        float right = w - 44 * s - text.measureText(clockText()) - 28 * s;
         float bx = right - h;
         rect.set(bx, y, right, y + h);
         hitClose.set(rect);
@@ -1188,8 +1169,12 @@ final class TokenBoardView extends View {
         }
         float in = Math.min(1f, age / 350f), out = Math.min(1f, (CALL_MS - age) / 450f);
         float vis = Math.min(in, out);
-        fill.setShader(new RadialGradient(w / 2f, h / 2f, Math.max(w, h) * 0.7f,
-                new int[]{0xB8081E0C, 0xDD000000}, null, Shader.TileMode.CLAMP));
+        if (callBg == null || callBgKey != w * 7 + h) {
+            callBgKey = w * 7 + h;
+            callBg = new RadialGradient(w / 2f, h / 2f, Math.max(w, h) * 0.7f,
+                    new int[]{0xB8081E0C, 0xDD000000}, null, Shader.TileMode.CLAMP);
+        }
+        fill.setShader(callBg);
         fill.setAlpha((int) (255 * vis));
         c.drawRect(0, 0, w, h, fill);
         fill.setShader(null);
@@ -1214,7 +1199,7 @@ final class TokenBoardView extends View {
             c.drawRoundRect(rect, r + grow, r + grow, stroke);
         }
         rect.set(x, y, x + cw, y + ch);
-        fill.setShader(new LinearGradient(x, y, x + cw, y + ch, GREEN_DEEP, GREEN_DARK, Shader.TileMode.CLAMP));
+        fill.setShader(diag(GREEN_DEEP, GREEN_DARK, x, y, cw, ch));
         fill.setAlpha((int) (255 * vis));
         c.drawRoundRect(rect, r, r, fill);
         fill.setShader(null);
@@ -1355,9 +1340,83 @@ final class TokenBoardView extends View {
         return (float) (1 + (-0.4 * Math.exp(-6 * p) * Math.cos(9 * p)));
     }
 
+    private static final String[] AGO = new String[181];
+
     private static String ago(long readyAt) {
-        long m = (System.currentTimeMillis() - readyAt) / 60_000L;
-        if (m < 1) return "ready just now";
-        return "ready " + m + " min ago";
+        int m = (int) Math.max(0, Math.min(180, (System.currentTimeMillis() - readyAt) / 60_000L));
+        String v = AGO[m];
+        if (v == null) AGO[m] = v = m < 1 ? "ready just now" : "ready " + m + " min ago";
+        return v;
     }
+
+    // ---- cached drawing resources (TV boxes stutter when these are rebuilt every frame) ----
+
+    private SlideBackdrop backdrop;
+    private SweepGradient borderShader;
+    private float borderKey;
+    private LinearGradient shimmer;
+    private RadialGradient callBg;
+    private float callBgKey;
+    private final android.graphics.Matrix shaderMatrix = new android.graphics.Matrix();
+    private final Map<Long, LinearGradient> unitH = new HashMap<Long, LinearGradient>();
+    private final Map<Long, LinearGradient> unitD = new HashMap<Long, LinearGradient>();
+    private String clockStr = "";
+    private long clockAt;
+    /** TV / low-memory box: fewer floating particles. */
+    private final boolean lite;
+
+    private String clockText() {
+        long now = System.currentTimeMillis();
+        if (now - clockAt >= 1000) {
+            clockAt = now;
+            clockStr = clock.format(new Date(now));
+        }
+        return clockStr;
+    }
+
+    /**
+     * Left-to-right gradient c0 -> c1 over [x, x + w]. One cached shader per token (older
+     * Android versions must not reuse one shader object for several shapes in a frame).
+     */
+    private Shader horiz(String owner, int c0, int c1, float x, float w) {
+        long key = ((long) owner.hashCode() << 32) ^ (c0 * 31L + c1);
+        LinearGradient g = unitH.get(key);
+        if (g == null) {
+            if (unitH.size() > 400) unitH.clear();
+            g = new LinearGradient(0, 0, 1, 0, c0, c1, Shader.TileMode.CLAMP);
+            unitH.put(key, g);
+        }
+        shaderMatrix.setScale(w, 1);
+        shaderMatrix.postTranslate(x, 0);
+        g.setLocalMatrix(shaderMatrix);
+        return g;
+    }
+
+    /** Diagonal gradient c0 -> c1 over the box, from a cached unit shader. */
+    private Shader diag(int c0, int c1, float x, float y, float w, float h) {
+        long key = ((long) c0 << 32) ^ (c1 & 0xFFFFFFFFL);
+        LinearGradient g = unitD.get(key);
+        if (g == null) {
+            g = new LinearGradient(0, 0, 1, 1, c0, c1, Shader.TileMode.CLAMP);
+            unitD.put(key, g);
+        }
+        shaderMatrix.setScale(w, h);
+        shaderMatrix.postTranslate(x, y);
+        g.setLocalMatrix(shaderMatrix);
+        return g;
+    }
+
+    /** Paints one background slide: base colour, food photo and the theme tint. */
+    private final SlideBackdrop.Painter slidePainter = new SlideBackdrop.Painter() {
+        @Override public void paint(Canvas c, int w, int h, int k, Bitmap photo) {
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+            c.drawColor(theme.bg2);
+            SlideBackdrop.cover(c, photo, w, h, p);
+            p.setShader(new RadialGradient(w * 0.3f, h * 0.4f, Math.max(w, h),
+                    new int[]{alpha(theme.bg0, 0xB0), alpha(theme.bg1, 0xCC), alpha(theme.bg2, 0xEA)},
+                    new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
+            p.setAlpha((int) (255 * DosaNeonView.tintScale(k, k, 0f))); // same brightness on every photo
+            c.drawRect(0, 0, w, h, p);
+        }
+    };
 }
