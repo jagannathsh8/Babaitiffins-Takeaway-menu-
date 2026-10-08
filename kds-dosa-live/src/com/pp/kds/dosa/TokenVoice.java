@@ -124,7 +124,12 @@ final class TokenVoice {
     }
 
     /** Chime now, then speak. Calls made while one is playing are queued behind it. */
-    void say(final String phrase) {
+    void say(String phrase) {
+        say(phrase, true);
+    }
+
+    /** @param chime soft ding-dong first (new calls); repeats are spoken without it. */
+    void say(final String phrase, final boolean chime) {
         if (tts == null) return;
         if (failed || (!ready && System.currentTimeMillis() - createdAt > 20_000L)) {
             restartEngine(phrase);
@@ -135,7 +140,8 @@ final class TokenVoice {
             return;
         }
         boolean busy = tts.isSpeaking();
-        if (!busy) playChime();
+        boolean ding = chime && !busy;
+        if (ding) playChime();
         main.postDelayed(new Runnable() {
             @Override public void run() {
                 if (tts == null) return;
@@ -150,7 +156,7 @@ final class TokenVoice {
                 }
                 if (r == TextToSpeech.ERROR) restartEngine(phrase); // dead engine: reconnect, say it then
             }
-        }, busy ? 0 : 850);
+        }, ding ? 850 : 0);
     }
 
     private final Runnable restore = new Runnable() {

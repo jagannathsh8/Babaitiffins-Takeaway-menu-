@@ -68,6 +68,16 @@ public final class DosaLive {
     private static final long PROCESS_START = System.currentTimeMillis();
     private static long lastUserAt = System.currentTimeMillis();
     private static final TokenBoard tokens = new TokenBoard();
+    private static final RiderCalls riders = new RiderCalls();
+    private static boolean riderOn;
+    private static Context appCtx;
+    private static TokenVoice voiceInstance;
+
+    /** One text-to-speech voice for the whole app, so token calls and rider calls queue up. */
+    static TokenVoice sharedVoice(Context c) {
+        if (voiceInstance == null) voiceInstance = new TokenVoice(c);
+        return voiceInstance;
+    }
 
     private DosaLive() {}
 
@@ -181,6 +191,8 @@ public final class DosaLive {
     private static void start(Context ctx) {
         if (handler != null) return; // already running (activity recreated)
         prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        appCtx = ctx.getApplicationContext();
+        riderOn = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getBoolean("rider_calls", false);
         tokens.setAutoClearMinutes(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("autoclear_min", 10));
         stats = new DosaStats();
         Map<String, String> saved = new HashMap<String, String>();
@@ -225,6 +237,10 @@ public final class DosaLive {
                 } catch (Throwable ignored) {
                 }
                 try {
+                    riders.update(riderOrders(cards), now);
+                } catch (Throwable ignored) {
+                }
+                try {
                     PrepLive.onBoard(cards, now);
                 } catch (Throwable ignored) {
                 }
@@ -247,6 +263,13 @@ public final class DosaLive {
         } catch (Throwable ignored) {
         }
         if (persistPending && now - lastPersistAt >= 30_000L) persist();
+        try {
+            if (riderOn && appCtx != null) {
+                List<RiderCalls.Waiting> call = riders.due(now);
+                if (!call.isEmpty()) sharedVoice(appCtx).say(RiderCalls.phrase(call), riders.lastWasNew);
+            }
+        } catch (Throwable ignored) {
+        }
         nightlyRefresh(now);
         if (changed || now - lastComputeAt >= RECOMPUTE_MS) {
             lastComputeAt = now;
@@ -284,6 +307,49 @@ public final class DosaLive {
             // (the KOT can stay open on the board for its other items).
             tokenOut.add(new TokenBoard.Kot(kot.getId(), tok[0], tok[1], created == null ? 0L : created, ready,
                     "10".equals(status) || dosaDispatched(kot), cancelled, dosas));
+        }
+        return out;
+    }
+
+    /**
+     * Online / delivery KOTs for rider calls: platform (Swiggy, Zomato, Ownly ...), last 4 digits
+     * of the platform order ID and the pickup slot (the KOT token number, e.g. "Ownly 20").
+     */
+    private static List<RiderCalls.Order> riderOrders(List<KotCard> cards) {
+        List<RiderCalls.Order> out = new ArrayList<RiderCalls.Order>();
+        for (KotCard card : cards) {
+            Kot kot = card.getKot();
+            if (kot == null || kot.getId() == null) continue;
+            String user = null;
+            try {
+                user = kot.getOnlineOrderUserId();
+            } catch (Throwable ignored) {
+            }
+            boolean online = user != null && !user.trim().isEmpty();
+            boolean delivery = OrderType.Companion.fromId(kot.getOrderType()) == OrderType.DELIVERY;
+            if (!online && !delivery) continue;
+            String platform = null;
+            try {
+                platform = BoardVisualsKt.channelName(kot);
+            } catch (Throwable ignored) {
+            }
+            if (platform == null || platform.trim().isEmpty() || "Online".equals(platform)) {
+                platform = online ? "Online" : "Delivery";
+            }
+            String last4 = RiderCalls.last4(kot.getPOId());
+            if (last4.isEmpty()) last4 = RiderCalls.last4(String.valueOf(kot.getId()));
+            String slot = "";
+            try {
+                Long tn = kot.getTokenNo();
+                if (tn != null && tn > 0) slot = String.valueOf(tn);
+            } catch (Throwable ignored) {
+            }
+            String status = kot.getKotStatus();
+            boolean ready = card.getState().isDispatch() || "9".equals(status);
+            boolean gone = "10".equals(status) || "0".equals(status);
+            Long created = BoardVisualsKt.parseCreatedMillis(kot.getCreatedTime());
+            out.add(new RiderCalls.Order(kot.getId(), platform.trim(), last4, slot,
+                    created == null ? 0L : created, ready, gone));
         }
         return out;
     }
@@ -429,6 +495,26 @@ public final class DosaLive {
         plp.leftMargin = (int) (5 * d);
         row.addView(prep, plp);
 
+        // Rider calls on/off: only the device near the pickup area should speak them.
+        final TextView rider = pill(activity, "", RIDER_OFF, 0xFF546E7A);
+        rider.setContentDescription("Rider calls on or off");
+        styleRider(rider, small);
+        rider.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                riderOn = !riderOn;
+                activity.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).edit()
+                        .putBoolean("rider_calls", riderOn).apply();
+                styleRider(rider, small);
+                android.widget.Toast.makeText(activity, riderOn
+                                ? "Rider calls ON: ready Swiggy / Zomato / Ownly orders are announced every 30 s"
+                                : "Rider calls OFF", android.widget.Toast.LENGTH_LONG).show();
+                if (riderOn) sharedVoice(activity); // warm up the voice engine
+            }
+        });
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, h);
+        rlp.leftMargin = (int) (5 * d);
+        row.addView(rider, rlp);
+
         final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.gravity = Gravity.TOP | Gravity.START;
@@ -511,6 +597,20 @@ public final class DosaLive {
         grip.setOnTouchListener(drag);
         dosa.setOnTouchListener(drag);
         prep.setOnTouchListener(drag);
+        rider.setOnTouchListener(drag);
+    }
+
+    private static final int[] RIDER_OFF = {0xFF455A64, 0xFF546E7A, 0xFF607D8B};
+    private static final int[] RIDER_ON = {0xFF0D47A1, 0xFF1E88E5, 0xFF42A5F5};
+
+    private static void styleRider(TextView b, boolean small) {
+        b.setText(riderOn ? (small ? "\uD83D\uDEF5 ON" : "\uD83D\uDEF5 RIDER CALLS ON")
+                : (small ? "\uD83D\uDEF5 OFF" : "\uD83D\uDEF5 RIDER CALLS OFF"));
+        float d = b.getResources().getDisplayMetrics().density;
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, riderOn ? RIDER_ON : RIDER_OFF);
+        bg.setCornerRadius(18 * d);
+        bg.setStroke((int) (1.5f * d), 0xCCFFFFFF);
+        b.setBackground(bg);
     }
 
     /** Moves the button group, kept fully on screen. */
@@ -677,9 +777,8 @@ public final class DosaLive {
                             ui.edit().putBoolean("voice", on).apply();
                             if (!on) {
                                 tokens.clearPending();
-                                if (voice != null) voice.stop();
                             } else if (voice == null) {
-                                voice = new TokenVoice(activity);
+                                voice = sharedVoice(activity);
                             }
                         }
                     });
@@ -693,13 +792,12 @@ public final class DosaLive {
                 board.setVisibility(View.VISIBLE);
                 board.bringToFront();
                 view.setVisibility(View.INVISIBLE);
-                if (voiceOn() && voice == null) voice = new TokenVoice(activity);
+                if (voiceOn() && voice == null) voice = sharedVoice(activity);
                 bindTokens();
             } else {
                 view.setVisibility(View.VISIBLE);
                 view.bringToFront();
                 if (board != null) board.setVisibility(View.GONE);
-                if (voice != null) voice.stop();
                 tokens.clearPending();
             }
         }
@@ -719,7 +817,7 @@ public final class DosaLive {
             if (mode != ORDER_READY || board == null) return;
             board.showCall(call);
             if (voiceOn()) {
-                if (voice == null) voice = new TokenVoice(activity);
+                if (voice == null) voice = sharedVoice(activity);
                 voice.say(TokenBoard.phrase(call));
             }
         }
@@ -751,8 +849,7 @@ public final class DosaLive {
             ViewGroup parent = (ViewGroup) view.getParent();
             if (parent != null) parent.removeView(view);
             if (board != null && board.getParent() != null) ((ViewGroup) board.getParent()).removeView(board);
-            if (voice != null) voice.shutdown();
-            voice = null;
+            voice = null; // the shared voice keeps running (rider calls may use it)
             tokens.clearPending();
             if (panel == this) panel = null;
         }
