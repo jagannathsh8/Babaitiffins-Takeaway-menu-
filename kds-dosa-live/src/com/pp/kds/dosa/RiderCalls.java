@@ -28,14 +28,21 @@ final class RiderCalls {
 
     static final class Order {
         final long id;
-        final String platform, last4, slot;
+        final String platform, last4, orderId;
+        String slot;   // Bridge Print pickup slot, filled in when known
         final long createdMs;
         final boolean ready, gone;   // gone = dispatched / cancelled
 
         Order(long id, String platform, String last4, String slot, long createdMs, boolean ready, boolean gone) {
+            this(id, platform, last4, "", slot, createdMs, ready, gone);
+        }
+
+        Order(long id, String platform, String last4, String orderId, String slot, long createdMs, boolean ready,
+              boolean gone) {
             this.id = id;
             this.platform = platform;
             this.last4 = last4;
+            this.orderId = orderId == null ? "" : orderId;
             this.slot = slot;
             this.createdMs = createdMs;
             this.ready = ready;

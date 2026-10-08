@@ -70,6 +70,10 @@ public final class DosaLive {
     private static final TokenBoard tokens = new TokenBoard();
     private static final RiderCalls riders = new RiderCalls();
     private static boolean riderOn;
+
+    static boolean riderCallsOn() {
+        return riderOn;
+    }
     private static Context appCtx;
     private static TokenVoice voiceInstance;
 
@@ -193,6 +197,7 @@ public final class DosaLive {
         prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         appCtx = ctx.getApplicationContext();
         riderOn = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getBoolean("rider_calls", false);
+        BridgeSlots.setAddress(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getString("bridge_addr", ""));
         tokens.setAutoClearMinutes(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("autoclear_min", 10));
         stats = new DosaStats();
         Map<String, String> saved = new HashMap<String, String>();
@@ -266,6 +271,10 @@ public final class DosaLive {
         try {
             if (riderOn && appCtx != null) {
                 List<RiderCalls.Waiting> call = riders.due(now);
+                for (RiderCalls.Waiting w : call) {
+                    String s = BridgeSlots.slotFor(w.order.orderId); // Bridge Print slot, if connected
+                    if (!s.isEmpty()) w.order.slot = s;
+                }
                 if (!call.isEmpty()) sharedVoice(appCtx).say(RiderCalls.phrase(call), riders.lastWasNew);
             }
         } catch (Throwable ignored) {
@@ -338,13 +347,13 @@ public final class DosaLive {
             }
             String last4 = RiderCalls.last4(kot.getPOId());
             if (last4.isEmpty()) last4 = RiderCalls.last4(String.valueOf(kot.getId()));
-            // Pickup slots are assigned by Bridge Print (not the Petpooja token), so no slot here.
-            String slot = "";
+            // Pickup slots are assigned by Bridge Print (not the Petpooja token): read from it.
+            String slot = BridgeSlots.slotFor(kot.getPOId());
             String status = kot.getKotStatus();
             boolean ready = card.getState().isDispatch() || "9".equals(status);
             boolean gone = "10".equals(status) || "0".equals(status);
             Long created = BoardVisualsKt.parseCreatedMillis(kot.getCreatedTime());
-            out.add(new RiderCalls.Order(kot.getId(), platform.trim(), last4, slot,
+            out.add(new RiderCalls.Order(kot.getId(), platform.trim(), last4, kot.getPOId(), slot,
                     created == null ? 0L : created, ready, gone));
         }
         return out;
@@ -577,6 +586,8 @@ public final class DosaLive {
                                 ui.edit().putString(key, (fin.leftMargin / (float) content.getWidth()) + ","
                                         + (fin.topMargin / (float) content.getHeight())).apply();
                             }
+                        } else if (v == riderButton && e.getEventTime() - e.getDownTime() >= 700) {
+                            bridgeDialog(activity); // long-press the rider button: Bridge Print setup
                         } else if (v.hasOnClickListeners()) {
                             v.performClick();
                         }
@@ -594,6 +605,58 @@ public final class DosaLive {
         dosa.setOnTouchListener(drag);
         prep.setOnTouchListener(drag);
         rider.setOnTouchListener(drag);
+        riderButton = rider;
+        rider.setOnLongClickListener(new View.OnLongClickListener() { // TV remote: hold OK
+            @Override public boolean onLongClick(View v) {
+                bridgeDialog(activity);
+                return true;
+            }
+        });
+    }
+
+    private static View riderButton;
+
+    /** Bridge Print address (for pickup slot numbers) + connection test. */
+    private static void bridgeDialog(final Activity a) {
+        final SharedPreferences ui = a.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
+        float d = a.getResources().getDisplayMetrics().density;
+        LinearLayout box = new LinearLayout(a);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding((int) (20 * d), (int) (8 * d), (int) (20 * d), 0);
+        final TextView info = new TextView(a);
+        info.setText("Bridge Print PC address on the shop Wi-Fi (the one that opens the rider screen "
+                + "on a phone), e.g. 192.168.1.3:8787\n\nStatus: " + BridgeSlots.status());
+        box.addView(info);
+        final android.widget.EditText addr = new android.widget.EditText(a);
+        addr.setSingleLine(true);
+        addr.setHint("192.168.1.3:8787");
+        addr.setText(ui.getString("bridge_addr", ""));
+        addr.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        box.addView(addr);
+        new android.app.AlertDialog.Builder(a)
+                .setTitle("\uD83D\uDEF5 Rider calls \u2022 Bridge Print slots")
+                .setView(box)
+                .setPositiveButton("Save & test", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface dlg, int which) {
+                        final String v = addr.getText().toString().trim();
+                        ui.edit().putString("bridge_addr", v).apply();
+                        BridgeSlots.setAddress(v);
+                        if (v.isEmpty()) return;
+                        new Thread(new Runnable() {
+                            @Override public void run() {
+                                final boolean ok = BridgeSlots.pollOnce();
+                                a.runOnUiThread(new Runnable() {
+                                    @Override public void run() {
+                                        android.widget.Toast.makeText(a, (ok ? "\u2713 " : "\u26A0 ") + "Bridge Print: "
+                                                + BridgeSlots.status(), android.widget.Toast.LENGTH_LONG).show();
+                                    }
+                                });
+                            }
+                        }).start();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private static final int[] RIDER_OFF = {0xFF455A64, 0xFF546E7A, 0xFF607D8B};
