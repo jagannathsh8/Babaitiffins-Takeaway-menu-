@@ -26,6 +26,8 @@ final class BridgeSlots {
     private static final long POLL_MS = 3_000L;
 
     private static volatile Map<String, String> slots = Collections.emptyMap();
+    private static volatile java.util.List<Rec> records = Collections.emptyList();
+    private static final Map<String, Long> firstSeen = new java.util.concurrent.ConcurrentHashMap<String, Long>();
     /** order digits -> last time Bridge Print listed it (to notice when it was cleared / picked up). */
     private static final Map<String, Long> lastListed = new java.util.concurrent.ConcurrentHashMap<String, Long>();
     private static volatile String address;      // "192.168.1.3:8787"
@@ -103,6 +105,34 @@ final class BridgeSlots {
         return t != null && lastOkAt - t > 10_000L;
     }
 
+    /** Bridge Print gives order status (ready / preparing): the board and calls can run from it alone. */
+    static boolean hasStatus() {
+        for (Rec r : records) if (statusKind(r.status) >= 0) return true;
+        return false;
+    }
+
+    /** Bridge Print's orders as rider orders (ready / preparing / picked up from its own status). */
+    static java.util.List<RiderCalls.Order> orders() {
+        java.util.List<RiderCalls.Order> out = new java.util.ArrayList<RiderCalls.Order>();
+        for (Rec r : records) {
+            int kind = statusKind(r.status);
+            if (kind < 0) continue;
+            String plat = r.platform.isEmpty() ? "Online" : r.platform;
+            String od = r.order.length() > 18 ? r.order.substring(r.order.length() - 18) : r.order;
+            long id;
+            try {
+                id = Long.parseLong(od);
+            } catch (Throwable t) {
+                id = r.order.hashCode();
+            }
+            Long seen = firstSeen.get(r.order);
+            long created = r.timeMs > 0 ? r.timeMs : seen == null ? System.currentTimeMillis() : seen;
+            out.add(new RiderCalls.Order(id, plat, RiderCalls.last4(r.order), r.order, r.token, created,
+                    kind == 1, kind == 2));
+        }
+        return out;
+    }
+
     /** Read Bridge Print successfully within the last 15 s. */
     static boolean connected() {
         return lastOkAt > 0 && System.currentTimeMillis() - lastOkAt < 15_000L;
@@ -132,10 +162,16 @@ final class BridgeSlots {
         for (String p : tryPaths) {
             try {
                 String body = get("http://" + addr + p);
-                Map<String, String> m = parse(body);
+                java.util.List<Rec> recs = parseOrders(body);
+                Map<String, String> m = new HashMap<String, String>();
+                for (Rec r : recs) m.put(r.order, r.token);
                 if (!m.isEmpty() || workingPath != null || body.trim().startsWith("{") || body.trim().startsWith("[")) {
                     workingPath = p;
                     slots = m;
+                    records = recs;
+                    long tnow = System.currentTimeMillis();
+                    for (Rec r : recs) if (!firstSeen.containsKey(r.order)) firstSeen.put(r.order, tnow);
+                    if (firstSeen.size() > 3000) firstSeen.clear();
                     lastOkAt = System.currentTimeMillis();
                     for (String k : m.keySet()) lastListed.put(k, lastOkAt);
                     if (lastListed.size() > 3000) lastListed.clear();
@@ -170,15 +206,28 @@ final class BridgeSlots {
     }
 
     /** Reads any JSON shape: collects objects that carry both an order ID and a token / slot. */
+    /** One order as Bridge Print lists it. */
+    static final class Rec {
+        String order = "", token = "", status = "", platform = "";
+        long timeMs;
+    }
+
     static Map<String, String> parse(String body) throws Exception {
         Map<String, String> out = new HashMap<String, String>();
-        String t = body.trim();
-        Object root = t.startsWith("[") ? new JSONArray(t) : new JSONObject(t);
-        walk(root, out, 0);
+        for (Rec r : parseOrders(body)) out.put(r.order, r.token);
         return out;
     }
 
-    private static void walk(Object node, Map<String, String> out, int depth) {
+    /** Reads any JSON shape: every object (plus its direct children) that has an order ID and a token. */
+    static java.util.List<Rec> parseOrders(String body) throws Exception {
+        java.util.LinkedHashMap<String, Rec> out = new java.util.LinkedHashMap<String, Rec>();
+        String t = body.trim();
+        Object root = t.startsWith("[") ? new JSONArray(t) : new JSONObject(t);
+        walk(root, out, 0);
+        return new java.util.ArrayList<Rec>(out.values());
+    }
+
+    private static void walk(Object node, Map<String, Rec> out, int depth) {
         if (depth > 12 || node == null) return;
         if (node instanceof JSONArray) {
             JSONArray a = (JSONArray) node;
@@ -187,46 +236,83 @@ final class BridgeSlots {
         }
         if (!(node instanceof JSONObject)) return;
         JSONObject o = (JSONObject) node;
-        String order = null, token = null;
+        Rec r = new Rec();
+        read(o, r, false);
+        Iterator<String> keys = o.keys();
+        while (keys.hasNext()) {
+            Object v = o.opt(keys.next());
+            if (v instanceof JSONObject) read((JSONObject) v, r, true); // one level down
+        }
+        if (!r.order.isEmpty() && !r.token.isEmpty()) {
+            if (!out.containsKey(r.order)) out.put(r.order, r);
+            return;
+        }
+        keys = o.keys();
+        while (keys.hasNext()) {
+            Object v = o.opt(keys.next());
+            if (v instanceof JSONObject || v instanceof JSONArray) walk(v, out, depth + 1);
+        }
+    }
+
+    private static void read(JSONObject o, Rec r, boolean child) {
         Iterator<String> keys = o.keys();
         while (keys.hasNext()) {
             String k = keys.next();
             Object v = o.opt(k);
-            String lk = k.toLowerCase(java.util.Locale.US).replace("_", "");
-            if (v instanceof JSONObject || v instanceof JSONArray) {
-                walk(v, out, depth + 1);
-                continue;
-            }
-            String sv = v == null ? "" : String.valueOf(v);
-            if (order == null && (lk.contains("orderid") || lk.equals("order") || lk.contains("orderno")
-                    || lk.contains("orderuid") || lk.contains("poid"))) {
-                String d = digits(sv);
-                if (d.length() >= 6) order = d;
-            } else if (token == null && (lk.contains("token") || lk.contains("slot"))) {
-                String d = digits(sv);
-                if (!d.isEmpty() && d.length() <= 6) token = String.valueOf(Integer.parseInt(d));
-            }
-        }
-        // Order ID or token one level down (e.g. {"token":9,"order":{"orderId":"..."}}).
-        if (order == null || token == null) {
-            Iterator<String> ks = o.keys();
-            while (ks.hasNext() && (order == null || token == null)) {
-                Object v = o.opt(ks.next());
-                if (!(v instanceof JSONObject)) continue;
-                JSONObject c = (JSONObject) v;
-                Iterator<String> ck = c.keys();
-                while (ck.hasNext()) {
-                    String k = ck.next();
-                    String lk = k.toLowerCase(java.util.Locale.US).replace("_", "");
-                    String d = digits(String.valueOf(c.opt(k)));
-                    if (order == null && (lk.contains("orderid") || lk.equals("id") || lk.contains("orderno"))
-                            && d.length() >= 6) order = d;
-                    else if (token == null && (lk.contains("token") || lk.contains("slot"))
-                            && !d.isEmpty() && d.length() <= 6) token = String.valueOf(Integer.parseInt(d));
-                }
+            if (v instanceof JSONObject || v instanceof JSONArray || v == null || v == JSONObject.NULL) continue;
+            String lk = k.toLowerCase(java.util.Locale.US).replace("_", "").replace("-", "");
+            String sv = String.valueOf(v).trim();
+            String d = digits(sv);
+            if (r.order.isEmpty() && (lk.contains("orderid") || lk.equals("order") || lk.contains("orderno")
+                    || lk.contains("orderuid") || lk.contains("poid") || (child && lk.equals("id"))) && d.length() >= 6) {
+                r.order = d;
+            } else if (r.token.isEmpty() && (lk.contains("token") || lk.contains("slot")) && !d.isEmpty() && d.length() <= 6) {
+                r.token = String.valueOf(Integer.parseInt(d));
+            } else if (r.status.isEmpty() && (lk.contains("status") || lk.equals("state") || lk.equals("stage"))
+                    && d.length() < sv.length()) {
+                r.status = sv;
+            } else if (r.platform.isEmpty() && (lk.contains("platform") || lk.contains("source") || lk.contains("channel")
+                    || lk.contains("aggregator") || lk.contains("partner") || lk.contains("brand") || lk.contains("provider"))
+                    && d.length() < sv.length()) {
+                r.platform = sv;
+            } else if (r.timeMs == 0 && (lk.contains("created") || lk.contains("received") || lk.contains("time")
+                    || lk.contains("date"))) {
+                r.timeMs = parseTime(sv);
             }
         }
-        if (order != null && token != null) out.put(order, token);
+    }
+
+    /** Epoch seconds / millis, or "yyyy-MM-dd HH:mm(:ss)" / ISO; 0 when unknown. */
+    private static long parseTime(String sv) {
+        try {
+            String d = digits(sv);
+            if (d.length() == sv.length()) {
+                long n = Long.parseLong(d);
+                if (n > 1_000_000_000_000L) return n;          // millis
+                if (n > 1_000_000_000L) return n * 1000L;       // seconds
+                return 0;
+            }
+            String norm = sv.replace('T', ' ');
+            if (norm.length() >= 16) {
+                String fmt = norm.length() >= 19 ? "yyyy-MM-dd HH:mm:ss" : "yyyy-MM-dd HH:mm";
+                java.text.SimpleDateFormat f = new java.text.SimpleDateFormat(fmt, java.util.Locale.US);
+                if (norm.endsWith("Z")) f.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                return f.parse(norm.substring(0, fmt.length())).getTime();
+            }
+        } catch (Throwable ignored) {
+        }
+        return 0;
+    }
+
+    /** "Food Ready" -> 1, "Preparing" -> 0, picked up / dispatched / delivered -> 2, unknown -> -1. */
+    static int statusKind(String status) {
+        String l = status == null ? "" : status.toLowerCase(java.util.Locale.US);
+        if (l.contains("pick") || l.contains("dispatch") || l.contains("deliver") || l.contains("handed")
+                || l.contains("complete") || l.contains("cancel")) return 2;
+        if (l.contains("ready")) return 1;
+        if (l.contains("prepar") || l.contains("cook") || l.contains("accept") || l.contains("new")
+                || l.contains("pending") || l.contains("progress") || l.contains("kitchen")) return 0;
+        return -1;
     }
 
     static String digits(String s) {

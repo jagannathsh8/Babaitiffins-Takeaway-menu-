@@ -355,9 +355,8 @@ final class RiderBoardView extends View {
 
     private void drawCard(Canvas c, float x, float y, float w, float h, RiderCalls.Waiting rw, long age) {
         RiderCalls.Order o = rw.order;
-        float pop = popScale(age);
+        // No pop / flash: one order must never take the riders' attention from the others.
         c.save();
-        c.scale(pop, pop, x + w / 2f, y + h / 2f);
         float r = Math.min(22 * s, h * 0.14f);
         int pc = platformColor(o.platform);
         // card body
@@ -371,10 +370,9 @@ final class RiderBoardView extends View {
         c.drawRoundRect(rect, r, r, fill);
         rect.set(x + lw - r, y, x + lw, y + h);
         c.drawRect(rect, fill);
-        float flash = age < 1500 ? 1f - age / 1500f : 0f;
         stroke.setColor(GREEN);
-        stroke.setStrokeWidth((3 + 5 * flash) * s);
-        stroke.setAlpha((int) (120 + 135 * flash));
+        stroke.setStrokeWidth(3 * s);
+        stroke.setAlpha(120);
         rect.set(x, y, x + w, y + h);
         c.drawRoundRect(rect, r, r, stroke);
         stroke.setAlpha(255);
@@ -486,7 +484,7 @@ final class RiderBoardView extends View {
         text.setTypeface(medium);
         text.setTextSize(17 * s);
         text.setColor(0xAAFFFFFF);
-        c.drawText("Orders: Petpooja \u2022 Slots: Bridge Print \u2022 " + bridgeStatus, x + 22 * s, y + 22 * s, text);
+        c.drawText(bridgeStatus, x + 22 * s, y + 22 * s, text);
         text.setTextAlign(Paint.Align.RIGHT);
         text.setColor(0x88FFFFFF);
         c.drawText(voiceOn ? "\uD83D\uDD0A Calls on" : "\uD83D\uDD07 Calls off", x + w, y + 22 * s, text);

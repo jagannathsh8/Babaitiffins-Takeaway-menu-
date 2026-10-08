@@ -71,6 +71,25 @@ public final class RiderCallsTest {
         check("zero said as zero", RiderCalls.phrase(java.util.Arrays.asList(zw)).equals("Zomato zero 3 9 1, slot 64."),
                 RiderCalls.phrase(java.util.Arrays.asList(zw)));
 
+        // Busy: 40 ready -> groups of 6 back to back (~19.6 s apart), every order heard within ~2.5 min.
+        RiderCalls busy = new RiderCalls();
+        List<RiderCalls.Order> b40 = new ArrayList<RiderCalls.Order>();
+        for (int i = 0; i < 40; i++) b40.add(o(1000 + i, "Swiggy", "1" + (1000 + i), String.valueOf(i + 1), T, true, false));
+        busy.update(b40, T);
+        java.util.Set<String> heard = new java.util.HashSet<String>();
+        long tt = T;
+        int calls = 0;
+        while (tt < T + 150_000L) {
+            List<RiderCalls.Waiting> got = busy.due(tt);
+            if (!got.isEmpty()) {
+                calls++;
+                for (RiderCalls.Waiting w : got) heard.add(w.order.slot);
+            }
+            tt += 1_000L;
+        }
+        check("busy: all 40 heard within 150 s", heard.size() == 40, heard.size() + " in " + calls + " calls");
+        check("busy: groups of 6", calls >= 7, calls);
+
         // Default: until picked up (no time limit).
         RiderCalls u = new RiderCalls();
         List<RiderCalls.Order> b3 = new ArrayList<RiderCalls.Order>();

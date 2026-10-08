@@ -58,6 +58,8 @@ final class RiderCalls {
     private final Map<Long, Waiting> waiting = new LinkedHashMap<Long, Waiting>();
     private final Set<Long> skipped = new HashSet<Long>();   // stale leftovers: never called
     private long lastCycle;
+    static final long SECONDS_PER_ORDER = 2_600L;
+    private long nextGapMs = REPEAT_MS;
     /** Stop showing / calling an order this long after ready; 0 = until picked up. */
     private long maxMs = 0;
 
@@ -134,7 +136,7 @@ final class RiderCalls {
             lastWasNew = true;
             return out;
         }
-        if (now - lastCycle < REPEAT_MS) return Collections.emptyList();
+        if (now - lastCycle < nextGapMs) return Collections.emptyList();
         List<Waiting> all = new ArrayList<Waiting>();
         for (Waiting w : waiting.values()) if (w.lastSaid != 0) all.add(w);
         if (all.isEmpty()) return Collections.emptyList();
@@ -150,6 +152,9 @@ final class RiderCalls {
         for (Waiting w : out) w.lastSaid = now;
         lastCycle = now;
         lastWasNew = false;
+        // Quiet: one round every 30 s. Busy (more waiting than one call holds): keep going round,
+        // next group as soon as this one is spoken (~2.6 s per order) + a 4 s pause.
+        nextGapMs = all.size() > MAX_PER_CALL ? out.size() * SECONDS_PER_ORDER + 4_000L : REPEAT_MS;
         return out;
     }
 
@@ -192,7 +197,7 @@ final class RiderCalls {
         for (Waiting w : call) {
             Order o = w.order;
             if (sb.length() > 0) sb.append(' ');
-            sb.append(o.platform).append(' ');
+            sb.append(o.platform.replace('/', ' ').replaceAll("\\s+", " ").trim()).append(' ');
             for (int i = 0; i < o.last4.length(); i++) {
                 if (i > 0) sb.append(' ');
                 char ch = o.last4.charAt(i);
