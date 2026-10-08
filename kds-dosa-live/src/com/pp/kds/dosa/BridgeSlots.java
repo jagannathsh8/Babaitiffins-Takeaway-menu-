@@ -34,6 +34,12 @@ final class BridgeSlots {
     private static volatile String workingPath;
     private static volatile long lastOkAt;
     private static volatile String lastError = "";
+    private static volatile String lastSample = "";
+
+    /** Start of Bridge Print's data (for the setup window, so field names can be checked). */
+    static String sample() {
+        return lastSample;
+    }
     private static Thread worker;
 
     private BridgeSlots() {}
@@ -107,7 +113,7 @@ final class BridgeSlots {
 
     /** Bridge Print gives order status (ready / preparing): the board and calls can run from it alone. */
     static boolean hasStatus() {
-        for (Rec r : records) if (statusKind(r.status) >= 0) return true;
+        for (Rec r : records) if (kindOf(r) >= 0) return true;
         return false;
     }
 
@@ -115,7 +121,7 @@ final class BridgeSlots {
     static java.util.List<RiderCalls.Order> orders() {
         java.util.List<RiderCalls.Order> out = new java.util.ArrayList<RiderCalls.Order>();
         for (Rec r : records) {
-            int kind = statusKind(r.status);
+            int kind = kindOf(r);
             if (kind < 0) continue;
             String plat = r.platform.isEmpty() ? "Online" : r.platform;
             String od = r.order.length() > 18 ? r.order.substring(r.order.length() - 18) : r.order;
@@ -135,7 +141,7 @@ final class BridgeSlots {
 
     /** Read Bridge Print successfully within the last 15 s. */
     static boolean connected() {
-        return lastOkAt > 0 && System.currentTimeMillis() - lastOkAt < 15_000L;
+        return lastOkAt > 0 && System.currentTimeMillis() - lastOkAt < 30_000L;
     }
 
     /** One-line status for the settings dialog. */
@@ -143,7 +149,11 @@ final class BridgeSlots {
         if (address == null || address.isEmpty()) return "Not set";
         if (lastOkAt == 0) return lastError.isEmpty() ? "Connecting\u2026" : "Not reachable: " + lastError;
         long ago = (System.currentTimeMillis() - lastOkAt) / 1000;
-        return "Connected \u2022 " + slots.size() + " orders with slots \u2022 " + ago + " s ago";
+        int withStatus = 0;
+        for (Rec r : records) if (kindOf(r) >= 0) withStatus++;
+        String st = (ago < 30 ? "Connected" : "Last read " + ago + " s ago") + " \u2022 " + slots.size()
+                + " orders \u2022 " + withStatus + " with ready/preparing";
+        return lastError.isEmpty() ? st : st + " \u2022 last error: " + lastError;
     }
 
     private static final Object POLL_LOCK = new Object();
@@ -162,6 +172,7 @@ final class BridgeSlots {
         for (String p : tryPaths) {
             try {
                 String body = get("http://" + addr + p);
+                lastSample = p + "  \u2192  " + (body.length() > 900 ? body.substring(0, 900) + "\u2026" : body);
                 java.util.List<Rec> recs = parseOrders(body);
                 Map<String, String> m = new HashMap<String, String>();
                 for (Rec r : recs) m.put(r.order, r.token);
@@ -179,7 +190,8 @@ final class BridgeSlots {
                     return true;
                 }
             } catch (Throwable t) {
-                lastError = t.getClass().getSimpleName();
+                String m = t.getMessage();
+                lastError = t.getClass().getSimpleName() + (m == null ? "" : ": " + (m.length() > 60 ? m.substring(0, 60) : m));
             }
         }
         workingPath = null;
@@ -191,6 +203,8 @@ final class BridgeSlots {
         c.setConnectTimeout(2000);
         c.setReadTimeout(2500);
         c.setRequestProperty("Accept", "application/json");
+        c.setRequestProperty("Connection", "close"); // small local servers can stall on reused connections
+        c.setUseCaches(false);
         try {
             if (c.getResponseCode() != 200) throw new IllegalStateException("HTTP " + c.getResponseCode());
             InputStream in = c.getInputStream();
@@ -210,6 +224,8 @@ final class BridgeSlots {
     static final class Rec {
         String order = "", token = "", status = "", platform = "";
         long timeMs;
+        Boolean readyFlag;   // from fields like isReady / foodReady / readyAt
+        String hint = "";    // any text value mentioning ready / preparing
     }
 
     static Map<String, String> parse(String body) throws Exception {
@@ -269,8 +285,12 @@ final class BridgeSlots {
             } else if (r.token.isEmpty() && (lk.contains("token") || lk.contains("slot")) && !d.isEmpty() && d.length() <= 6) {
                 r.token = String.valueOf(Integer.parseInt(d));
             } else if (r.status.isEmpty() && (lk.contains("status") || lk.equals("state") || lk.equals("stage"))
-                    && d.length() < sv.length()) {
-                r.status = sv;
+                    && !sv.isEmpty()) {
+                r.status = sv; // text ("Food Ready") or a code ("9")
+            } else if (r.readyFlag == null && lk.contains("ready")) {
+                // isReady:true / foodReady:1 / readyAt:"2026-..." -> ready; false / 0 / "" -> not yet
+                String lv = sv.toLowerCase(java.util.Locale.US);
+                r.readyFlag = !(lv.isEmpty() || lv.equals("false") || lv.equals("0") || lv.equals("null") || lv.equals("no"));
             } else if (r.platform.isEmpty() && (lk.contains("platform") || lk.contains("source") || lk.contains("channel")
                     || lk.contains("aggregator") || lk.contains("partner") || lk.contains("brand") || lk.contains("provider"))
                     && d.length() < sv.length()) {
@@ -278,6 +298,15 @@ final class BridgeSlots {
             } else if (r.timeMs == 0 && (lk.contains("created") || lk.contains("received") || lk.contains("time")
                     || lk.contains("date"))) {
                 r.timeMs = parseTime(sv);
+            }
+            if (r.platform.isEmpty() && sv.length() <= 30) {
+                String lv = sv.toLowerCase(java.util.Locale.US);
+                if (lv.contains("swiggy") || lv.contains("zomato") || lv.contains("ownly") || lv.contains("toing")
+                        || lv.contains("magicpin")) r.platform = sv;
+            }
+            if (r.hint.isEmpty() && d.length() < sv.length()) {
+                String lv = sv.toLowerCase(java.util.Locale.US);
+                if (lv.contains("ready") || lv.contains("prepar")) r.hint = sv;
             }
         }
     }
@@ -304,9 +333,27 @@ final class BridgeSlots {
         return 0;
     }
 
-    /** "Food Ready" -> 1, "Preparing" -> 0, picked up / dispatched / delivered -> 2, unknown -> -1. */
+    /** Ready (1) / preparing (0) / picked up (2) / unknown (-1) from everything the record carries. */
+    static int kindOf(Rec r) {
+        int k = statusKind(r.status);
+        if (k >= 0) return k;
+        if (r.readyFlag != null) return r.readyFlag ? 1 : 0;
+        return statusKind(r.hint);
+    }
+
+    /** "Food Ready" / 9 -> 1, "Preparing" / 1..8 -> 0, picked up / dispatched / 10 -> 2, unknown -> -1. */
     static int statusKind(String status) {
-        String l = status == null ? "" : status.toLowerCase(java.util.Locale.US);
+        String l = status == null ? "" : status.trim().toLowerCase(java.util.Locale.US);
+        if (!l.isEmpty() && digits(l).length() == l.replace("-", "").length()) { // numeric code (Petpooja style)
+            try {
+                int c = Integer.parseInt(l);
+                if (c == 9) return 1;
+                if (c == 10 || c <= 0) return 2;
+                return 0;
+            } catch (Throwable t) {
+                return -1;
+            }
+        }
         if (l.contains("pick") || l.contains("dispatch") || l.contains("deliver") || l.contains("handed")
                 || l.contains("complete") || l.contains("cancel")) return 2;
         if (l.contains("ready")) return 1;

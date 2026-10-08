@@ -661,6 +661,12 @@ public final class DosaLive {
         if (on) sharedVoice(c); // warm up the voice engine
     }
 
+    private static View scrollable(Activity a, View v) {
+        android.widget.ScrollView sv = new android.widget.ScrollView(a);
+        sv.addView(v);
+        return sv;
+    }
+
     /** Bridge Print address (for pickup slot numbers) + connection test. */
     private static void bridgeDialog(final Activity a) {
         final SharedPreferences ui = a.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
@@ -669,8 +675,11 @@ public final class DosaLive {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding((int) (20 * d), (int) (8 * d), (int) (20 * d), 0);
         final TextView info = new TextView(a);
+        String sample = BridgeSlots.sample();
         info.setText("Bridge Print PC address on the shop Wi-Fi (the one that opens the rider screen "
-                + "on a phone), e.g. 192.168.1.3:8787\n\nStatus: " + BridgeSlots.status());
+                + "on a phone), e.g. 192.168.1.3:8787\n\nStatus: " + BridgeSlots.status()
+                + (sample.isEmpty() ? "" : "\n\nData received (send a photo of this if orders don't show):\n" + sample));
+        info.setTextIsSelectable(true);
         box.addView(info);
         final android.widget.EditText addr = new android.widget.EditText(a);
         addr.setSingleLine(true);
@@ -680,7 +689,7 @@ public final class DosaLive {
         box.addView(addr);
         new android.app.AlertDialog.Builder(a)
                 .setTitle("\uD83D\uDEF5 Rider calls \u2022 Bridge Print slots")
-                .setView(box)
+                .setView(scrollable(a, box))
                 .setPositiveButton("Save & test", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface dlg, int which) {
                         final String v = addr.getText().toString().trim();
