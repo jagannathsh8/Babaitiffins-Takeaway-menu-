@@ -372,24 +372,42 @@ final class RiderBoardView extends View {
         int page = pages > 1 ? (int) (t / 8f) % pages : 0;
         int rowsPerCol = (Math.min(perPage, n) + cols - 1) / cols;
         float colW = (iw - (cols - 1) * gap) / cols;
-        float fs = Math.min(isReady ? 40 * s : 26 * s, rowH * 0.62f);
-        // headings
+        // Full order ID (small, bold) under each line when the rows are tall enough.
+        boolean fullRows = rowH >= 44 * s;
+        float fs = Math.min(isReady ? 40 * s : 26 * s, rowH * (fullRows ? 0.50f : 0.62f));
+        // Measured layout, no separators: [brand ......  8888  88]. The number and slot keep at
+        // most ~62% of the line; the brand gets the rest, so nothing overlaps at any column width.
+        float left = 16 * s, right = 8 * s, sp = 10 * s, inner = colW - left - right;
+        text.setTypeface(bold);
+        text.setTextSize(100f);
+        float w4 = text.measureText("8888") / 100f, w2 = text.measureText("88") / 100f;
+        fs = Math.min(fs, (inner * 0.62f - sp) / (w4 + w2));
+        float slotW = w2 * fs, numW = w4 * fs;
+        float slotRight = colW - right;                    // offsets from the column's left edge
+        float numRight = slotRight - slotW - sp, numCenter = numRight - numW / 2f;
+        float brandMax = numRight - numW - sp - left;
+        // headings, fitted to the same positions
         text.setTypeface(condensed);
         text.setLetterSpacing(0.18f);
-        text.setTextSize(Math.min(15 * s, headH * 0.55f));
+        float hs = Math.min(15 * s, headH * 0.55f);
+        text.setTextSize(100f);
+        float hOrder = text.measureText("ORDER ID") / 100f, hSlot = text.measureText("SLOT") / 100f,
+                hBrand = text.measureText("BRAND") / 100f;
+        hs = Math.min(hs, (slotRight - numCenter - 6 * s) / (hOrder / 2f + hSlot));
+        hs = Math.min(hs, (numCenter - left - 6 * s) / (hOrder / 2f + hBrand));
+        text.setTextSize(hs);
         text.setColor(isReady ? 0xCC69F0AE : 0xCCF5B21B);
         for (int col = 0; col < cols; col++) {
             float cx = ix + col * (colW + gap);
             text.setTextAlign(Paint.Align.LEFT);
-            c.drawText("BRAND", cx + 16 * s, top + headH * 0.62f, text);
+            c.drawText("BRAND", cx + left, top + headH * 0.62f, text);
             text.setTextAlign(Paint.Align.CENTER);
-            c.drawText("ORDER ID", cx + colW * 0.64f, top + headH * 0.62f, text);
+            c.drawText("ORDER ID", cx + numCenter, top + headH * 0.62f, text);
             text.setTextAlign(Paint.Align.RIGHT);
-            c.drawText("SLOT", cx + colW - 6 * s, top + headH * 0.62f, text);
+            c.drawText("SLOT", cx + slotRight, top + headH * 0.62f, text);
         }
         text.setLetterSpacing(0f);
         int from = page * perPage, to = Math.min(n, from + perPage);
-        long wall = System.currentTimeMillis();
         for (int i = from; i < to; i++) {
             int j = i - from, col = j / rowsPerCol, row = j % rowsPerCol;
             float cx = ix + col * (colW + gap), ry = top + headH + row * rowH;
@@ -401,39 +419,35 @@ final class RiderBoardView extends View {
             fill.setColor(pc);
             rect.set(cx, ry + rowH * 0.08f, cx + 8 * s, ry + rowH * 0.92f);
             c.drawRoundRect(rect, 4 * s, 4 * s, fill);
-            float base = ry + rowH * 0.5f + fs * 0.36f;
+            boolean full = fullRows && o.orderId != null && o.orderId.length() > 4;
+            float base = full ? ry + rowH * 0.56f : ry + rowH * 0.5f + fs * 0.36f;
             int fg = isReady ? 0xFF111111 : Color.WHITE;
             // brand
             text.setTextAlign(Paint.Align.LEFT);
             text.setTypeface(bold);
             text.setColor(isReady ? pc : fg);
-            String brand = o.platform;
-            text.setTextSize(fit(brand, fs * 0.8f, colW * 0.36f));
-            c.drawText(brand, cx + 16 * s, base, text);
-            // dash - order id - dash - slot
+            text.setTextSize(fit(o.platform, fs * 0.8f, brandMax));
+            c.drawText(o.platform, cx + left, base, text);
+            // last 4 of the order ID
             text.setTextAlign(Paint.Align.CENTER);
-            text.setColor(isReady ? 0x88111111 : 0x88FFFFFF);
-            text.setTextSize(fs * 0.8f);
-            c.drawText("\u2013", cx + colW * 0.43f, base, text);
-            c.drawText("\u2013", cx + colW * 0.84f, base, text);
             text.setColor(fg);
-            text.setTextSize(fs);
-            // Full order ID in small text under the big last 4 (for verification), when the row has room.
-            boolean full = o.orderId != null && o.orderId.length() > 4 && rowH >= 44 * s;
-            float numBase = full ? ry + rowH * 0.44f + fs * 0.3f : base;
-            c.drawText(o.last4, cx + colW * 0.64f, numBase, text);
-            if (full) {
-                text.setTypeface(medium);
-                text.setColor(isReady ? 0xAA111111 : 0xAAFFFFFF);
-                text.setTextSize(fit(o.orderId, Math.min(14 * s, rowH * 0.19f), colW * 0.40f));
-                c.drawText(o.orderId, cx + colW * 0.64f, ry + rowH * 0.84f, text);
-                text.setTypeface(bold);
-                text.setTextSize(fs);
-            }
+            text.setTextSize(fit(o.last4, fs, numW));
+            c.drawText(o.last4, cx + numCenter, base, text);
+            // slot
             text.setTextAlign(Paint.Align.RIGHT);
             boolean hasSlot = o.slot != null && !o.slot.isEmpty();
+            String slot = hasSlot ? o.slot : "\u2014";
             text.setColor(isReady ? 0xFF1B5E20 : GOLD);
-            c.drawText(hasSlot ? o.slot : "\u2014", cx + colW - 8 * s, base, text);
+            text.setTextSize(fit(slot, fs, slotW + sp * 0.6f));
+            c.drawText(slot, cx + slotRight, base, text);
+            // full order ID: small but bold, under the line, ending under the last 4
+            if (full) {
+                text.setTextAlign(Paint.Align.RIGHT);
+                text.setTypeface(bold);
+                text.setColor(isReady ? 0xDD222222 : 0xDDFFFFFF);
+                text.setTextSize(fit(o.orderId, Math.min(16 * s, rowH * 0.2f), numRight - left));
+                c.drawText(o.orderId, cx + numRight, ry + rowH * 0.85f, text);
+            }
         }
         if (pages > 1) {
             text.setTextAlign(Paint.Align.RIGHT);
