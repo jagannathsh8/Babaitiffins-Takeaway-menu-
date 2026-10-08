@@ -165,9 +165,9 @@ final class TokenVoice {
         tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
             @Override public void onStart(String id) {}
 
-            @Override public void onDone(String id) { main.post(restore); }
+            @Override public void onDone(String id) { finished(); main.post(restore); }
 
-            @Override public void onError(String id) { main.post(restore); }
+            @Override public void onError(String id) { finished(); main.post(restore); }
         });
     }
 
@@ -193,6 +193,9 @@ final class TokenVoice {
         }
         boolean busy = tts.isSpeaking();
         boolean ding = chime && !busy;
+        pending.incrementAndGet();
+        lastQueuedAt = System.currentTimeMillis();
+        riderLast = alternate;
         if (ding) playChime();
         main.postDelayed(new Runnable() {
             @Override public void run() {
@@ -224,7 +227,10 @@ final class TokenVoice {
                 } catch (Throwable t) {
                     r = TextToSpeech.ERROR;
                 }
-                if (r == TextToSpeech.ERROR) restartEngine(phrase); // dead engine: reconnect, say it then
+                if (r == TextToSpeech.ERROR) {
+                    finished();
+                    restartEngine(phrase); // dead engine: reconnect, say it then
+                }
             }
         }, ding ? 850 : 0);
     }
@@ -273,7 +279,42 @@ final class TokenVoice {
         }
     }
 
+    private final java.util.concurrent.atomic.AtomicInteger pending = new java.util.concurrent.atomic.AtomicInteger();
+    private volatile long lastDoneAt;
+    private volatile boolean riderLast;
+
+    private void finished() {
+        if (pending.decrementAndGet() < 0) pending.set(0);
+        lastDoneAt = System.currentTimeMillis();
+    }
+
+    /** Something is queued or being spoken (rider calls wait for it, so no backlog builds up). */
+    boolean busy() {
+        boolean speaking;
+        try {
+            speaking = tts != null && tts.isSpeaking();
+        } catch (Throwable t) {
+            speaking = false;
+        }
+        // An engine that never reported "done" must not block calls for good.
+        if (!speaking && pending.get() > 0 && System.currentTimeMillis() - lastQueuedAt > 20_000L) pending.set(0);
+        return speaking || pending.get() > 0;
+    }
+
+    private volatile long lastQueuedAt;
+
+    /** Milliseconds since the last utterance finished. */
+    long idleMs() {
+        return lastDoneAt == 0 ? Long.MAX_VALUE : System.currentTimeMillis() - lastDoneAt;
+    }
+
+    /** Nothing is waiting for pickup any more: cut off a rider call that is still being read. */
+    void stopRiderCalls() {
+        if (riderLast && busy()) stop();
+    }
+
     void stop() {
+        pending.set(0);
         try {
             if (tts != null) tts.stop();
         } catch (Throwable ignored) {

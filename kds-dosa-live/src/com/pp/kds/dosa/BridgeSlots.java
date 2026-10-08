@@ -248,6 +248,7 @@ final class BridgeSlots {
         String hint = "";    // any text value mentioning ready / preparing
         String group = "";   // name of the list / section the order sits in ("ready": [...], "preparing": [...])
         boolean brandSure;
+        boolean cleared;     // cleared / dismissed / hidden on Bridge Print (still in its data)
     }
 
     static Map<String, String> parse(String body) throws Exception {
@@ -332,6 +333,12 @@ final class BridgeSlots {
                     || lk.contains("date"))) {
                 r.timeMs = parseTime(sv);
             }
+            if (lk.contains("clear") || lk.contains("dismiss") || lk.contains("hidden") || lk.equals("hide")
+                    || lk.contains("remov") || lk.contains("delet") || lk.contains("archiv") || lk.contains("closed")
+                    || lk.contains("pickedup") || lk.contains("handedover")) {
+                String lv = sv.toLowerCase(java.util.Locale.US);
+                if (lv.equals("true") || lv.equals("1") || lv.equals("yes") || parseTime(sv) > 0) r.cleared = true;
+            }
             if (r.readyFlag == null && (lk.contains("color") || lk.contains("colour") || lk.equals("bg")
                     || lk.contains("background") || lk.contains("theme"))) {
                 int c = colourKind(sv);            // Bridge Print cards: green = ready, yellow = preparing
@@ -415,6 +422,7 @@ final class BridgeSlots {
 
     /** Ready (1) / preparing (0) / picked up (2) / unknown (-1) from everything the record carries. */
     static int kindOf(Rec r) {
+        if (r.cleared) return 2;
         int k = statusKind(r.status);
         if (k >= 0) return k;
         if (r.readyFlag != null) return r.readyFlag ? 1 : 0;

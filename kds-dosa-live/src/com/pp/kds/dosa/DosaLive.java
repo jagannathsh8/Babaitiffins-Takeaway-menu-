@@ -318,7 +318,12 @@ public final class DosaLive {
         }
         try {
             if (riderOn && appCtx != null) {
-                List<RiderCalls.Waiting> call = riders.due(now);
+                TokenVoice rv = sharedVoice(appCtx);
+                // Next call only after the voice has finished (+3 s): no backlog that keeps
+                // talking after orders are cleared. Nothing waiting -> stop at once.
+                List<RiderCalls.Waiting> call = java.util.Collections.emptyList();
+                if (riders.waitingCount() == 0) rv.stopRiderCalls();
+                else if (!rv.busy() && rv.idleMs() >= 3_000L) call = riders.due(now);
                 for (RiderCalls.Waiting w : call) {
                     String s = BridgeSlots.slotFor(w.order.orderId); // Bridge Print slot, if connected
                     if (!s.isEmpty()) w.order.slot = s;
