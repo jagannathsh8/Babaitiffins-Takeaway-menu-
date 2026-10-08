@@ -203,9 +203,13 @@ public final class DosaLive {
         long now = System.currentTimeMillis();
         boolean changed = false;
         DashboardUiState state = currentState();
-        if (state != null && state.getError() == null && !state.isLoading() && !state.getReconnecting()) {
+        if (state != null) {
             List<KotCard> cards = state.getCards();
-            if (cards != null && cards != lastCards) { // StateFlow emits a new list on every change
+            // Use every fresh board list, also while the KDS says "reconnecting"/"loading" (weak TV
+            // Wi-Fi flags that often and ready tokens used to freeze). Only an EMPTY list during a
+            // connection problem is ignored, so a network blip never wipes the screen.
+            boolean shaky = state.getError() != null || state.isLoading() || state.getReconnecting();
+            if (cards != null && cards != lastCards && !(shaky && cards.isEmpty())) { // new list on every change
                 lastCards = cards;
                 List<TokenBoard.Kot> tk = new ArrayList<TokenBoard.Kot>();
                 changed = stats.update(dosaEntries(cards, tk), now, cards.size() >= BOARD_CAP - 5);

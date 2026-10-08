@@ -253,7 +253,10 @@ final class DosaNeonView extends View {
             }
             android.app.ActivityManager am = (android.app.ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
             if (am != null && am.isLowRamDevice()) return true;
-            return c.getPackageManager().hasSystemFeature("android.software.leanback");
+            android.content.pm.PackageManager pm = c.getPackageManager();
+            // Plain Android TV boxes often don't report TV mode, but they have no touchscreen.
+            return pm.hasSystemFeature("android.software.leanback")
+                    || !pm.hasSystemFeature("android.hardware.touchscreen");
         } catch (Throwable t) {
             return false;
         }
@@ -544,6 +547,7 @@ final class DosaNeonView extends View {
 
     @Override
     protected void onDraw(Canvas c) {
+        long frameStart = SystemClock.uptimeMillis();
         float w = getWidth(), h = getHeight();
         if (w == 0 || h == 0) return;
         float t = (SystemClock.uptimeMillis() - start) / 1000f;
@@ -590,7 +594,12 @@ final class DosaNeonView extends View {
         drawFocus(c);
         if (showStaff) drawStaff(c, w, h);
 
-        postInvalidateOnAnimation();
+        if (lite) {
+            // TV boxes: a steady 30 fps looks smoother than a 60 fps target that keeps dropping frames.
+            postInvalidateDelayed(Math.max(1L, 33L - (SystemClock.uptimeMillis() - frameStart)));
+        } else {
+            postInvalidateOnAnimation();
+        }
     }
 
     private static float ease(float shown, int target) {

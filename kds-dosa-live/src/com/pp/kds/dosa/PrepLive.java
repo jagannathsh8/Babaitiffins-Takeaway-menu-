@@ -231,9 +231,16 @@ final class PrepLive {
     }
 
     /** Periodic refresh from the tracker loop. */
+    private static long lastBackgroundCompute;
+
     static void tick(long now, boolean force) {
         if (stats == null) return;
-        if (force || screen != null || dirty) last = stats.compute(now);
+        // The full projection is heavy on TV boxes: refresh it live only while Prep Live is open,
+        // otherwise at most once a minute.
+        if (force || screen != null || (dirty && now - lastBackgroundCompute >= 60_000L)) {
+            last = stats.compute(now);
+            if (screen == null) lastBackgroundCompute = now;
+        }
         if ((dirty || stats.historyChanged()) && now - lastPersist >= PERSIST_MS) persist(now);
         if (screen != null) screen.bind(last);
     }
