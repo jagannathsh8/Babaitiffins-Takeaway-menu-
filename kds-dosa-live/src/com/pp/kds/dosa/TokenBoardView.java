@@ -465,7 +465,9 @@ final class TokenBoardView extends View {
         float w = getWidth(), h = getHeight();
         if (w == 0 || h == 0) return;
         long now = SystemClock.uptimeMillis();
-        float t = (now - start) / 1000f;
+        // Animation clock wraps every 6 h: a float counting seconds for days loses precision
+        // and the animations start to stutter on a screen left open all week.
+        float t = ((now - start) % (6 * 3600_000L)) / 1000f;
         boolean land = w >= h;
         s = land ? Math.min(w / 1920f, h / 1080f) : Math.min(w / 1080f, h / 1920f);
 

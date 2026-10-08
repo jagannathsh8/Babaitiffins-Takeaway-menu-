@@ -550,7 +550,9 @@ final class DosaNeonView extends View {
         long frameStart = SystemClock.uptimeMillis();
         float w = getWidth(), h = getHeight();
         if (w == 0 || h == 0) return;
-        float t = (SystemClock.uptimeMillis() - start) / 1000f;
+        // Animation clock wraps every 6 h: a float counting seconds for days loses precision
+        // and the animations start to stutter on a screen left open all week.
+        float t = ((SystemClock.uptimeMillis() - start) % (6 * 3600_000L)) / 1000f;
         ensureShaders((int) w, (int) h);
         shownRunning = ease(shownRunning, running);
         shownServed = ease(shownServed, served);

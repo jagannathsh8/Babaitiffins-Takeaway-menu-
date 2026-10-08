@@ -32,12 +32,28 @@ final class TokenVoice {
     private int restoreVolume = -1;
     private AudioTrack chime;
 
+    private long createdAt;
+    private boolean failed;
+
     TokenVoice(Context c) {
         app = c.getApplicationContext();
         audio = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
-        tts = new TextToSpeech(app, new TextToSpeech.OnInitListener() {
+        startEngine();
+    }
+
+    /** (Re)connects to the device text-to-speech engine. */
+    private void startEngine() {
+        ready = false;
+        failed = false;
+        createdAt = System.currentTimeMillis();
+        final TextToSpeech[] self = new TextToSpeech[1];
+        self[0] = tts = new TextToSpeech(app, new TextToSpeech.OnInitListener() {
             @Override public void onInit(int status) {
-                if (status != TextToSpeech.SUCCESS || tts == null) return;
+                if (tts == null || tts != self[0]) return; // an older engine instance
+                if (status != TextToSpeech.SUCCESS) {
+                    failed = true;
+                    return;
+                }
                 configure();
                 ready = true;
                 if (waiting != null) {
@@ -47,6 +63,25 @@ final class TokenVoice {
                 }
             }
         });
+    }
+
+    /** The speech service died or never started (it can, over days of running): start it again. */
+    private long restartWindowAt;
+    private int restarts;
+
+    private void restartEngine(String phrase) {
+        long now = System.currentTimeMillis();
+        if (now - restartWindowAt > 60_000L) {
+            restartWindowAt = now;
+            restarts = 0;
+        }
+        if (++restarts > 3) return; // engine broken right now: skip this call, try again next time
+        try {
+            if (tts != null) tts.shutdown();
+        } catch (Throwable ignored) {
+        }
+        waiting = phrase;
+        startEngine();
     }
 
     private void configure() {
@@ -91,6 +126,10 @@ final class TokenVoice {
     /** Chime now, then speak. Calls made while one is playing are queued behind it. */
     void say(final String phrase) {
         if (tts == null) return;
+        if (failed || (!ready && System.currentTimeMillis() - createdAt > 20_000L)) {
+            restartEngine(phrase);
+            return;
+        }
         if (!ready) {
             waiting = phrase;
             return;
@@ -103,7 +142,13 @@ final class TokenVoice {
                 Bundle p = new Bundle();
                 p.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC);
                 p.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
-                tts.speak(phrase, TextToSpeech.QUEUE_ADD, p, "tok" + System.nanoTime());
+                int r;
+                try {
+                    r = tts.speak(phrase, TextToSpeech.QUEUE_ADD, p, "tok" + System.nanoTime());
+                } catch (Throwable t) {
+                    r = TextToSpeech.ERROR;
+                }
+                if (r == TextToSpeech.ERROR) restartEngine(phrase); // dead engine: reconnect, say it then
             }
         }, busy ? 0 : 850);
     }

@@ -63,11 +63,16 @@ public final class DosaLive {
     private static SharedPreferences prefs;
     private static View buttonRow;
     private static boolean seedApplied;
+    private static boolean persistPending;
+    private static java.lang.ref.WeakReference<Activity> current;
+    private static final long PROCESS_START = System.currentTimeMillis();
+    private static long lastUserAt = System.currentTimeMillis();
     private static final TokenBoard tokens = new TokenBoard();
 
     private DosaLive() {}
 
     public static void install(final Activity activity) {
+        current = new java.lang.ref.WeakReference<Activity>(activity);
         try {
             addButton(activity);
             start(activity.getApplicationContext());
@@ -129,6 +134,7 @@ public final class DosaLive {
     }
 
     static void onUserTouch() {
+        lastUserAt = System.currentTimeMillis();
         if (uiHandler == null) return;
         uiHandler.removeCallbacks(hideControls);
         for (View v : controls) {
@@ -240,6 +246,8 @@ public final class DosaLive {
             if (!call.isEmpty() && panel != null) panel.announce(call);
         } catch (Throwable ignored) {
         }
+        if (persistPending && now - lastPersistAt >= 30_000L) persist();
+        nightlyRefresh(now);
         if (changed || now - lastComputeAt >= RECOMPUTE_MS) {
             lastComputeAt = now;
             last = stats.compute(now);
@@ -350,7 +358,20 @@ public final class DosaLive {
         }
     }
 
+    private static long lastPersistAt;
+    private static String lastPersistDay;
+
+    /** Saves at most every 30 s (and at once on a new day): no constant writes to TV storage. */
     private static void persist() {
+        long now = System.currentTimeMillis();
+        String day = DosaStats.dayKey(now);
+        if (now - lastPersistAt < 30_000L && day.equals(lastPersistDay)) {
+            persistPending = true;
+            return;
+        }
+        lastPersistAt = now;
+        lastPersistDay = day;
+        persistPending = false;
         SharedPreferences.Editor ed = prefs.edit();
         for (Map.Entry<String, String> e : stats.save().entrySet()) ed.putString(e.getKey(), e.getValue());
         ed.apply();
@@ -519,6 +540,34 @@ public final class DosaLive {
         b.setBackground(bg);
         b.setShadowLayer((small ? 5 : 8) * d, 0, 0, glow);
         return b;
+    }
+
+    // ---- nightly refresh: the TV can run for weeks without a restart ---------------------------
+
+    /**
+     * Around 4:30 AM, if the app has been running 20+ hours and nobody touched it for 30 minutes,
+     * rebuild the screen (like a rotation): clears anything that piled up during the day. The
+     * KDS data and connection are kept, and the add-on screen that was showing comes back.
+     */
+    private static void nightlyRefresh(long now) {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.setTimeInMillis(now);
+        int minuteOfDay = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE);
+        if (minuteOfDay < 4 * 60 + 30 || minuteOfDay > 5 * 60 + 30) return;
+        if (now - PROCESS_START < 20 * 3600_000L || now - lastUserAt < 30 * 60_000L) return;
+        final Activity a = current == null ? null : current.get();
+        if (a == null || a.isFinishing()) return;
+        SharedPreferences ui = a.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
+        String today = DosaStats.dayKey(now);
+        if (today.equals(ui.getString("refreshed_day", ""))) return;
+        ui.edit().putString("refreshed_day", today).commit();
+        lastPersistAt = 0; // save now, not throttled
+        persist();
+        try {
+            PrepLive.tick(now, true);
+        } catch (Throwable ignored) {
+        }
+        a.recreate();
     }
 
     // ---- reopen the screen that was showing when the app was closed ---------------------------
