@@ -267,9 +267,16 @@ public final class DosaLive {
                 } catch (Throwable ignored) {
                 }
                 try {
+                    List<RiderCalls.Order> kdsOrders = riderOrders(cards);
+                    Map<String, Integer> kinds = new HashMap<String, Integer>();
+                    for (RiderCalls.Order o : kdsOrders) {
+                        String dg = BridgeSlots.digits(o.orderId);
+                        if (dg.length() >= 6) kinds.put(dg, o.gone ? 2 : o.ready ? 1 : 0);
+                    }
+                    BridgeSlots.setKdsKinds(kinds); // helps Bridge Print orders show Food Ready
                     if (riderTest == null && !bridgeMode()) {
                         useBridgeSource(false);
-                        riders.update(riderOrders(cards), now); // fallback: Petpooja via the KDS
+                        riders.update(kdsOrders, now); // fallback: Petpooja via the KDS
                     }
                 } catch (Throwable ignored) {
                 }

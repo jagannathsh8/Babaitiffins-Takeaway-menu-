@@ -111,10 +111,27 @@ final class BridgeSlots {
         return t != null && lastOkAt - t > 10_000L;
     }
 
-    /** Bridge Print gives order status (ready / preparing): the board and calls can run from it alone. */
+    /** Bridge Print is reachable: the board and calls run from its orders (no Petpooja needed). */
     static boolean hasStatus() {
-        for (Rec r : records) if (kindOf(r) >= 0) return true;
-        return false;
+        return true;
+    }
+
+    /** Ready (1) / preparing (0) / picked up (2) per order ID as the KDS sees it (Petpooja). */
+    private static volatile Map<String, Integer> kds = Collections.emptyMap();
+
+    static void setKdsKinds(Map<String, Integer> m) {
+        kds = m;
+    }
+
+    private static int kdsKind(String order) {
+        Map<String, Integer> m = kds;
+        Integer k = m.get(order);
+        if (k != null) return k;
+        for (Map.Entry<String, Integer> e : m.entrySet()) {
+            String key = e.getKey();
+            if (Math.min(key.length(), order.length()) >= 8 && (key.endsWith(order) || order.endsWith(key))) return e.getValue();
+        }
+        return -1;
     }
 
     /** Bridge Print's orders as rider orders (ready / preparing / picked up from its own status). */
@@ -122,7 +139,8 @@ final class BridgeSlots {
         java.util.List<RiderCalls.Order> out = new java.util.ArrayList<RiderCalls.Order>();
         for (Rec r : records) {
             int kind = kindOf(r);
-            if (kind < 0) continue;
+            if (kind < 0) kind = kdsKind(r.order);   // Petpooja status via the KDS, if this device has it
+            if (kind < 0) kind = 0;                  // Bridge Print shows "Preparing" until Food Ready
             String plat = r.platform.isEmpty() ? "Online" : r.platform;
             String od = r.order.length() > 18 ? r.order.substring(r.order.length() - 18) : r.order;
             long id;
