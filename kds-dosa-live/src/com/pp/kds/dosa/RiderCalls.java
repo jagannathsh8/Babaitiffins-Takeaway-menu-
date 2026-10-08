@@ -144,7 +144,11 @@ final class RiderCalls {
         return out;
     }
 
-    /** "Swiggy order 3 1 3 6, slot 47. Ownly order 7 9 6 4, slot 20. Ready for pickup." */
+    /**
+     * "Swiggy order 3 1 3 6, slot 47. ... Ready for pickup." The slot is only said when it is
+     * known: pickup slots are assigned by Bridge Print, not by Petpooja, so until slots are read
+     * from Bridge Print the call is "Swiggy order 3 1 3 6. Ready for pickup."
+     */
     static String phrase(List<Waiting> call) {
         StringBuilder sb = new StringBuilder();
         for (Waiting w : call) {

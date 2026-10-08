@@ -338,12 +338,8 @@ public final class DosaLive {
             }
             String last4 = RiderCalls.last4(kot.getPOId());
             if (last4.isEmpty()) last4 = RiderCalls.last4(String.valueOf(kot.getId()));
+            // Pickup slots are assigned by Bridge Print (not the Petpooja token), so no slot here.
             String slot = "";
-            try {
-                Long tn = kot.getTokenNo();
-                if (tn != null && tn > 0) slot = String.valueOf(tn);
-            } catch (Throwable ignored) {
-            }
             String status = kot.getKotStatus();
             boolean ready = card.getState().isDispatch() || "9".equals(status);
             boolean gone = "10".equals(status) || "0".equals(status);
