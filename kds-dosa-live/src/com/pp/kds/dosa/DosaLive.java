@@ -819,22 +819,47 @@ public final class DosaLive {
         if (last.isEmpty()) return;
         final Handler h = new Handler(Looper.getMainLooper());
         final long until = System.currentTimeMillis() + 30_000L;
-        h.postDelayed(new Runnable() {
+        // Dark cover at once, so the white KDS board never flashes while the screen is rebuilt.
+        final View cover = new View(a);
+        cover.setBackgroundColor(0xFF080B10);
+        cover.setElevation(40 * a.getResources().getDisplayMetrics().density);
+        cover.setClickable(true);
+        final ViewGroup root = (ViewGroup) a.findViewById(android.R.id.content);
+        root.addView(cover, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        final Runnable uncover = new Runnable() {
+            @Override public void run() {
+                if (cover.getParent() != null) root.removeView(cover);
+            }
+        };
+        h.postDelayed(uncover, 15_000L); // never leave it up
+        h.post(new Runnable() {
             @Override public void run() {
                 if (a.isFinishing()) return;
                 try {
                     if ("dosa".equals(last)) {
                         if (panel == null || panel.activity != a) showPanel(a, -1);
+                        h.postDelayed(uncover, 250);
                     } else if ("rider".equals(last)) {
                         if (panel == null || panel.activity != a) showPanel(a, Panel.RIDER);
+                        h.postDelayed(uncover, 250);
                     } else if ("prep".equals(last)) {
-                        if (PrepLive.available()) PrepLive.open(a);
-                        else if (System.currentTimeMillis() < until) h.postDelayed(this, 500); // history still loading
+                        if (PrepLive.available()) {
+                            PrepLive.open(a);
+                            h.postDelayed(uncover, 250);
+                        } else if (System.currentTimeMillis() < until) {
+                            h.postDelayed(this, 500); // history still loading
+                        } else {
+                            uncover.run();
+                        }
+                    } else {
+                        uncover.run();
                     }
                 } catch (Throwable ignored) {
+                    uncover.run();
                 }
             }
-        }, 800);
+        });
     }
 
     /** @param mode -1 = the last Dosa Live / Order Ready mode, or Panel.RIDER */
@@ -858,6 +883,7 @@ public final class DosaLive {
     private static final class Panel {
         static final int DOSA_LIVE = 0, ORDER_READY = 1, RIDER = 2;
         RiderBoardView riderView;
+        AutoBrightness brightness;
         final Activity activity;
         final SharedPreferences ui;
         final DosaNeonView view;
@@ -897,6 +923,11 @@ public final class DosaLive {
 
                     @Override public void onVoice(boolean on) { setRiderCalls(activity, on); }
 
+                    @Override public void onBrightness(int m) {
+                        ui.edit().putInt("rider_bright", m).apply();
+                        if (brightness != null) brightness.start(m);
+                    }
+
                     @Override public void onDuration(int minutes) {
                         ui.edit().putInt("rider_max_min", minutes).apply();
                         riderMaxMin = minutes;
@@ -908,6 +939,9 @@ public final class DosaLive {
                                 ViewGroup.LayoutParams.MATCH_PARENT));
             }
             riderView.setVoice(riderOn);
+            if (brightness == null) brightness = new AutoBrightness(activity);
+            brightness.start(ui.getInt("rider_bright", 0));
+            riderView.setBrightness(ui.getInt("rider_bright", 0), brightness.hasSensor());
             riderView.setDuration(ui.getInt("rider_max_min", 0));
             riderView.setVisibility(View.VISIBLE);
             riderView.bringToFront();
@@ -949,6 +983,7 @@ public final class DosaLive {
             }
             remember(activity, "dosa");
             if (riderView != null) riderView.setVisibility(View.GONE);
+            if (brightness != null) brightness.stop(); // normal brightness outside the rider board
             ui.edit().putInt("mode", m).apply();
             if (m == ORDER_READY) {
                 if (board == null) {
@@ -1050,6 +1085,7 @@ public final class DosaLive {
             if (parent != null) parent.removeView(view);
             if (board != null && board.getParent() != null) ((ViewGroup) board.getParent()).removeView(board);
             if (riderView != null && riderView.getParent() != null) ((ViewGroup) riderView.getParent()).removeView(riderView);
+            if (brightness != null) brightness.stop();
             voice = null; // the shared voice keeps running (rider calls may use it)
             tokens.clearPending();
             if (panel == this) panel = null;

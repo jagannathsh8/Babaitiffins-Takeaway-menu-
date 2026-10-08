@@ -41,11 +41,22 @@ final class RiderBoardView extends View {
 
         /** How long ready orders stay: 0 = until picked up, else minutes. */
         void onDuration(int minutes);
+
+        /** 0 = auto (light sensor), 1 = 50 %, 2 = 75 %, 3 = 100 %. */
+        void onBrightness(int mode);
     }
 
     private static final int[] DURATIONS = {0, 15, 30, 60};
     private int duration = 0;
-    private final RectF hitDur = new RectF();
+    private final RectF hitDur = new RectF(), hitBright = new RectF();
+    private int brightMode;
+    private boolean hasSensor;
+
+    void setBrightness(int mode, boolean sensor) {
+        brightMode = mode;
+        hasSensor = sensor;
+        invalidate();
+    }
 
     void setDuration(int minutes) {
         duration = minutes;
@@ -81,7 +92,7 @@ final class RiderBoardView extends View {
     private long callAt;
     private long controlsAt = SystemClock.uptimeMillis();
     private final RectF hitVoice = new RectF(), hitClose = new RectF();
-    private int focus = -1; // remote: 0 duration, 1 voice, 2 close
+    private int focus = -1; // remote: 0 brightness, 1 duration, 2 voice, 3 close
     private RadialGradient bg;
     private float bgKey;
     private String clockStr = "";
@@ -143,9 +154,10 @@ final class RiderBoardView extends View {
         if (ev.getAction() == MotionEvent.ACTION_UP) {
             float x = ev.getX(), y = ev.getY();
             boolean visible = controlsAlpha() > 0.3f;
-            if (visible && hitClose.contains(x, y)) activate(2);
-            else if (visible && hitVoice.contains(x, y)) activate(1);
-            else if (visible && hitDur.contains(x, y)) activate(0);
+            if (visible && hitClose.contains(x, y)) activate(3);
+            else if (visible && hitVoice.contains(x, y)) activate(2);
+            else if (visible && hitDur.contains(x, y)) activate(1);
+            else if (visible && hitBright.contains(x, y)) activate(0);
             else if (call != null) call = null;
             controlsAt = SystemClock.uptimeMillis();
             invalidate();
@@ -155,11 +167,14 @@ final class RiderBoardView extends View {
 
     private void activate(int i) {
         if (i == 0) {
+            brightMode = (brightMode + 1) % 4;
+            if (listener != null) listener.onBrightness(brightMode);
+        } else if (i == 1) {
             int j = 0;
             while (j < DURATIONS.length && DURATIONS[j] != duration) j++;
             duration = DURATIONS[(j + 1) % DURATIONS.length];
             if (listener != null) listener.onDuration(duration);
-        } else if (i == 1) {
+        } else if (i == 2) {
             voiceOn = !voiceOn;
             if (listener != null) listener.onVoice(voiceOn);
         } else if (listener != null) {
@@ -180,8 +195,8 @@ final class RiderBoardView extends View {
             case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_DPAD_DOWN:
                 if (down) {
-                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 1;
-                    else focus = Math.max(0, Math.min(2, focus
+                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 2;
+                    else focus = Math.max(0, Math.min(3, focus
                             + (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1)));
                     controlsAt = SystemClock.uptimeMillis();
                     invalidate();
@@ -192,7 +207,7 @@ final class RiderBoardView extends View {
             case KeyEvent.KEYCODE_NUMPAD_ENTER:
             case KeyEvent.KEYCODE_BUTTON_A:
                 if (!down) {
-                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 1;
+                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 2;
                     else activate(focus);
                     controlsAt = SystemClock.uptimeMillis();
                     invalidate();
@@ -449,6 +464,7 @@ final class RiderBoardView extends View {
         hitVoice.setEmpty();
         hitClose.setEmpty();
         hitDur.setEmpty();
+        hitBright.setEmpty();
         if (a <= 0f) return;
         float h = 44 * s, y = 74 * s - h / 2f;
         text.setTypeface(bold);
@@ -489,12 +505,24 @@ final class RiderBoardView extends View {
         c.drawRoundRect(rect, h / 2f, h / 2f, fill);
         text.setColor(alpha(Color.WHITE, (int) (255 * a)));
         c.drawText(dl, rect.centerX(), rect.centerY() + 6 * s, text);
+        // brightness pill, left of the duration pill
+        String bl = brightMode == 0 ? (hasSensor ? "\u2600  AUTO" : "\u2600  AUTO (MAX)")
+                : "\u2600  " + (brightMode == 1 ? 50 : brightMode == 2 ? 75 : 100) + "%";
+        float blw = text.measureText(bl) + 36 * s;
+        float blx = dx - dw - 12 * s;
+        rect.set(blx - blw, y, blx, y + h);
+        hitBright.set(rect);
+        hitBright.inset(-6 * s, -10 * s);
+        fill.setColor(alpha(0xFF8D6E00, (int) (235 * a)));
+        c.drawRoundRect(rect, h / 2f, h / 2f, fill);
+        text.setColor(alpha(Color.WHITE, (int) (255 * a)));
+        c.drawText(bl, rect.centerX(), rect.centerY() + 6 * s, text);
         text.setTextAlign(Paint.Align.LEFT);
         text.setLetterSpacing(0f);
         if (focus >= 0) {
-            RectF fr = focus == 0 ? hitDur : focus == 1 ? hitVoice : hitClose;
+            RectF fr = focus == 0 ? hitBright : focus == 1 ? hitDur : focus == 2 ? hitVoice : hitClose;
             rect.set(fr);
-            rect.inset(focus == 2 ? 6 * s : 2 * s, 6 * s);
+            rect.inset(focus == 3 ? 6 * s : 2 * s, 6 * s);
             stroke.setColor(alpha(Color.WHITE, (int) (255 * a)));
             stroke.setStrokeWidth(3 * s);
             c.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, stroke);
