@@ -226,6 +226,7 @@ final class BridgeSlots {
         long timeMs;
         Boolean readyFlag;   // from fields like isReady / foodReady / readyAt
         String hint = "";    // any text value mentioning ready / preparing
+        String group = "";   // name of the list / section the order sits in ("ready": [...], "preparing": [...])
     }
 
     static Map<String, String> parse(String body) throws Exception {
@@ -239,15 +240,23 @@ final class BridgeSlots {
         java.util.LinkedHashMap<String, Rec> out = new java.util.LinkedHashMap<String, Rec>();
         String t = body.trim();
         Object root = t.startsWith("[") ? new JSONArray(t) : new JSONObject(t);
-        walk(root, out, 0);
+        walk(root, out, 0, "");
         return new java.util.ArrayList<Rec>(out.values());
     }
 
-    private static void walk(Object node, Map<String, Rec> out, int depth) {
+    /** A list / section name that tells the status, e.g. "readyOrders", "preparing", "foodReady". */
+    private static boolean statusWord(String key) {
+        String l = key.toLowerCase(java.util.Locale.US);
+        return l.contains("ready") || l.contains("prepar") || l.contains("pending") || l.contains("done")
+                || l.contains("complete") || l.contains("progress") || l.contains("cook") || l.contains("kitchen")
+                || l.contains("picked") || l.contains("dispatch") || l.equals("new") || l.startsWith("new");
+    }
+
+    private static void walk(Object node, Map<String, Rec> out, int depth, String group) {
         if (depth > 12 || node == null) return;
         if (node instanceof JSONArray) {
             JSONArray a = (JSONArray) node;
-            for (int i = 0; i < a.length(); i++) walk(a.opt(i), out, depth + 1);
+            for (int i = 0; i < a.length(); i++) walk(a.opt(i), out, depth + 1, group);
             return;
         }
         if (!(node instanceof JSONObject)) return;
@@ -260,13 +269,15 @@ final class BridgeSlots {
             if (v instanceof JSONObject) read((JSONObject) v, r, true); // one level down
         }
         if (!r.order.isEmpty() && !r.token.isEmpty()) {
+            r.group = group;
             if (!out.containsKey(r.order)) out.put(r.order, r);
             return;
         }
         keys = o.keys();
         while (keys.hasNext()) {
-            Object v = o.opt(keys.next());
-            if (v instanceof JSONObject || v instanceof JSONArray) walk(v, out, depth + 1);
+            String k = keys.next();
+            Object v = o.opt(k);
+            if (v instanceof JSONObject || v instanceof JSONArray) walk(v, out, depth + 1, statusWord(k) ? k : group);
         }
     }
 
@@ -287,7 +298,8 @@ final class BridgeSlots {
             } else if (r.status.isEmpty() && (lk.contains("status") || lk.equals("state") || lk.equals("stage"))
                     && !sv.isEmpty()) {
                 r.status = sv; // text ("Food Ready") or a code ("9")
-            } else if (r.readyFlag == null && lk.contains("ready")) {
+            } else if (r.readyFlag == null && (lk.contains("ready") || lk.equals("done") || lk.equals("isdone")
+                    || lk.equals("completed") || lk.equals("iscompleted") || lk.equals("served"))) {
                 // isReady:true / foodReady:1 / readyAt:"2026-..." -> ready; false / 0 / "" -> not yet
                 String lv = sv.toLowerCase(java.util.Locale.US);
                 r.readyFlag = !(lv.isEmpty() || lv.equals("false") || lv.equals("0") || lv.equals("null") || lv.equals("no"));
@@ -299,6 +311,11 @@ final class BridgeSlots {
                     || lk.contains("date"))) {
                 r.timeMs = parseTime(sv);
             }
+            if (r.readyFlag == null && (lk.contains("color") || lk.contains("colour") || lk.equals("bg")
+                    || lk.contains("background") || lk.contains("theme"))) {
+                int c = colourKind(sv);            // Bridge Print cards: green = ready, yellow = preparing
+                if (c >= 0) r.readyFlag = c == 1;
+            }
             if (r.platform.isEmpty() && sv.length() <= 30) {
                 String lv = sv.toLowerCase(java.util.Locale.US);
                 if (lv.contains("swiggy") || lv.contains("zomato") || lv.contains("ownly") || lv.contains("toing")
@@ -309,6 +326,20 @@ final class BridgeSlots {
                 if (lv.contains("ready") || lv.contains("prepar")) r.hint = sv;
             }
         }
+    }
+
+    /** 1 = green-ish (ready), 0 = yellow / amber (preparing), -1 = not a status colour. */
+    static int colourKind(String v) {
+        String l = v.trim().toLowerCase(java.util.Locale.US);
+        if (l.contains("green") || l.contains("success")) return 1;
+        if (l.contains("yellow") || l.contains("amber") || l.contains("warn") || l.contains("olive")) return 0;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("#([0-9a-f]{6})").matcher(l);
+        if (!m.find()) return -1;
+        int rgb = Integer.parseInt(m.group(1), 16);
+        int r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
+        if (g > r + 25 && g > b + 25) return 1;
+        if (r > 140 && g > 120 && b < 110 && Math.abs(r - g) < 70) return 0;
+        return -1;
     }
 
     /** Epoch seconds / millis, or "yyyy-MM-dd HH:mm(:ss)" / ISO; 0 when unknown. */
@@ -338,7 +369,11 @@ final class BridgeSlots {
         int k = statusKind(r.status);
         if (k >= 0) return k;
         if (r.readyFlag != null) return r.readyFlag ? 1 : 0;
-        return statusKind(r.hint);
+        k = statusKind(r.hint);
+        if (k >= 0) return k;
+        String g = r.group.toLowerCase(java.util.Locale.US);
+        if (g.contains("done") || g.contains("complete")) return 1;
+        return statusKind(r.group);
     }
 
     /** "Food Ready" / 9 -> 1, "Preparing" / 1..8 -> 0, picked up / dispatched / 10 -> 2, unknown -> -1. */
