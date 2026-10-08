@@ -235,7 +235,9 @@ final class RiderBoardView extends View {
         drawHeader(c, pad, 26 * s, w - 2 * pad, 96 * s, t);
         float top = 140 * s, bottom = h - 70 * s;
         if (land) {
-            float gap = 24 * s, leftW = (w - 2 * pad - gap) * 0.58f;
+            // Food Ready gets more room as it fills up (it must show every order).
+            float share = Math.max(0.58f, Math.min(0.74f, 0.5f + ready.size() / 120f));
+            float gap = 24 * s, leftW = (w - 2 * pad - gap) * share;
             drawReady(c, pad, top, leftW, bottom - top, now, t);
             drawPreparing(c, pad + leftW + gap, top, w - 2 * pad - leftW - gap, bottom - top);
         } else {
@@ -328,7 +330,10 @@ final class RiderBoardView extends View {
             return;
         }
         float headH = 30 * s, gap = 14 * s;
-        float minColW = (isReady ? 330 : 280) * s, maxRow = (isReady ? 84 : 58) * s, minRow = (isReady ? 40 : 32) * s;
+        // Food Ready: always every order on one screen (more columns, smaller lines; never pages).
+        // Preparing: lines stay readable and the list pages when it doesn't fit.
+        float minColW = (isReady ? (n > 24 ? 230 : 300) : 280) * s, maxRow = (isReady ? 84 : 58) * s;
+        float minRow = (isReady ? 1 : 32) * s;
         int maxCols = Math.max(1, (int) ((iw + gap) / (minColW + gap)));
         int cols = 1;
         float rowH = 0;
@@ -342,7 +347,7 @@ final class RiderBoardView extends View {
             if (rh >= maxRow) break; // biggest rows already reached: fewer columns read easier
         }
         int perPage = n, pages = 1;
-        if (rowH < minRow) {
+        if (!isReady && rowH < minRow) {
             rowH = minRow;
             cols = maxCols;
             int rows = Math.max(1, (int) ((bottom - top - headH) / rowH));
@@ -352,7 +357,7 @@ final class RiderBoardView extends View {
         int page = pages > 1 ? (int) (t / 8f) % pages : 0;
         int rowsPerCol = (Math.min(perPage, n) + cols - 1) / cols;
         float colW = (iw - (cols - 1) * gap) / cols;
-        float fs = Math.min(isReady ? 40 * s : 26 * s, rowH * 0.56f);
+        float fs = Math.min(isReady ? 40 * s : 26 * s, rowH * 0.62f);
         // headings
         text.setTypeface(condensed);
         text.setLetterSpacing(0.18f);
