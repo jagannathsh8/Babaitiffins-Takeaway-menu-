@@ -246,9 +246,19 @@ final class RiderBoardView extends View {
         c.drawRect(0, 0, w, h, fill);
         fill.setShader(null);
 
-        float pad = 40 * s;
-        drawHeader(c, pad, 26 * s, w - 2 * pad, 96 * s, t);
-        float top = 140 * s, bottom = h - 70 * s;
+        // Full screen: 10 s after the last touch / remote key the header slims down, the footer
+        // and margins go and the system bars hide, so the order lists get nearly the whole screen.
+        boolean wantFull = now - controlsAt >= FULL_AFTER_MS;
+        long dt = lastFrame == 0 ? 0 : Math.min(200L, now - lastFrame);
+        lastFrame = now;
+        full += ((wantFull ? 1f : 0f) - full) * Math.min(1f, dt / 180f);
+        if (Math.abs(full - (wantFull ? 1f : 0f)) < 0.01f) full = wantFull ? 1f : 0f;
+        if (wantFull != immersive) setImmersive(wantFull);
+        float f = full;
+        float pad = lerp(40, 14, f) * s;
+        float headY = lerp(26, 6, f) * s, headH = lerp(96, 50, f) * s;
+        drawHeader(c, pad, headY, w - 2 * pad, headH, t, f);
+        float top = headY + headH + lerp(18, 4, f) * s, bottom = h - lerp(70, 10, f) * s;
         if (land) {
             // Food Ready gets more room as it fills up (it must show every order).
             float share = Math.max(0.58f, Math.min(0.74f, 0.5f + ready.size() / 120f));
@@ -260,7 +270,7 @@ final class RiderBoardView extends View {
             drawReady(c, pad, top, w - 2 * pad, rh, now, t);
             drawPreparing(c, pad, top + rh + 20 * s, w - 2 * pad, bottom - top - rh - 20 * s);
         }
-        drawFooter(c, pad, h - 52 * s, w - 2 * pad);
+        if (f < 1f) drawFooter(c, pad, h - 52 * s, w - 2 * pad, 1f - f);
         drawControls(c, w);
         drawCall(c, w, h, now, t);
 
@@ -268,25 +278,26 @@ final class RiderBoardView extends View {
         else postInvalidateOnAnimation();
     }
 
-    private void drawHeader(Canvas c, float x, float y, float w, float h, float t) {
-        float cy = y + h / 2f;
+    private void drawHeader(Canvas c, float x, float y, float w, float h, float t, float f) {
+        float cy = y + h / 2f, k = h / (96 * s); // everything scales with the header height
+        int sub = (int) (255 * (1f - f));
         if (logo != null) {
             dst.set(x, y + h * 0.05f, x + h * 0.9f, y + h * 0.95f);
             bmp.setAlpha(255);
             c.drawBitmap(logo, null, dst, bmp);
         }
-        float tx = x + h + 14 * s;
+        float tx = x + h + 14 * s * k;
         text.setTextAlign(Paint.Align.LEFT);
         text.setTypeface(bold);
         text.setLetterSpacing(0.12f);
-        text.setTextSize(46 * s);
+        text.setTextSize(46 * s * k);
         text.setColor(Color.WHITE);
-        c.drawText("\uD83D\uDEF5 RIDER PICKUP", tx, cy + 6 * s, text);
+        c.drawText("\uD83D\uDEF5 RIDER PICKUP", tx, cy + lerp(6, 16, f) * s * k, text);
         text.setTypeface(condensed);
         text.setLetterSpacing(0.3f);
         text.setTextSize(17 * s);
-        text.setColor(GOLD);
-        c.drawText("BABAI TIFFINS \u2022 FIND YOUR ORDER NUMBER, GO TO THE SLOT", tx, cy + 34 * s, text);
+        text.setColor(alpha(GOLD, sub));
+        if (sub > 0) c.drawText("BABAI TIFFINS \u2022 FIND YOUR ORDER NUMBER, GO TO THE SLOT", tx, cy + 34 * s, text);
         text.setLetterSpacing(0f);
 
         long nowMs = System.currentTimeMillis();
@@ -296,18 +307,23 @@ final class RiderBoardView extends View {
         }
         text.setTextAlign(Paint.Align.RIGHT);
         text.setTypeface(bold);
-        text.setTextSize(44 * s);
+        text.setTextSize(44 * s * k);
         text.setColor(Color.WHITE);
-        c.drawText(clockStr, x + w, cy + 4 * s, text);
+        float clockBase = cy + lerp(4, 16, f) * s * k;
+        c.drawText(clockStr, x + w, clockBase, text);
+        float clockW = text.measureText(clockStr);
         float pulse = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 1.6);
         text.setTypeface(condensed);
         text.setLetterSpacing(0.3f);
         text.setTextSize(16 * s);
-        text.setColor(GREEN);
-        c.drawText("LIVE", x + w, cy + 32 * s, text);
+        text.setColor(alpha(GREEN, sub));
+        if (sub > 0) c.drawText("LIVE", x + w, cy + 32 * s, text);
+        // live dot: under the clock normally, left of the clock in full screen
         fill.setColor(GREEN);
         fill.setAlpha((int) (120 + 135 * pulse));
-        c.drawCircle(x + w - text.measureText("LIVE") - 14 * s, cy + 26 * s, 6 * s, fill);
+        float dx0 = x + w - text.measureText("LIVE") - 14 * s, dy0 = cy + 26 * s;
+        float dx1 = x + w - clockW - 18 * s, dy1 = clockBase - 13 * s * k;
+        c.drawCircle(lerp(dx0, dx1, f), lerp(dy0, dy1, f), 6 * s, fill);
         fill.setAlpha(255);
         text.setLetterSpacing(0f);
         text.setTextAlign(Paint.Align.LEFT);
@@ -459,16 +475,17 @@ final class RiderBoardView extends View {
         text.setTextAlign(Paint.Align.LEFT);
     }
 
-    private void drawFooter(Canvas c, float x, float y, float w) {
-        fill.setColor(bridgeOk ? GREEN : 0xFFFF8A65);
+    private void drawFooter(Canvas c, float x, float y, float w, float a) {
+        int ia = (int) (255 * a);
+        fill.setColor(alpha(bridgeOk ? GREEN : 0xFFFF8A65, ia));
         c.drawCircle(x + 8 * s, y + 16 * s, 6 * s, fill);
         text.setTextAlign(Paint.Align.LEFT);
         text.setTypeface(medium);
         text.setTextSize(17 * s);
-        text.setColor(0xAAFFFFFF);
+        text.setColor(alpha(Color.WHITE, (int) (0xAA * a)));
         c.drawText(bridgeStatus, x + 22 * s, y + 22 * s, text);
         text.setTextAlign(Paint.Align.RIGHT);
-        text.setColor(0x88FFFFFF);
+        text.setColor(alpha(Color.WHITE, (int) (0x88 * a)));
         c.drawText(voiceOn ? "\uD83D\uDD0A Calls on" : "\uD83D\uDD07 Calls off", x + w, y + 22 * s, text);
         text.setTextAlign(Paint.Align.LEFT);
     }
@@ -630,6 +647,32 @@ final class RiderBoardView extends View {
         text.setTextSize(size);
         float tw = text.measureText(str);
         return tw > maxW ? size * maxW / tw : size;
+    }
+
+    private static float lerp(float a, float b, float f) {
+        return a + (b - a) * f;
+    }
+
+    private static final long FULL_AFTER_MS = 10_000L;
+    private float full;
+    private long lastFrame;
+    private boolean immersive;
+
+    /** Hides / shows the Android status and navigation bars (swipe from the edge shows them briefly). */
+    @SuppressWarnings("deprecation")
+    private void setImmersive(boolean on) {
+        immersive = on;
+        try {
+            setSystemUiVisibility(on ? (SYSTEM_UI_FLAG_IMMERSIVE_STICKY | SYSTEM_UI_FLAG_FULLSCREEN
+                    | SYSTEM_UI_FLAG_HIDE_NAVIGATION | SYSTEM_UI_FLAG_LAYOUT_STABLE) : 0);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (immersive) setImmersive(false);
+        super.onDetachedFromWindow();
     }
 
     private static int alpha(int color, int a) {

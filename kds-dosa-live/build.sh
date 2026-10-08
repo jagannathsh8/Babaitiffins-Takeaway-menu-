@@ -22,13 +22,12 @@ trap 'rm -rf "$WORK"' EXIT
 
 echo "== unit tests"
 javac -d "$WORK/test" "$HERE/src/com/pp/kds/dosa/DosaStats.java" "$HERE/src/com/pp/kds/dosa/PrepStats.java" \
-    "$HERE/src/com/pp/kds/dosa/TokenBoard.java" "$HERE/src/com/pp/kds/dosa/RiderCalls.java" "$HERE/src/com/pp/kds/dosa/RiderTest.java" \
-    "$HERE/test/DosaStatsTest.java" "$HERE/test/PrepStatsTest.java" "$HERE/test/TokenBoardTest.java" "$HERE/test/RiderCallsTest.java" "$HERE/test/RiderTestTest.java"
+    "$HERE/src/com/pp/kds/dosa/TokenBoard.java" "$HERE/src/com/pp/kds/dosa/RiderCalls.java" \
+    "$HERE/test/DosaStatsTest.java" "$HERE/test/PrepStatsTest.java" "$HERE/test/TokenBoardTest.java" "$HERE/test/RiderCallsTest.java"
 java -cp "$WORK/test" DosaStatsTest | tail -1
 java -cp "$WORK/test" PrepStatsTest | tail -1
 java -cp "$WORK/test" com.pp.kds.dosa.TokenBoardTest | tail -1
 java -cp "$WORK/test" com.pp.kds.dosa.RiderCallsTest | tail -1
-java -cp "$WORK/test" com.pp.kds.dosa.RiderTestTest | tail -1
 
 echo "== compile add-on"
 mkdir -p "$WORK/stubs" "$WORK/classes" "$WORK/dex"

@@ -70,7 +70,6 @@ public final class DosaLive {
     private static final TokenBoard tokens = new TokenBoard();
     private static RiderCalls riders = new RiderCalls();
     private static int riderSource = -1;          // 0 Petpooja via KDS, 1 Bridge Print, 2 test
-    private static RiderTest riderTest;
 
     /** Rider board + calls run from Bridge Print when it is reachable and gives order status. */
     static boolean bridgeMode() {
@@ -87,7 +86,7 @@ public final class DosaLive {
         riderSource = src;
         RiderCalls fresh = new RiderCalls();
         fresh.setMaxMinutes(riderMaxMin);
-        fresh.skipStale = src == 0; // only for Petpooja-via-KDS; Bridge Print / test show everything they list
+        fresh.skipStale = src == 0; // only for Petpooja-via-KDS; Bridge Print shows everything they list
         riders = fresh;
     }
 
@@ -275,7 +274,7 @@ public final class DosaLive {
                         if (dg.length() >= 6) kinds.put(dg, o.gone ? 2 : o.ready ? 1 : 0);
                     }
                     BridgeSlots.setKdsKinds(kinds); // helps Bridge Print orders show Food Ready
-                    if (riderTest == null && !bridgeMode()) {
+                    if (!bridgeMode()) {
                         useBridgeSource(false);
                         riders.update(kdsOrders, now); // fallback: Petpooja via the KDS
                     }
@@ -305,11 +304,7 @@ public final class DosaLive {
         }
         if (persistPending && now - lastPersistAt >= 30_000L) persist();
         try {
-            if (riderTest != null && !riderTest.running(now)) riderTest = null; // test finished
-            if (riderTest != null) {
-                useSource(2);
-                riders.update(riderTest.step(now), now);
-            } else if (bridgeMode()) {
+            if (bridgeMode()) {
                 useBridgeSource(true);
                 riders.update(BridgeSlots.orders(), now); // same orders, status and slots as Bridge Print
             }
@@ -722,15 +717,6 @@ public final class DosaLive {
                         }).start();
                     }
                 })
-                .setNeutralButton("Test: 50 orders", new android.content.DialogInterface.OnClickListener() {
-                    @Override public void onClick(android.content.DialogInterface dlg, int which) {
-                        riderTest = new RiderTest(System.currentTimeMillis());
-                        setRiderCalls(a, true);
-                        showPanel(a, Panel.RIDER);
-                        android.widget.Toast.makeText(a, "Test: 50 orders (30 ready) for 5 minutes. Close the board to stop.",
-                                android.widget.Toast.LENGTH_LONG).show();
-                    }
-                })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
@@ -963,15 +949,11 @@ public final class DosaLive {
                 if (!sl.isEmpty()) o.slot = sl;
             }
             String addr = BridgeSlots.address();
-            long tl = riderTest == null ? 0 : riderTest.secondsLeft(System.currentTimeMillis());
-            String src = riderTest != null
-                    ? String.format(Locale.US, "TEST DATA \u2022 50 sample orders \u2022 real orders paused \u2022 ends in %d:%02d",
-                    tl / 60, tl % 60)
-                    : addr == null || addr.isEmpty()
+            String src = addr == null || addr.isEmpty()
                     ? "Orders: Petpooja \u2022 Bridge Print not set (long-press the rider button)"
                     : bridgeMode() ? "Orders & slots: Bridge Print \u2022 " + BridgeSlots.status()
                     : "Orders: Petpooja (Bridge Print: " + BridgeSlots.status() + ")";
-            riderView.setData(rl, pl, src, riderTest == null && bridgeMode());
+            riderView.setData(rl, pl, src, bridgeMode());
         }
 
         void setMode(int m) {
@@ -1075,7 +1057,6 @@ public final class DosaLive {
 
         /** Closed with the close button / Back: next app start opens on the KDS board. */
         void closeByUser() {
-            riderTest = null; // closing the board ends a test run
             remember(activity, "");
             close();
         }
