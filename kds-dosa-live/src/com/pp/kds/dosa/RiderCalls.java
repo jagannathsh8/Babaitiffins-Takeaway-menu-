@@ -58,6 +58,8 @@ final class RiderCalls {
     private final Map<Long, Waiting> waiting = new LinkedHashMap<Long, Waiting>();
     private final Set<Long> skipped = new HashSet<Long>();   // stale leftovers: never called
     private long lastCycle;
+    /** Hide orders already ready and very old when first seen (KDS source). Bridge Print clears its own. */
+    boolean skipStale = true;
     static final long SECONDS_PER_ORDER = 2_600L;
     private long nextGapMs = REPEAT_MS;
     /** Stop showing / calling an order this long after ready; 0 = until picked up. */
@@ -91,7 +93,7 @@ final class RiderCalls {
             }
             if (skipped.contains(o.id)) continue;
             if (w == null) {
-                if (o.createdMs > 0 && now - o.createdMs > STALE_MS) {
+                if (skipStale && o.createdMs > 0 && now - o.createdMs > STALE_MS) {
                     skipped.add(o.id); // leftover from long ago, collected without Dispatch
                     continue;
                 }

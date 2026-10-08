@@ -235,7 +235,7 @@ final class RiderBoardView extends View {
         drawHeader(c, pad, 26 * s, w - 2 * pad, 96 * s, t);
         float top = 140 * s, bottom = h - 70 * s;
         if (land) {
-            float gap = 24 * s, leftW = (w - 2 * pad - gap) * 0.66f;
+            float gap = 24 * s, leftW = (w - 2 * pad - gap) * 0.58f;
             drawReady(c, pad, top, leftW, bottom - top, now, t);
             drawPreparing(c, pad + leftW + gap, top, w - 2 * pad - leftW - gap, bottom - top);
         } else {
@@ -297,182 +297,119 @@ final class RiderBoardView extends View {
     }
 
     private void drawReady(Canvas c, float x, float y, float w, float h, long now, float t) {
-        title(c, x, y + 30 * s, w, "\u2713 READY FOR PICKUP", GREEN,
-                ready.isEmpty() ? null : ready.size() + " ready");
-        float gy = y + 52 * s, gh = h - 52 * s;
-        int n = ready.size();
+        List<RiderCalls.Order> l = new ArrayList<RiderCalls.Order>();
+        for (RiderCalls.Waiting rw : ready) l.add(rw.order);
+        title(c, x, y + 30 * s, w, "\u2713 FOOD READY \u2014 PICK UP", GREEN, l.isEmpty() ? null : l.size() + " ready");
+        drawTable(c, x, y + 46 * s, w, h - 46 * s, l, true, t, "No orders waiting for pickup");
+    }
+
+    private void drawPreparing(Canvas c, float x, float y, float w, float h) {
+        title(c, x, y + 30 * s, w, "\uD83D\uDD25 PREPARING", GOLD, preparing.isEmpty() ? null : preparing.size() + " orders");
+        drawTable(c, x, y + 46 * s, w, h - 46 * s, preparing, false, (SystemClock.uptimeMillis() - start) / 1000f,
+                "No orders being prepared");
+    }
+
+    /**
+     * Every order as one line "Swiggy - 9090 - 20" under BRAND / ORDER ID / SLOT headings, in as
+     * many columns as needed so all orders fit; pages only when there are very many.
+     */
+    private void drawTable(Canvas c, float x, float y, float w, float h, List<RiderCalls.Order> items, boolean isReady,
+                           float t, String empty) {
+        panel(c, x, y, w, h, 20 * s, isReady ? 0x5514301F : 0x66141C27, isReady ? 0x6669F0AE : 0x33FFFFFF);
+        float pad = 14 * s, ix = x + pad, iw = w - 2 * pad, top = y + pad, bottom = y + h - pad;
+        int n = items.size();
         if (n == 0) {
-            panel(c, x, gy, w, gh, 24 * s, 0x66141C27, 0x33FFFFFF);
             text.setTextAlign(Paint.Align.CENTER);
             text.setTypeface(medium);
-            text.setTextSize(34 * s);
-            text.setColor(0xCCFFFFFF);
-            c.drawText("No orders waiting for pickup", x + w / 2f, gy + gh / 2f, text);
+            text.setTextSize(26 * s);
+            text.setColor(0xAAFFFFFF);
+            c.drawText(empty, x + w / 2f, y + h / 2f, text);
             text.setTextAlign(Paint.Align.LEFT);
             return;
         }
-        float gap = 16 * s;
-        // biggest cards that fit everything (card ~1.9 : 1)
+        float headH = 30 * s, gap = 14 * s;
+        float minColW = (isReady ? 330 : 280) * s, maxRow = (isReady ? 84 : 58) * s, minRow = (isReady ? 40 : 32) * s;
+        int maxCols = Math.max(1, (int) ((iw + gap) / (minColW + gap)));
         int cols = 1;
-        float ch = 0;
-        for (int k = 1; k <= Math.min(n, 8); k++) {
+        float rowH = 0;
+        for (int k = 1; k <= maxCols; k++) {
             int rows = (n + k - 1) / k;
-            float cw = (w - (k - 1) * gap) / k;
-            float hh = Math.min(Math.min((gh - (rows - 1) * gap) / rows, 230 * s), cw / 1.9f);
-            if (hh > ch) {
-                ch = hh;
+            float rh = Math.min(maxRow, (bottom - top - headH) / rows);
+            if (rh > rowH + 0.5f) {
+                rowH = rh;
                 cols = k;
             }
+            if (rh >= maxRow) break; // biggest rows already reached: fewer columns read easier
         }
         int perPage = n, pages = 1;
-        float minH = 90 * s;
-        if (ch < minH) {
-            ch = minH;
-            cols = Math.max(1, (int) ((w + gap) / (ch * 1.9f + gap)));
-            int rows = Math.max(1, (int) ((gh + gap) / (ch + gap)));
-            perPage = cols * rows;
+        if (rowH < minRow) {
+            rowH = minRow;
+            cols = maxCols;
+            int rows = Math.max(1, (int) ((bottom - top - headH) / rowH));
+            perPage = rows * cols;
             pages = (n + perPage - 1) / perPage;
         }
-        int page = pages > 1 ? (int) (t / 7f) % pages : 0;
-        float cw = (w - (cols - 1) * gap) / cols;
+        int page = pages > 1 ? (int) (t / 8f) % pages : 0;
+        int rowsPerCol = (Math.min(perPage, n) + cols - 1) / cols;
+        float colW = (iw - (cols - 1) * gap) / cols;
+        float fs = Math.min(isReady ? 40 * s : 26 * s, rowH * 0.56f);
+        // headings
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.18f);
+        text.setTextSize(Math.min(15 * s, headH * 0.55f));
+        text.setColor(isReady ? 0xCC69F0AE : 0xCCF5B21B);
+        for (int col = 0; col < cols; col++) {
+            float cx = ix + col * (colW + gap);
+            text.setTextAlign(Paint.Align.LEFT);
+            c.drawText("BRAND", cx + 16 * s, top + headH * 0.62f, text);
+            text.setTextAlign(Paint.Align.CENTER);
+            c.drawText("ORDER ID", cx + colW * 0.64f, top + headH * 0.62f, text);
+            text.setTextAlign(Paint.Align.RIGHT);
+            c.drawText("SLOT", cx + colW - 6 * s, top + headH * 0.62f, text);
+        }
+        text.setLetterSpacing(0f);
         int from = page * perPage, to = Math.min(n, from + perPage);
+        long wall = System.currentTimeMillis();
         for (int i = from; i < to; i++) {
-            int j = i - from;
-            RiderCalls.Waiting rw = ready.get(i);
-            Long seen = firstSeen.get(rw.order.id);
-            drawCard(c, x + (j % cols) * (cw + gap), gy + (j / cols) * (ch + gap), cw, ch, rw,
-                    seen == null ? 10_000 : now - seen);
+            int j = i - from, col = j / rowsPerCol, row = j % rowsPerCol;
+            float cx = ix + col * (colW + gap), ry = top + headH + row * rowH;
+            RiderCalls.Order o = items.get(i);
+            int pc = platformColor(o.platform);
+            rect.set(cx, ry + rowH * 0.08f, cx + colW, ry + rowH * 0.92f);
+            fill.setColor(isReady ? 0xF2FFFFFF : 0x1FFFFFFF);
+            c.drawRoundRect(rect, rowH * 0.18f, rowH * 0.18f, fill);
+            fill.setColor(pc);
+            rect.set(cx, ry + rowH * 0.08f, cx + 8 * s, ry + rowH * 0.92f);
+            c.drawRoundRect(rect, 4 * s, 4 * s, fill);
+            float base = ry + rowH * 0.5f + fs * 0.36f;
+            int fg = isReady ? 0xFF111111 : Color.WHITE;
+            // brand
+            text.setTextAlign(Paint.Align.LEFT);
+            text.setTypeface(bold);
+            text.setColor(isReady ? pc : fg);
+            String brand = o.platform;
+            text.setTextSize(fit(brand, fs * 0.8f, colW * 0.36f));
+            c.drawText(brand, cx + 16 * s, base, text);
+            // dash - order id - dash - slot
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setColor(isReady ? 0x88111111 : 0x88FFFFFF);
+            text.setTextSize(fs * 0.8f);
+            c.drawText("\u2013", cx + colW * 0.43f, base, text);
+            c.drawText("\u2013", cx + colW * 0.84f, base, text);
+            text.setColor(fg);
+            text.setTextSize(fs);
+            c.drawText(o.last4, cx + colW * 0.64f, base, text);
+            text.setTextAlign(Paint.Align.RIGHT);
+            boolean hasSlot = o.slot != null && !o.slot.isEmpty();
+            text.setColor(isReady ? 0xFF1B5E20 : GOLD);
+            c.drawText(hasSlot ? o.slot : "\u2014", cx + colW - 8 * s, base, text);
         }
         if (pages > 1) {
             text.setTextAlign(Paint.Align.RIGHT);
             text.setTypeface(condensed);
-            text.setTextSize(18 * s);
+            text.setTextSize(16 * s);
             text.setColor(0xAAFFFFFF);
-            c.drawText("page " + (page + 1) + " / " + pages, x + w, y + 30 * s, text);
-            text.setTextAlign(Paint.Align.LEFT);
-        }
-    }
-
-    private void drawCard(Canvas c, float x, float y, float w, float h, RiderCalls.Waiting rw, long age) {
-        RiderCalls.Order o = rw.order;
-        // No pop / flash: one order must never take the riders' attention from the others.
-        c.save();
-        float r = Math.min(22 * s, h * 0.14f);
-        int pc = platformColor(o.platform);
-        // card body
-        rect.set(x, y, x + w, y + h);
-        fill.setColor(0xF2FFFFFF);
-        c.drawRoundRect(rect, r, r, fill);
-        // left block: platform + slot
-        float lw = w * 0.42f;
-        rect.set(x, y, x + lw, y + h);
-        fill.setColor(pc);
-        c.drawRoundRect(rect, r, r, fill);
-        rect.set(x + lw - r, y, x + lw, y + h);
-        c.drawRect(rect, fill);
-        stroke.setColor(GREEN);
-        stroke.setStrokeWidth(3 * s);
-        stroke.setAlpha(120);
-        rect.set(x, y, x + w, y + h);
-        c.drawRoundRect(rect, r, r, stroke);
-        stroke.setAlpha(255);
-
-        text.setTextAlign(Paint.Align.CENTER);
-        text.setTypeface(bold);
-        text.setColor(Color.WHITE);
-        text.setTextSize(fit(o.platform, Math.min(30 * s, h * 0.17f), lw - 16 * s));
-        c.drawText(o.platform, x + lw / 2f, y + h * 0.24f, text);
-        boolean hasSlot = o.slot != null && !o.slot.isEmpty();
-        text.setTypeface(condensed);
-        text.setLetterSpacing(0.2f);
-        text.setTextSize(Math.min(16 * s, h * 0.1f));
-        c.drawText(hasSlot ? "SLOT" : "SLOT \u2014", x + lw / 2f, y + h * 0.42f, text);
-        text.setLetterSpacing(0f);
-        if (hasSlot) {
-            text.setTypeface(bold);
-            text.setTextSize(fit(o.slot, h * 0.46f, lw - 20 * s));
-            c.drawText(o.slot, x + lw / 2f, y + h * 0.86f, text);
-        }
-        // right: order last 4 + ready time
-        float rx = x + lw + (w - lw) / 2f;
-        text.setTypeface(condensed);
-        text.setLetterSpacing(0.15f);
-        text.setTextSize(Math.min(15 * s, h * 0.1f));
-        text.setColor(0xFF555555);
-        c.drawText("ORDER ID", rx, y + h * 0.26f, text);
-        text.setLetterSpacing(0.05f);
-        text.setTypeface(bold);
-        text.setColor(0xFF111111);
-        String num = "\u2026" + o.last4;
-        text.setTextSize(fit(num, h * 0.4f, w - lw - 20 * s));
-        c.drawText(num, rx, y + h * 0.66f, text);
-        text.setLetterSpacing(0f);
-        text.setTypeface(medium);
-        text.setTextSize(Math.min(18 * s, h * 0.11f));
-        text.setColor(0xFF2E7D32);
-        long m = (System.currentTimeMillis() - wallReady(rw)) / 60_000L;
-        c.drawText(m < 1 ? "\u2713 ready now" : "\u2713 ready " + m + " min", rx, y + h * 0.88f, text);
-        text.setTextAlign(Paint.Align.LEFT);
-        c.restore();
-    }
-
-    /** readyAt is in wall-clock ms (System.currentTimeMillis) as given to RiderCalls.update. */
-    private static long wallReady(RiderCalls.Waiting w) {
-        return w.readyAt;
-    }
-
-    private void drawPreparing(Canvas c, float x, float y, float w, float h) {
-        panel(c, x, y, w, h, 24 * s, 0xCC141C27, 0x33FFFFFF);
-        float ix = x + 22 * s, iw = w - 44 * s;
-        title(c, ix, y + 46 * s, iw, "\uD83D\uDD25 PREPARING", GOLD,
-                preparing.isEmpty() ? null : preparing.size() + " orders");
-        float top = y + 70 * s, bottom = y + h - 14 * s;
-        if (preparing.isEmpty()) {
-            text.setTextAlign(Paint.Align.CENTER);
-            text.setTypeface(medium);
-            text.setTextSize(24 * s);
-            text.setColor(0xAAFFFFFF);
-            c.drawText("All orders are ready", x + w / 2f, (top + bottom) / 2f, text);
-            text.setTextAlign(Paint.Align.LEFT);
-            return;
-        }
-        float rowH = Math.max(46 * s, Math.min(72 * s, (bottom - top) / Math.max(preparing.size(), 8)));
-        int fit = (int) ((bottom - top) / rowH);
-        boolean more = preparing.size() > fit;
-        int shown = more ? fit - 1 : preparing.size();
-        long wall = System.currentTimeMillis();
-        for (int i = 0; i < shown; i++) {
-            RiderCalls.Order o = preparing.get(i);
-            float ry = top + i * rowH;
-            fill.setColor(platformColor(o.platform));
-            rect.set(ix, ry + rowH * 0.18f, ix + 10 * s, ry + rowH * 0.82f);
-            c.drawRoundRect(rect, 5 * s, 5 * s, fill);
-            text.setTextAlign(Paint.Align.LEFT);
-            text.setTypeface(bold);
-            text.setTextSize(Math.min(30 * s, rowH * 0.5f));
-            text.setColor(Color.WHITE);
-            c.drawText("\u2026" + o.last4, ix + 24 * s, ry + rowH * 0.66f, text);
-            text.setTypeface(medium);
-            text.setTextSize(Math.min(18 * s, rowH * 0.32f));
-            text.setColor(0xCCFFFFFF);
-            String sub = o.platform + (o.slot != null && !o.slot.isEmpty() ? " \u2022 slot " + o.slot : "");
-            c.drawText(sub, ix + 24 * s + 120 * s, ry + rowH * 0.64f, text);
-            text.setTextAlign(Paint.Align.RIGHT);
-            text.setTypeface(bold);
-            text.setColor(GOLD);
-            long mins = o.createdMs > 0 ? (wall - o.createdMs) / 60_000L : 0;
-            c.drawText(mins + " min", ix + iw, ry + rowH * 0.64f, text);
-            stroke.setColor(0x14FFFFFF);
-            stroke.setStrokeWidth(1 * s);
-            c.drawLine(ix, ry + rowH, ix + iw, ry + rowH, stroke);
-        }
-        if (more) {
-            text.setTextAlign(Paint.Align.CENTER);
-            text.setTypeface(medium);
-            text.setTextSize(19 * s);
-            text.setColor(0xAAFFFFFF);
-            c.drawText("+ " + (preparing.size() - shown) + " more being prepared", x + w / 2f,
-                    top + shown * rowH + rowH * 0.6f, text);
+            c.drawText("page " + (page + 1) + " / " + pages, x + w - pad, y - 4 * s, text);
         }
         text.setTextAlign(Paint.Align.LEFT);
     }

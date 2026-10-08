@@ -87,6 +87,7 @@ public final class DosaLive {
         riderSource = src;
         RiderCalls fresh = new RiderCalls();
         fresh.setMaxMinutes(riderMaxMin);
+        fresh.skipStale = src == 0; // only for Petpooja-via-KDS; Bridge Print / test show everything they list
         riders = fresh;
     }
 

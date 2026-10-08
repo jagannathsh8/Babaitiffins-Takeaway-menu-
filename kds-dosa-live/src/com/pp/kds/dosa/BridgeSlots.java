@@ -35,6 +35,7 @@ final class BridgeSlots {
     private static volatile long lastOkAt;
     private static volatile String lastError = "";
     private static volatile String lastSample = "";
+    private static volatile long lastErrAt;
 
     /** Start of Bridge Print's data (for the setup window, so field names can be checked). */
     static String sample() {
@@ -141,7 +142,7 @@ final class BridgeSlots {
             int kind = kindOf(r);
             if (kind < 0) kind = kdsKind(r.order);   // Petpooja status via the KDS, if this device has it
             if (kind < 0) kind = 0;                  // Bridge Print shows "Preparing" until Food Ready
-            String plat = r.platform.isEmpty() ? "Online" : r.platform;
+            String plat = r.platform.isEmpty() ? "Online" : capitalise(r.platform);
             String od = r.order.length() > 18 ? r.order.substring(r.order.length() - 18) : r.order;
             long id;
             try {
@@ -171,7 +172,7 @@ final class BridgeSlots {
         for (Rec r : records) if (kindOf(r) >= 0) withStatus++;
         String st = (ago < 30 ? "Connected" : "Last read " + ago + " s ago") + " \u2022 " + slots.size()
                 + " orders \u2022 " + withStatus + " with ready/preparing";
-        return lastError.isEmpty() ? st : st + " \u2022 last error: " + lastError;
+        return lastError.isEmpty() || lastErrAt < lastOkAt ? st : st + " \u2022 last error: " + lastError;
     }
 
     private static final Object POLL_LOCK = new Object();
@@ -210,6 +211,7 @@ final class BridgeSlots {
             } catch (Throwable t) {
                 String m = t.getMessage();
                 lastError = t.getClass().getSimpleName() + (m == null ? "" : ": " + (m.length() > 60 ? m.substring(0, 60) : m));
+                lastErrAt = System.currentTimeMillis();
             }
         }
         workingPath = null;
@@ -245,6 +247,7 @@ final class BridgeSlots {
         Boolean readyFlag;   // from fields like isReady / foodReady / readyAt
         String hint = "";    // any text value mentioning ready / preparing
         String group = "";   // name of the list / section the order sits in ("ready": [...], "preparing": [...])
+        boolean brandSure;
     }
 
     static Map<String, String> parse(String body) throws Exception {
@@ -323,7 +326,7 @@ final class BridgeSlots {
                 r.readyFlag = !(lv.isEmpty() || lv.equals("false") || lv.equals("0") || lv.equals("null") || lv.equals("no"));
             } else if (r.platform.isEmpty() && (lk.contains("platform") || lk.contains("source") || lk.contains("channel")
                     || lk.contains("aggregator") || lk.contains("partner") || lk.contains("brand") || lk.contains("provider"))
-                    && d.length() < sv.length()) {
+                    && looksLikeName(sv)) {
                 r.platform = sv;
             } else if (r.timeMs == 0 && (lk.contains("created") || lk.contains("received") || lk.contains("time")
                     || lk.contains("date"))) {
@@ -334,16 +337,44 @@ final class BridgeSlots {
                 int c = colourKind(sv);            // Bridge Print cards: green = ready, yellow = preparing
                 if (c >= 0) r.readyFlag = c == 1;
             }
-            if (r.platform.isEmpty() && sv.length() <= 30) {
+            if (!r.brandSure && sv.length() <= 30) {
                 String lv = sv.toLowerCase(java.util.Locale.US);
                 if (lv.contains("swiggy") || lv.contains("zomato") || lv.contains("ownly") || lv.contains("toing")
-                        || lv.contains("magicpin")) r.platform = sv;
+                        || lv.contains("magicpin")) {
+                    r.platform = sv; // a real brand name beats any other "source" field
+                    r.brandSure = true;
+                }
             }
             if (r.hint.isEmpty() && d.length() < sv.length()) {
                 String lv = sv.toLowerCase(java.util.Locale.US);
                 if (lv.contains("ready") || lv.contains("prepar")) r.hint = sv;
             }
         }
+    }
+
+    /** "zomato" -> "Zomato", "toing / swiggy" -> "Toing / Swiggy". */
+    static String capitalise(String v) {
+        StringBuilder b = new StringBuilder(v.trim());
+        boolean up = true;
+        for (int i = 0; i < b.length(); i++) {
+            char ch = b.charAt(i);
+            if (Character.isLetter(ch)) {
+                if (up) b.setCharAt(i, Character.toUpperCase(ch));
+                up = false;
+            } else {
+                up = true;
+            }
+        }
+        return b.toString();
+    }
+
+    /** A display name, not an address / number / URL (e.g. not "127.0.0.1"). */
+    private static boolean looksLikeName(String v) {
+        if (v.isEmpty() || v.length() > 30 || v.contains("://") || v.contains(":")) return false;
+        if (v.matches(".*\\d+\\.\\d+.*")) return false;
+        int letters = 0;
+        for (int i = 0; i < v.length(); i++) if (Character.isLetter(v.charAt(i))) letters++;
+        return letters >= 3;
     }
 
     /** 1 = green-ish (ready), 0 = yellow / amber (preparing), -1 = not a status colour. */
