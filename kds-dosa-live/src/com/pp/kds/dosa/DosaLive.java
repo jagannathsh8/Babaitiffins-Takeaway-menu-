@@ -199,6 +199,7 @@ public final class DosaLive {
         appCtx = ctx.getApplicationContext();
         riderOn = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getBoolean("rider_calls", false);
         BridgeSlots.setAddress(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getString("bridge_addr", ""));
+        riders.setMaxMinutes(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("rider_max_min", 0));
         tokens.setAutoClearMinutes(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("autoclear_min", 10));
         stats = new DosaStats();
         Map<String, String> saved = new HashMap<String, String>();
@@ -361,7 +362,8 @@ public final class DosaLive {
             String slot = BridgeSlots.slotFor(kot.getPOId());
             String status = kot.getKotStatus();
             boolean ready = card.getState().isDispatch() || "9".equals(status);
-            boolean gone = "10".equals(status) || "0".equals(status);
+            // Picked up: dispatched / cancelled in Petpooja, or cleared on Bridge Print.
+            boolean gone = "10".equals(status) || "0".equals(status) || BridgeSlots.pickedUp(kot.getPOId());
             Long created = BoardVisualsKt.parseCreatedMillis(kot.getCreatedTime());
             out.add(new RiderCalls.Order(kot.getId(), platform.trim(), last4, kot.getPOId(), slot,
                     created == null ? 0L : created, ready, gone));
@@ -834,12 +836,18 @@ public final class DosaLive {
                     @Override public void onClose() { closeByUser(); }
 
                     @Override public void onVoice(boolean on) { setRiderCalls(activity, on); }
+
+                    @Override public void onDuration(int minutes) {
+                        ui.edit().putInt("rider_max_min", minutes).apply();
+                        riders.setMaxMinutes(minutes);
+                    }
                 });
                 ((ViewGroup) activity.findViewById(android.R.id.content)).addView(riderView,
                         new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.MATCH_PARENT));
             }
             riderView.setVoice(riderOn);
+            riderView.setDuration(ui.getInt("rider_max_min", 0));
             riderView.setVisibility(View.VISIBLE);
             riderView.bringToFront();
             view.setVisibility(View.INVISIBLE);

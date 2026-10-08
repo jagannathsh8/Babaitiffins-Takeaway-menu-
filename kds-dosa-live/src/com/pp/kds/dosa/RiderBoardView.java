@@ -38,6 +38,18 @@ final class RiderBoardView extends View {
         void onClose();
 
         void onVoice(boolean on);
+
+        /** How long ready orders stay: 0 = until picked up, else minutes. */
+        void onDuration(int minutes);
+    }
+
+    private static final int[] DURATIONS = {0, 15, 30, 60};
+    private int duration = 0;
+    private final RectF hitDur = new RectF();
+
+    void setDuration(int minutes) {
+        duration = minutes;
+        invalidate();
     }
 
     private static final long CALL_MS = 6_000L;
@@ -69,7 +81,7 @@ final class RiderBoardView extends View {
     private long callAt;
     private long controlsAt = SystemClock.uptimeMillis();
     private final RectF hitVoice = new RectF(), hitClose = new RectF();
-    private int focus = -1; // remote: 0 voice, 1 close
+    private int focus = -1; // remote: 0 duration, 1 voice, 2 close
     private RadialGradient bg;
     private float bgKey;
     private String clockStr = "";
@@ -131,8 +143,9 @@ final class RiderBoardView extends View {
         if (ev.getAction() == MotionEvent.ACTION_UP) {
             float x = ev.getX(), y = ev.getY();
             boolean visible = controlsAlpha() > 0.3f;
-            if (visible && hitClose.contains(x, y)) activate(1);
-            else if (visible && hitVoice.contains(x, y)) activate(0);
+            if (visible && hitClose.contains(x, y)) activate(2);
+            else if (visible && hitVoice.contains(x, y)) activate(1);
+            else if (visible && hitDur.contains(x, y)) activate(0);
             else if (call != null) call = null;
             controlsAt = SystemClock.uptimeMillis();
             invalidate();
@@ -142,6 +155,11 @@ final class RiderBoardView extends View {
 
     private void activate(int i) {
         if (i == 0) {
+            int j = 0;
+            while (j < DURATIONS.length && DURATIONS[j] != duration) j++;
+            duration = DURATIONS[(j + 1) % DURATIONS.length];
+            if (listener != null) listener.onDuration(duration);
+        } else if (i == 1) {
             voiceOn = !voiceOn;
             if (listener != null) listener.onVoice(voiceOn);
         } else if (listener != null) {
@@ -162,8 +180,9 @@ final class RiderBoardView extends View {
             case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_DPAD_DOWN:
                 if (down) {
-                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 0;
-                    else focus = k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_UP ? 0 : 1;
+                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 1;
+                    else focus = Math.max(0, Math.min(2, focus
+                            + (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1)));
                     controlsAt = SystemClock.uptimeMillis();
                     invalidate();
                 }
@@ -173,7 +192,7 @@ final class RiderBoardView extends View {
             case KeyEvent.KEYCODE_NUMPAD_ENTER:
             case KeyEvent.KEYCODE_BUTTON_A:
                 if (!down) {
-                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 0;
+                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 1;
                     else activate(focus);
                     controlsAt = SystemClock.uptimeMillis();
                     invalidate();
@@ -467,7 +486,7 @@ final class RiderBoardView extends View {
         text.setTypeface(medium);
         text.setTextSize(17 * s);
         text.setColor(0xAAFFFFFF);
-        c.drawText("Slots: Bridge Print \u2022 " + bridgeStatus, x + 22 * s, y + 22 * s, text);
+        c.drawText("Orders: Petpooja \u2022 Slots: Bridge Print \u2022 " + bridgeStatus, x + 22 * s, y + 22 * s, text);
         text.setTextAlign(Paint.Align.RIGHT);
         text.setColor(0x88FFFFFF);
         c.drawText(voiceOn ? "\uD83D\uDD0A Calls on" : "\uD83D\uDD07 Calls off", x + w, y + 22 * s, text);
@@ -478,6 +497,7 @@ final class RiderBoardView extends View {
         float a = controlsAlpha();
         hitVoice.setEmpty();
         hitClose.setEmpty();
+        hitDur.setEmpty();
         if (a <= 0f) return;
         float h = 44 * s, y = 74 * s - h / 2f;
         text.setTypeface(bold);
@@ -507,12 +527,23 @@ final class RiderBoardView extends View {
         text.setTextAlign(Paint.Align.CENTER);
         text.setColor(alpha(Color.WHITE, (int) (255 * a)));
         c.drawText(v, rect.centerX(), rect.centerY() + 6 * s, text);
+        // duration pill, left of the voice pill
+        String dl = duration == 0 ? "\u23F1  SHOW UNTIL PICKED UP" : "\u23F1  SHOW " + duration + " MIN";
+        float dw = text.measureText(dl) + 36 * s;
+        float dx = bx - bw - 12 * s;
+        rect.set(dx - dw, y, dx, y + h);
+        hitDur.set(rect);
+        hitDur.inset(-6 * s, -10 * s);
+        fill.setColor(alpha(0xFF37474F, (int) (235 * a)));
+        c.drawRoundRect(rect, h / 2f, h / 2f, fill);
+        text.setColor(alpha(Color.WHITE, (int) (255 * a)));
+        c.drawText(dl, rect.centerX(), rect.centerY() + 6 * s, text);
         text.setTextAlign(Paint.Align.LEFT);
         text.setLetterSpacing(0f);
         if (focus >= 0) {
-            RectF fr = focus == 0 ? hitVoice : hitClose;
+            RectF fr = focus == 0 ? hitDur : focus == 1 ? hitVoice : hitClose;
             rect.set(fr);
-            rect.inset(focus == 0 ? 2 * s : 6 * s, 6 * s);
+            rect.inset(focus == 2 ? 6 * s : 2 * s, 6 * s);
             stroke.setColor(alpha(Color.WHITE, (int) (255 * a)));
             stroke.setStrokeWidth(3 * s);
             c.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, stroke);

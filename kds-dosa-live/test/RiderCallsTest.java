@@ -28,6 +28,7 @@ public final class RiderCallsTest {
         check("last4 short", RiderCalls.last4("A12").equals("12"), RiderCalls.last4("A12"));
 
         RiderCalls rc = new RiderCalls();
+        rc.setMaxMinutes(15);
         List<RiderCalls.Order> board = new ArrayList<RiderCalls.Order>();
         board.add(o(1, "Swiggy", "250412237103136", "47", T - 5 * 60_000L, true, false));    // ready at start
         board.add(o(2, "Zomato", "88231182", "12", T - 120 * 60_000L, true, false));         // stale leftover
@@ -36,6 +37,7 @@ public final class RiderCallsTest {
         check("start: no 'new' call", rc.due(T + 4_000).size() <= 1, ids(rc.due(T + 4_000)));
         // (first repeat cycle may include the already-ready Swiggy order)
         rc = new RiderCalls();
+        rc.setMaxMinutes(15);
         rc.update(board, T);
         List<RiderCalls.Waiting> first = rc.due(T + 1);
         check("start: repeat cycle has ready order only", ids(first).equals("47"), ids(first));
@@ -63,6 +65,17 @@ public final class RiderCallsTest {
         // Stops after 15 minutes even without dispatch.
         rc.update(board, T + 10_000 + RiderCalls.MAX_MS);
         check("max 15 min", rc.waitingCount() == 0, rc.waitingCount());
+
+        // Default: until picked up (no time limit).
+        RiderCalls u = new RiderCalls();
+        List<RiderCalls.Order> b3 = new ArrayList<RiderCalls.Order>();
+        b3.add(o(5, "Zomato", "1182", "12", T, true, false));
+        u.update(b3, T);
+        u.update(b3, T + 3 * 3600_000L);
+        check("until picked up", u.waitingCount() == 1, u.waitingCount());
+        b3.set(0, o(5, "Zomato", "1182", "12", T, true, true));
+        u.update(b3, T + 3 * 3600_000L + 1000);
+        check("picked up removes", u.waitingCount() == 0, u.waitingCount());
 
         // Gone from the board (picked up / released) after the 5 s grace.
         RiderCalls g = new RiderCalls();

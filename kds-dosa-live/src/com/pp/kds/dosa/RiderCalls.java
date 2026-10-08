@@ -21,7 +21,7 @@ final class RiderCalls {
 
     static final long GATHER_MS = 3_000L;        // ready within 3 s of each other -> one call
     static final long REPEAT_MS = 30_000L;       // repeat cycle
-    static final long MAX_MS = 15 * 60_000L;     // stop calling an order after 15 min
+    static final long MAX_MS = 15 * 60_000L;     // e.g. 15 min (when a limit is chosen)
     static final long MISSING_MS = 5_000L;       // board blip protection
     static final long STALE_MS = 45 * 60_000L;   // already ready + this old when first seen: skip
     static final int MAX_PER_CALL = 6;
@@ -58,6 +58,13 @@ final class RiderCalls {
     private final Map<Long, Waiting> waiting = new LinkedHashMap<Long, Waiting>();
     private final Set<Long> skipped = new HashSet<Long>();   // stale leftovers: never called
     private long lastCycle;
+    /** Stop showing / calling an order this long after ready; 0 = until picked up. */
+    private long maxMs = 0;
+
+    void setMaxMinutes(int minutes) {
+        maxMs = Math.max(0, minutes) * 60_000L;
+    }
+
     private boolean initialised;
     /** True when the last non-empty due() result was new orders (play the chime). */
     boolean lastWasNew;
@@ -98,7 +105,7 @@ final class RiderCalls {
         List<Long> drop = new ArrayList<Long>();
         for (Map.Entry<Long, Waiting> e : waiting.entrySet()) {
             Waiting w = e.getValue();
-            if (now - w.readyAt >= MAX_MS) {
+            if (maxMs > 0 && now - w.readyAt >= maxMs) {
                 drop.add(e.getKey());
                 skipped.add(e.getKey());
             } else if (!seen.contains(e.getKey())) {

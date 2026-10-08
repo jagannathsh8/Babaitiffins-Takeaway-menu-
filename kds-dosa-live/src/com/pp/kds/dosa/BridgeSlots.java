@@ -26,6 +26,8 @@ final class BridgeSlots {
     private static final long POLL_MS = 3_000L;
 
     private static volatile Map<String, String> slots = Collections.emptyMap();
+    /** order digits -> last time Bridge Print listed it (to notice when it was cleared / picked up). */
+    private static final Map<String, Long> lastListed = new java.util.concurrent.ConcurrentHashMap<String, Long>();
     private static volatile String address;      // "192.168.1.3:8787"
     private static volatile String workingPath;
     private static volatile long lastOkAt;
@@ -80,6 +82,27 @@ final class BridgeSlots {
         return "";
     }
 
+    /**
+     * True when Bridge Print listed this order earlier but no longer does for 10 s while the
+     * connection is fine: staff cleared it there (rider picked it up / Clear all).
+     */
+    static boolean pickedUp(String orderId) {
+        if (orderId == null || !connected()) return false;
+        String d = digits(orderId);
+        if (d.length() < 4) return false;
+        Long t = lastListed.get(d);
+        if (t == null) {
+            for (Map.Entry<String, Long> e : lastListed.entrySet()) {
+                String k = e.getKey();
+                if (Math.min(k.length(), d.length()) >= 8 && (k.endsWith(d) || d.endsWith(k))) {
+                    t = e.getValue();
+                    break;
+                }
+            }
+        }
+        return t != null && lastOkAt - t > 10_000L;
+    }
+
     /** Read Bridge Print successfully within the last 15 s. */
     static boolean connected() {
         return lastOkAt > 0 && System.currentTimeMillis() - lastOkAt < 15_000L;
@@ -114,6 +137,8 @@ final class BridgeSlots {
                     workingPath = p;
                     slots = m;
                     lastOkAt = System.currentTimeMillis();
+                    for (String k : m.keySet()) lastListed.put(k, lastOkAt);
+                    if (lastListed.size() > 3000) lastListed.clear();
                     lastError = "";
                     return true;
                 }
