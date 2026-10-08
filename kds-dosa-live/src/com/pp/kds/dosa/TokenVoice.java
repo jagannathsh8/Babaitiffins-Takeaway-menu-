@@ -112,7 +112,7 @@ final class TokenVoice {
             if (best != null) tts.setVoice(best);
         } catch (Throwable ignored) {
         }
-        tts.setSpeechRate(0.92f); // brisk but every digit clear
+        tts.setSpeechRate(1.0f); // normal speed: quick calls, digits still clear
         tts.setPitch(1.0f);
         tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
             @Override public void onStart(String id) {}

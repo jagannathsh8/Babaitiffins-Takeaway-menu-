@@ -186,18 +186,21 @@ final class RiderCalls {
      * from Bridge Print the call is "Swiggy order 3 1 3 6. Ready for pickup."
      */
     static String phrase(List<Waiting> call) {
+        // Short and quick: "Zomato zero 3 9 1, slot 64. Swiggy 9 1 9 zero, slot 25."
+        // Digits one by one (riders match them); 0 is said as "zero", never "oh".
         StringBuilder sb = new StringBuilder();
         for (Waiting w : call) {
             Order o = w.order;
-            sb.append(o.platform).append(" order ");
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(o.platform).append(' ');
             for (int i = 0; i < o.last4.length(); i++) {
                 if (i > 0) sb.append(' ');
-                sb.append(o.last4.charAt(i));
+                char ch = o.last4.charAt(i);
+                sb.append(ch == '0' ? "zero" : String.valueOf(ch));
             }
             if (o.slot != null && !o.slot.isEmpty()) sb.append(", slot ").append(o.slot);
-            sb.append(". ");
+            sb.append('.');
         }
-        sb.append("Ready for pickup.");
         return sb.toString();
     }
 

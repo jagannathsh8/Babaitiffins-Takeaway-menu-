@@ -48,7 +48,7 @@ public final class RiderCallsTest {
         check("gather", rc.due(T + 11_000).isEmpty(), "");
         List<RiderCalls.Waiting> fresh = rc.due(T + 13_100);
         check("new call", ids(fresh).equals("20"), ids(fresh));
-        check("phrase", RiderCalls.phrase(fresh).equals("Ownly order 7 9 6 4, slot 20. Ready for pickup."),
+        check("phrase", RiderCalls.phrase(fresh).equals("Ownly 7 9 6 4, slot 20."),
                 RiderCalls.phrase(fresh));
 
         // Repeat cycle every 30 s with both waiting orders, oldest ready first.
@@ -65,6 +65,11 @@ public final class RiderCallsTest {
         // Stops after 15 minutes even without dispatch.
         rc.update(board, T + 10_000 + RiderCalls.MAX_MS);
         check("max 15 min", rc.waitingCount() == 0, rc.waitingCount());
+
+        RiderCalls.Waiting zw = new RiderCalls.Waiting();
+        zw.order = o(77, "Zomato", "0391", "64", T, true, false);
+        check("zero said as zero", RiderCalls.phrase(java.util.Arrays.asList(zw)).equals("Zomato zero 3 9 1, slot 64."),
+                RiderCalls.phrase(java.util.Arrays.asList(zw)));
 
         // Default: until picked up (no time limit).
         RiderCalls u = new RiderCalls();
