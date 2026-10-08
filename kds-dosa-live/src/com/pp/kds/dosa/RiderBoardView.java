@@ -400,8 +400,9 @@ final class RiderBoardView extends View {
         fs = Math.min(fs, (inner * 0.62f - sp) / (w4 + w2));
         float slotW = w2 * fs, numW = w4 * fs;
         float slotRight = colW - right;                    // offsets from the column's left edge
-        float numRight = slotRight - slotW - sp, numCenter = numRight - numW / 2f;
-        float brandMax = numRight - numW - sp - left;
+        // Order ID in the middle of the card (pushed left only if the slot needs the room).
+        float numCenter = Math.min(colW * 0.56f, slotRight - slotW - sp - numW / 2f);
+        float brandMax = numCenter - numW / 2f - sp - left;
         // headings, fitted to the same positions
         text.setTypeface(condensed);
         text.setLetterSpacing(0.18f);
@@ -456,13 +457,14 @@ final class RiderBoardView extends View {
             text.setColor(isReady ? 0xFF1B5E20 : GOLD);
             text.setTextSize(fit(slot, fs, slotW + sp * 0.6f));
             c.drawText(slot, cx + slotRight, base, text);
-            // full order ID: small but bold, under the line, ending under the last 4
+            // full order ID: small but bold, centred under the last 4
             if (full) {
-                text.setTextAlign(Paint.Align.RIGHT);
+                text.setTextAlign(Paint.Align.CENTER);
                 text.setTypeface(bold);
                 text.setColor(isReady ? 0xDD222222 : 0xDDFFFFFF);
-                text.setTextSize(fit(o.orderId, Math.min(16 * s, rowH * 0.2f), numRight - left));
-                c.drawText(o.orderId, cx + numRight, ry + rowH * 0.85f, text);
+                float idMax = 2f * Math.min(numCenter - left, slotRight - numCenter);
+                text.setTextSize(fit(o.orderId, Math.min(16 * s, rowH * 0.2f), idMax));
+                c.drawText(o.orderId, cx + numCenter, ry + rowH * 0.85f, text);
             }
         }
         if (pages > 1) {
