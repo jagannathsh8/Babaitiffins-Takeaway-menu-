@@ -69,7 +69,8 @@ public final class DosaLive {
     private static long lastUserAt = System.currentTimeMillis();
     private static final TokenBoard tokens = new TokenBoard();
     private static RiderCalls riders = new RiderCalls();
-    private static boolean ridersFromBridge;
+    private static int riderSource = -1;          // 0 Petpooja via KDS, 1 Bridge Print, 2 test
+    private static RiderTest riderTest;
 
     /** Rider board + calls run from Bridge Print when it is reachable and gives order status. */
     static boolean bridgeMode() {
@@ -78,8 +79,12 @@ public final class DosaLive {
 
     /** Switching data source: start fresh, so orders already waiting are not called as "new". */
     private static void useBridgeSource(boolean bridge) {
-        if (bridge == ridersFromBridge) return;
-        ridersFromBridge = bridge;
+        useSource(bridge ? 1 : 0);
+    }
+
+    private static void useSource(int src) {
+        if (src == riderSource) return;
+        riderSource = src;
         RiderCalls fresh = new RiderCalls();
         fresh.setMaxMinutes(riderMaxMin);
         riders = fresh;
@@ -262,7 +267,7 @@ public final class DosaLive {
                 } catch (Throwable ignored) {
                 }
                 try {
-                    if (!bridgeMode()) {
+                    if (riderTest == null && !bridgeMode()) {
                         useBridgeSource(false);
                         riders.update(riderOrders(cards), now); // fallback: Petpooja via the KDS
                     }
@@ -292,7 +297,11 @@ public final class DosaLive {
         }
         if (persistPending && now - lastPersistAt >= 30_000L) persist();
         try {
-            if (bridgeMode()) {
+            if (riderTest != null && !riderTest.running(now)) riderTest = null; // test finished
+            if (riderTest != null) {
+                useSource(2);
+                riders.update(riderTest.step(now), now);
+            } else if (bridgeMode()) {
                 useBridgeSource(true);
                 riders.update(BridgeSlots.orders(), now); // same orders, status and slots as Bridge Print
             }
@@ -306,7 +315,7 @@ public final class DosaLive {
                     String s = BridgeSlots.slotFor(w.order.orderId); // Bridge Print slot, if connected
                     if (!s.isEmpty()) w.order.slot = s;
                 }
-                if (!call.isEmpty()) sharedVoice(appCtx).say(RiderCalls.phrase(call), riders.lastWasNew);
+                if (!call.isEmpty()) sharedVoice(appCtx).sayAlternating(RiderCalls.phrase(call), riders.lastWasNew);
             }
         } catch (Throwable ignored) {
         }
@@ -691,6 +700,15 @@ public final class DosaLive {
                         }).start();
                     }
                 })
+                .setNeutralButton("Test: 50 orders", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface dlg, int which) {
+                        riderTest = new RiderTest(System.currentTimeMillis());
+                        setRiderCalls(a, true);
+                        showPanel(a, Panel.RIDER);
+                        android.widget.Toast.makeText(a, "Test: 50 orders (30 ready) for 5 minutes. Close the board to stop.",
+                                android.widget.Toast.LENGTH_LONG).show();
+                    }
+                })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
@@ -889,11 +907,15 @@ public final class DosaLive {
                 if (!sl.isEmpty()) o.slot = sl;
             }
             String addr = BridgeSlots.address();
-            String src = addr == null || addr.isEmpty()
+            long tl = riderTest == null ? 0 : riderTest.secondsLeft(System.currentTimeMillis());
+            String src = riderTest != null
+                    ? String.format(Locale.US, "TEST DATA \u2022 50 sample orders \u2022 real orders paused \u2022 ends in %d:%02d",
+                    tl / 60, tl % 60)
+                    : addr == null || addr.isEmpty()
                     ? "Orders: Petpooja \u2022 Bridge Print not set (long-press the rider button)"
                     : bridgeMode() ? "Orders & slots: Bridge Print \u2022 " + BridgeSlots.status()
                     : "Orders: Petpooja (Bridge Print: " + BridgeSlots.status() + ")";
-            riderView.setData(rl, pl, src, bridgeMode());
+            riderView.setData(rl, pl, src, riderTest == null && bridgeMode());
         }
 
         void setMode(int m) {
@@ -996,6 +1018,7 @@ public final class DosaLive {
 
         /** Closed with the close button / Back: next app start opens on the KDS board. */
         void closeByUser() {
+            riderTest = null; // closing the board ends a test run
             remember(activity, "");
             close();
         }

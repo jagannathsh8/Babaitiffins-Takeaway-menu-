@@ -41,6 +41,52 @@ final class TokenVoice {
         startEngine();
     }
 
+    private Voice defaultVoice, femaleVoice, maleVoice;
+    private boolean nextMale;
+
+    /**
+     * A female and a male installed Indian-English voice for alternating rider calls.
+     * Google's en-IN voices: ahp / cxx = female, ene / end = male (names like en-in-x-ene-local).
+     * Unknown names: the first two different en-IN voices; none: one voice, two pitches.
+     */
+    private void pickPair(Set<Voice> voices) {
+        femaleVoice = maleVoice = null;
+        if (voices == null) return;
+        java.util.List<Voice> in = new java.util.ArrayList<Voice>();
+        for (Voice v : voices) {
+            Locale l = v.getLocale();
+            if (l == null || !"en".equals(l.getLanguage()) || !"IN".equals(l.getCountry())) continue;
+            Set<String> f = v.getFeatures();
+            if (f != null && f.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)) continue;
+            in.add(v);
+        }
+        // offline voices first (work without internet), then by quality
+        java.util.Collections.sort(in, new java.util.Comparator<Voice>() {
+            @Override public int compare(Voice a, Voice b) {
+                if (a.isNetworkConnectionRequired() != b.isNetworkConnectionRequired()) {
+                    return a.isNetworkConnectionRequired() ? 1 : -1;
+                }
+                return b.getQuality() - a.getQuality();
+            }
+        });
+        for (Voice v : in) {
+            String n = v.getName().toLowerCase(Locale.US);
+            boolean male = n.contains("ene") || n.contains("end") || n.contains("#male") || n.contains("-male");
+            boolean female = n.contains("ahp") || n.contains("cxx") || n.contains("#female") || n.contains("-female");
+            if (male && maleVoice == null) maleVoice = v;
+            else if (female && femaleVoice == null) femaleVoice = v;
+        }
+        for (Voice v : in) { // fill a missing side with any other en-IN voice
+            if (femaleVoice == null && v != maleVoice) femaleVoice = v;
+            else if (maleVoice == null && v != femaleVoice) maleVoice = v;
+        }
+    }
+
+    /** Rider calls: female, male, female, ... (Indian English, normal speed). */
+    void sayAlternating(String phrase, boolean chime) {
+        say(phrase, chime, true);
+    }
+
     /** (Re)connects to the device text-to-speech engine. */
     private void startEngine() {
         ready = false;
@@ -110,6 +156,8 @@ final class TokenVoice {
                 }
             }
             if (best != null) tts.setVoice(best);
+            defaultVoice = best;
+            pickPair(voices);
         } catch (Throwable ignored) {
         }
         tts.setSpeechRate(1.0f); // normal speed: quick calls, digits still clear
@@ -130,6 +178,10 @@ final class TokenVoice {
 
     /** @param chime soft ding-dong first (new calls); repeats are spoken without it. */
     void say(final String phrase, final boolean chime) {
+        say(phrase, chime, false);
+    }
+
+    private void say(final String phrase, final boolean chime, final boolean alternate) {
         if (tts == null) return;
         if (failed || (!ready && System.currentTimeMillis() - createdAt > 20_000L)) {
             restartEngine(phrase);
@@ -145,6 +197,24 @@ final class TokenVoice {
         main.postDelayed(new Runnable() {
             @Override public void run() {
                 if (tts == null) return;
+                try {
+                    if (alternate) {
+                        boolean male = nextMale;
+                        nextMale = !nextMale;
+                        Voice v = male ? maleVoice : femaleVoice;
+                        if (v != null && v != (male ? femaleVoice : maleVoice)) {
+                            tts.setVoice(v);
+                            tts.setPitch(1.0f);
+                        } else {
+                            if (defaultVoice != null) tts.setVoice(defaultVoice);
+                            tts.setPitch(male ? 0.82f : 1.12f); // only one voice installed: two pitches
+                        }
+                    } else {
+                        if (defaultVoice != null) tts.setVoice(defaultVoice);
+                        tts.setPitch(1.0f);
+                    }
+                } catch (Throwable ignored) {
+                }
                 Bundle p = new Bundle();
                 p.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC);
                 p.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
