@@ -80,6 +80,11 @@ final class BridgeSlots {
         return "";
     }
 
+    /** Read Bridge Print successfully within the last 15 s. */
+    static boolean connected() {
+        return lastOkAt > 0 && System.currentTimeMillis() - lastOkAt < 15_000L;
+    }
+
     /** One-line status for the settings dialog. */
     static String status() {
         if (address == null || address.isEmpty()) return "Not set";

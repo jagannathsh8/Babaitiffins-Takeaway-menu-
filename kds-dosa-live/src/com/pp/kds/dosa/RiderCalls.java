@@ -62,7 +62,15 @@ final class RiderCalls {
     /** True when the last non-empty due() result was new orders (play the chime). */
     boolean lastWasNew;
 
+    private List<Order> preparingList = new ArrayList<Order>();
+
     void update(List<Order> board, long now) {
+        List<Order> prep = new ArrayList<Order>();
+        for (Order o : board) if (!o.ready && !o.gone) prep.add(o);
+        Collections.sort(prep, new Comparator<Order>() {
+            @Override public int compare(Order a, Order b) { return Long.compare(a.createdMs, b.createdMs); }
+        });
+        preparingList = prep;
         Set<Long> seen = new HashSet<Long>();
         for (Order o : board) {
             seen.add(o.id);
@@ -140,6 +148,20 @@ final class RiderCalls {
 
     int waitingCount() {
         return waiting.size();
+    }
+
+    /** Ready orders waiting for a rider, most recently ready first. */
+    List<Waiting> readyList() {
+        List<Waiting> out = new ArrayList<Waiting>(waiting.values());
+        Collections.sort(out, new Comparator<Waiting>() {
+            @Override public int compare(Waiting a, Waiting b) { return Long.compare(b.readyAt, a.readyAt); }
+        });
+        return out;
+    }
+
+    /** Online / delivery orders still being prepared, oldest first. */
+    List<Order> preparing() {
+        return preparingList;
     }
 
     private static List<Waiting> oldestFirst(List<Waiting> l) {

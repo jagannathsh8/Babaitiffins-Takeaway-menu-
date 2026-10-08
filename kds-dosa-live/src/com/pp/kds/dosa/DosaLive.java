@@ -144,6 +144,7 @@ public final class DosaLive {
     /** Remote keys go straight to the open Dosa Live / Order Ready screen. */
     static boolean panelKey(android.view.KeyEvent e) {
         if (panel == null) return false;
+        if (panel.mode == Panel.RIDER && panel.riderView != null) return panel.riderView.handleKey(e);
         return panel.mode == Panel.ORDER_READY && panel.board != null ? panel.board.handleKey(e) : panel.view.handleKey(e);
     }
 
@@ -269,13 +270,22 @@ public final class DosaLive {
         }
         if (persistPending && now - lastPersistAt >= 30_000L) persist();
         try {
+            if (panel != null) panel.bindRider();
+        } catch (Throwable ignored) {
+        }
+        try {
             if (riderOn && appCtx != null) {
                 List<RiderCalls.Waiting> call = riders.due(now);
                 for (RiderCalls.Waiting w : call) {
                     String s = BridgeSlots.slotFor(w.order.orderId); // Bridge Print slot, if connected
                     if (!s.isEmpty()) w.order.slot = s;
                 }
-                if (!call.isEmpty()) sharedVoice(appCtx).say(RiderCalls.phrase(call), riders.lastWasNew);
+                if (!call.isEmpty()) {
+                    sharedVoice(appCtx).say(RiderCalls.phrase(call), riders.lastWasNew);
+                    if (riders.lastWasNew && panel != null && panel.mode == Panel.RIDER && panel.riderView != null) {
+                        panel.riderView.showCall(call);
+                    }
+                }
             }
         } catch (Throwable ignored) {
         }
@@ -482,7 +492,7 @@ public final class DosaLive {
         dosa.setContentDescription("Dosa Live Wait");
         dosa.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                showPanel(activity);
+                showPanel(activity, -1);
             }
         });
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, h);
@@ -504,16 +514,12 @@ public final class DosaLive {
         final TextView rider = pill(activity, "", RIDER_OFF, 0xFF546E7A);
         rider.setContentDescription("Rider calls on or off");
         styleRider(rider, small);
+        riderSmall = small;
         rider.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                riderOn = !riderOn;
-                activity.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).edit()
-                        .putBoolean("rider_calls", riderOn).apply();
-                styleRider(rider, small);
-                android.widget.Toast.makeText(activity, riderOn
-                                ? "Rider calls ON: ready Swiggy / Zomato / Ownly orders are announced every 30 s"
-                                : "Rider calls OFF", android.widget.Toast.LENGTH_LONG).show();
-                if (riderOn) sharedVoice(activity); // warm up the voice engine
+                // Opens the full-screen rider pickup board; calls are switched on with it.
+                setRiderCalls(activity, true);
+                showPanel(activity, Panel.RIDER);
             }
         });
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, h);
@@ -615,6 +621,14 @@ public final class DosaLive {
     }
 
     private static View riderButton;
+    private static boolean riderSmall;
+
+    static void setRiderCalls(Context c, boolean on) {
+        riderOn = on;
+        c.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).edit().putBoolean("rider_calls", on).apply();
+        if (riderButton instanceof TextView) styleRider((TextView) riderButton, riderSmall);
+        if (on) sharedVoice(c); // warm up the voice engine
+    }
 
     /** Bridge Print address (for pickup slot numbers) + connection test. */
     private static void bridgeDialog(final Activity a) {
@@ -663,8 +677,8 @@ public final class DosaLive {
     private static final int[] RIDER_ON = {0xFF0D47A1, 0xFF1E88E5, 0xFF42A5F5};
 
     private static void styleRider(TextView b, boolean small) {
-        b.setText(riderOn ? (small ? "\uD83D\uDEF5 ON" : "\uD83D\uDEF5 RIDER CALLS ON")
-                : (small ? "\uD83D\uDEF5 OFF" : "\uD83D\uDEF5 RIDER CALLS OFF"));
+        // Tap = open the rider pickup board; blue = rider calls on, grey = off.
+        b.setText(small ? "\uD83D\uDEF5 RIDER" : "\uD83D\uDEF5 RIDER PICKUP");
         float d = b.getResources().getDisplayMetrics().density;
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, riderOn ? RIDER_ON : RIDER_OFF);
         bg.setCornerRadius(18 * d);
@@ -748,7 +762,9 @@ public final class DosaLive {
                 if (a.isFinishing()) return;
                 try {
                     if ("dosa".equals(last)) {
-                        if (panel == null || panel.activity != a) showPanel(a);
+                        if (panel == null || panel.activity != a) showPanel(a, -1);
+                    } else if ("rider".equals(last)) {
+                        if (panel == null || panel.activity != a) showPanel(a, Panel.RIDER);
                     } else if ("prep".equals(last)) {
                         if (PrepLive.available()) PrepLive.open(a);
                         else if (System.currentTimeMillis() < until) h.postDelayed(this, 500); // history still loading
@@ -759,10 +775,11 @@ public final class DosaLive {
         }, 800);
     }
 
-    private static void showPanel(Activity activity) {
-        remember(activity, "dosa");
+    /** @param mode -1 = the last Dosa Live / Order Ready mode, or Panel.RIDER */
+    private static void showPanel(Activity activity, int mode) {
+        remember(activity, mode == Panel.RIDER ? "rider" : "dosa");
         if (panel != null) panel.close();
-        panel = new Panel(activity);
+        panel = new Panel(activity, mode);
         if (last == null && stats != null) last = stats.compute(System.currentTimeMillis());
         render();
     }
@@ -777,7 +794,8 @@ public final class DosaLive {
      * modes: the Dosa Live wait screen and the Order Ready token board (with voice calls).
      */
     private static final class Panel {
-        static final int DOSA_LIVE = 0, ORDER_READY = 1;
+        static final int DOSA_LIVE = 0, ORDER_READY = 1, RIDER = 2;
+        RiderBoardView riderView;
         final Activity activity;
         final SharedPreferences ui;
         final DosaNeonView view;
@@ -785,7 +803,7 @@ public final class DosaLive {
         TokenVoice voice;
         int mode;
 
-        Panel(Activity a) {
+        Panel(Activity a, int forceMode) {
             activity = a;
             float d = a.getResources().getDisplayMetrics().density;
             ui = a.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
@@ -804,11 +822,57 @@ public final class DosaLive {
             root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
             view.bringToFront();
-            setMode(ui.getInt("mode", DOSA_LIVE));
+            setMode(forceMode >= 0 ? forceMode : ui.getInt("mode", DOSA_LIVE));
+        }
+
+        private void showRider() {
+            if (riderView == null) {
+                riderView = new RiderBoardView(activity);
+                riderView.setElevation(28 * activity.getResources().getDisplayMetrics().density);
+                riderView.setKeepScreenOn(true);
+                riderView.setListener(new RiderBoardView.Listener() {
+                    @Override public void onClose() { closeByUser(); }
+
+                    @Override public void onVoice(boolean on) { setRiderCalls(activity, on); }
+                });
+                ((ViewGroup) activity.findViewById(android.R.id.content)).addView(riderView,
+                        new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+            riderView.setVoice(riderOn);
+            riderView.setVisibility(View.VISIBLE);
+            riderView.bringToFront();
+            view.setVisibility(View.INVISIBLE);
+            if (board != null) board.setVisibility(View.GONE);
+            bindRider();
+        }
+
+        void bindRider() {
+            if (mode != RIDER || riderView == null) return;
+            List<RiderCalls.Waiting> rl = riders.readyList();
+            for (RiderCalls.Waiting w : rl) {
+                String sl = BridgeSlots.slotFor(w.order.orderId);
+                if (!sl.isEmpty()) w.order.slot = sl;
+            }
+            List<RiderCalls.Order> pl = riders.preparing();
+            for (RiderCalls.Order o : pl) {
+                String sl = BridgeSlots.slotFor(o.orderId);
+                if (!sl.isEmpty()) o.slot = sl;
+            }
+            String addr = BridgeSlots.address();
+            riderView.setData(rl, pl, addr == null || addr.isEmpty()
+                    ? "not set (long-press the rider button)" : BridgeSlots.status(), BridgeSlots.connected());
         }
 
         void setMode(int m) {
             mode = m;
+            if (m == RIDER) {
+                remember(activity, "rider");
+                showRider();
+                return;
+            }
+            remember(activity, "dosa");
+            if (riderView != null) riderView.setVisibility(View.GONE);
             ui.edit().putInt("mode", m).apply();
             if (m == ORDER_READY) {
                 if (board == null) {
@@ -908,6 +972,7 @@ public final class DosaLive {
             ViewGroup parent = (ViewGroup) view.getParent();
             if (parent != null) parent.removeView(view);
             if (board != null && board.getParent() != null) ((ViewGroup) board.getParent()).removeView(board);
+            if (riderView != null && riderView.getParent() != null) ((ViewGroup) riderView.getParent()).removeView(riderView);
             voice = null; // the shared voice keeps running (rider calls may use it)
             tokens.clearPending();
             if (panel == this) panel = null;
