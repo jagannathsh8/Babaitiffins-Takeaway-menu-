@@ -403,7 +403,18 @@ final class RiderBoardView extends View {
             c.drawText("\u2013", cx + colW * 0.84f, base, text);
             text.setColor(fg);
             text.setTextSize(fs);
-            c.drawText(o.last4, cx + colW * 0.64f, base, text);
+            // Full order ID in small text under the big last 4 (for verification), when the row has room.
+            boolean full = o.orderId != null && o.orderId.length() > 4 && rowH >= 44 * s;
+            float numBase = full ? ry + rowH * 0.44f + fs * 0.3f : base;
+            c.drawText(o.last4, cx + colW * 0.64f, numBase, text);
+            if (full) {
+                text.setTypeface(medium);
+                text.setColor(isReady ? 0xAA111111 : 0xAAFFFFFF);
+                text.setTextSize(fit(o.orderId, Math.min(14 * s, rowH * 0.19f), colW * 0.40f));
+                c.drawText(o.orderId, cx + colW * 0.64f, ry + rowH * 0.84f, text);
+                text.setTypeface(bold);
+                text.setTextSize(fs);
+            }
             text.setTextAlign(Paint.Align.RIGHT);
             boolean hasSlot = o.slot != null && !o.slot.isEmpty();
             text.setColor(isReady ? 0xFF1B5E20 : GOLD);
