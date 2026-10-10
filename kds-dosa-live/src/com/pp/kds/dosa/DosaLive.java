@@ -232,8 +232,6 @@ public final class DosaLive {
         riderMaxMin = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("rider_max_min", 0);
         riders.setMaxMinutes(riderMaxMin);
         tokens.setAutoClearMinutes(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("autoclear_min", 10));
-        SharedPreferences tp = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
-        HubLink.configure(tp.getString("hub_addr", ""));
         stats = new DosaStats();
         Map<String, String> saved = new HashMap<String, String>();
         for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
@@ -270,7 +268,6 @@ public final class DosaLive {
             if (cards != null && cards != lastCards && !(shaky && cards.isEmpty())) { // new list on every change
                 lastCards = cards;
                 lastBoardChangeAt = now;
-                if (HubLink.enabled()) lastKotsJson = kotsJson(cards);
                 List<TokenBoard.Kot> tk = new ArrayList<TokenBoard.Kot>();
                 changed = stats.update(dosaEntries(cards, tk), now, cards.size() >= BOARD_CAP - 5);
                 try {
@@ -311,11 +308,6 @@ public final class DosaLive {
         try {
             tokens.refresh(now); // auto-clear long-ready tokens even when the board is quiet
             if (panel != null) panel.bindTokens();
-            if (HubLink.enabled()) {
-                // to the Babai Hub PC on the shop Wi-Fi (at most every 5 s when changed, else a 30 s heartbeat)
-                HubLink.send(deviceName(), HubLink.dosaPayload(tokens.ready(), tokens.preparing(), last, now),
-                        lastKotsJson, now);
-            }
             List<TokenBoard.Token> call = tokens.takeCall(now);
             if (!call.isEmpty() && panel != null) panel.announce(call);
         } catch (Throwable ignored) {
@@ -562,13 +554,6 @@ public final class DosaLive {
         TextView dosa = pill(activity, small ? "\u2726 DOSA" : "\u2726 DOSA LIVE",
                 new int[]{0xFFFF5200, 0xFFFF8A00, 0xFFFFC107}, 0xFFFF5200);
         dosa.setContentDescription("Dosa Live Wait");
-        dosaButton = dosa;
-        dosa.setOnLongClickListener(new View.OnLongClickListener() { // TV remote: hold OK
-            @Override public boolean onLongClick(View v) {
-                phoneDialog(activity);
-                return true;
-            }
-        });
         dosa.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 showPanel(activity, -1);
@@ -671,8 +656,6 @@ public final class DosaLive {
                                 ui.edit().putString(key, (fin.leftMargin / (float) content.getWidth()) + ","
                                         + (fin.topMargin / (float) content.getHeight())).apply();
                             }
-                        } else if (v == dosaButton && e.getEventTime() - e.getDownTime() >= 700) {
-                            phoneDialog(activity); // long-press DOSA LIVE: customer phone tracking setup
                         } else if (v == riderButton && e.getEventTime() - e.getDownTime() >= 700) {
                             bridgeDialog(activity); // long-press the rider button: Bridge Print setup
                         } else if (v.hasOnClickListeners()) {
@@ -701,129 +684,7 @@ public final class DosaLive {
         });
     }
 
-    private static View riderButton, dosaButton;
-
-    /** Long-press DOSA LIVE: link this TV to the Babai Hub program on a shop PC. */
-    private static void phoneDialog(final Activity a) {
-        final SharedPreferences ui = a.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
-        float d = a.getResources().getDisplayMetrics().density;
-        LinearLayout box = new LinearLayout(a);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding((int) (20 * d), (int) (8 * d), (int) (20 * d), 0);
-        TextView info = new TextView(a);
-        info.setText("This TV sends the live dosa tokens and kitchen orders to the Babai Hub program on a shop "
-                + "PC (shop Wi-Fi only). The hub puts them online for customers' \"Track your dosa\" page; the "
-                + "QR code then shows on the Order Ready screen.\nSet this on ONE TV only (the main kitchen "
-                + "screen). Leave empty to switch it off.\n\nStatus: " + HubLink.status()
-                + "\n\nHub PC address (shown on the hub's page), e.g. 192.168.1.3:8790");
-        box.addView(info);
-        String saved = ui.getString("hub_addr", "");
-        if (saved.isEmpty()) { // suggest the Bridge Print PC: the hub usually runs on the same PC
-            String bp = ui.getString("bridge_addr", "").replaceFirst("^https?://", "");
-            if (!bp.isEmpty()) saved = bp.replaceFirst("[:/].*$", "") + ":" + HubLink.DEFAULT_PORT;
-        }
-        final android.widget.EditText addr = field(a, "192.168.1.3:8790", saved);
-        box.addView(addr);
-        new android.app.AlertDialog.Builder(a)
-                .setTitle("\uD83D\uDCF1 Babai Hub \u2022 Track your dosa")
-                .setView(scrollable(a, box))
-                .setPositiveButton("Save & test", new android.content.DialogInterface.OnClickListener() {
-                    @Override public void onClick(android.content.DialogInterface dlg, int which) {
-                        String v = addr.getText().toString().trim();
-                        ui.edit().putString("hub_addr", v).apply();
-                        HubLink.configure(v);
-                        if (lastCards instanceof List) {
-                            @SuppressWarnings("unchecked") List<KotCard> cur = (List<KotCard>) lastCards;
-                            lastKotsJson = kotsJson(cur);
-                        }
-                        if (panel != null) panel.bindTokens();
-                        if (!HubLink.enabled()) {
-                            android.widget.Toast.makeText(a, "Hub link off", android.widget.Toast.LENGTH_LONG).show();
-                            return;
-                        }
-                        final String dosa = HubLink.dosaPayload(tokens.ready(), tokens.preparing(), last,
-                                System.currentTimeMillis());
-                        final String kots = lastKotsJson;
-                        new Thread(new Runnable() {
-                            @Override public void run() {
-                                final String err = HubLink.test(deviceName(), dosa, kots);
-                                a.runOnUiThread(new Runnable() {
-                                    @Override public void run() {
-                                        if (panel != null) panel.bindTokens();
-                                        android.widget.Toast.makeText(a, err == null ? HubLink.status() : err,
-                                                android.widget.Toast.LENGTH_LONG).show();
-                                    }
-                                });
-                            }
-                        }).start();
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private static String deviceName() {
-        return android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
-    }
-
-    /** Open KOTs on the board for the hub: items, token, order type, platform order ID, status. */
-    private static volatile String lastKotsJson = "[]";
-
-    private static String kotsJson(List<KotCard> cards) {
-        StringBuilder sb = new StringBuilder(cards.size() * 220 + 2).append('[');
-        boolean first = true;
-        for (KotCard card : cards) {
-            try {
-                Kot k = card.getKot();
-                if (k == null || k.getId() == null) continue;
-                if (!first) sb.append(',');
-                first = false;
-                Long created = BoardVisualsKt.parseCreatedMillis(k.getCreatedTime());
-                String ch = null;
-                try {
-                    ch = BoardVisualsKt.channelName(k);
-                } catch (Throwable ignored) {
-                }
-                sb.append("{\"id\":").append(k.getId())
-                        .append(",\"tk\":").append(k.getTokenNo() == null ? "null" : String.valueOf(k.getTokenNo()))
-                        .append(",\"tb\":").append(HubLink.str(k.getTableNo()))
-                        .append(",\"ot\":").append(k.getOrderType() == null ? "null" : String.valueOf(k.getOrderType()))
-                        .append(",\"ch\":").append(HubLink.str(ch))
-                        .append(",\"po\":").append(HubLink.str(k.getPOId()))
-                        .append(",\"st\":").append(HubLink.str(k.getKotStatus()))
-                        .append(",\"c\":").append(created == null ? 0 : created)
-                        .append(",\"rd\":").append(card.getState() != null && card.getState().isDispatch() ? 1 : 0)
-                        .append(",\"i\":[");
-                List<KotItem> items = k.getItems();
-                if (items != null) {
-                    boolean f2 = true;
-                    for (KotItem it : items) {
-                        if (it == null) continue;
-                        if (!f2) sb.append(',');
-                        f2 = false;
-                        Double q = it.getQuantity();
-                        sb.append("{\"n\":").append(HubLink.str(it.getName()))
-                                .append(",\"c\":").append(HubLink.str(it.getCategory()))
-                                .append(",\"q\":").append(q == null ? 1 : (q == Math.rint(q) ? String.valueOf(q.longValue()) : String.valueOf(q)))
-                                .append(",\"s\":").append(it.getStatus() == null ? "null" : String.valueOf(it.getStatus()))
-                                .append('}');
-                    }
-                }
-                sb.append("]}");
-            } catch (Throwable ignored) {
-            }
-        }
-        return sb.append(']').toString();
-    }
-
-    private static android.widget.EditText field(Activity a, String hint, String value) {
-        android.widget.EditText e = new android.widget.EditText(a);
-        e.setSingleLine(true);
-        e.setHint(hint);
-        e.setText(value);
-        e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
-        return e;
-    }
+    private static View riderButton;
     private static boolean riderSmall;
 
     static void setRiderCalls(Context c, boolean on) {
@@ -1190,7 +1051,6 @@ public final class DosaLive {
             if (mode == ORDER_READY && board != null) {
                 board.setTheme(ui.getInt("theme", 0)); // follows the Dosa Live theme / auto theme
                 board.setData(tokens.ready(), tokens.preparing(), last);
-                board.setQr(HubLink.qrUrl());
             }
         }
 
