@@ -196,6 +196,33 @@ final class TokenBoardView extends View {
         invalidate();
     }
 
+    private String qrUrl;
+    private Bitmap qr;
+    private final RectF qrDst = new RectF();
+    private final Paint qrPaint = new Paint(); // no filtering: crisp modules when scaled up
+
+    /** "Track your dosa" QR code in the footer; null hides it. */
+    void setQr(String url) {
+        if (url == null ? qrUrl == null : url.equals(qrUrl)) return;
+        qrUrl = url;
+        qr = null;
+        if (url != null) {
+            try {
+                com.google.zxing.common.BitMatrix m = new com.google.zxing.qrcode.QRCodeWriter()
+                        .encode(url, com.google.zxing.BarcodeFormat.QR_CODE, 0, 0);
+                int mw = m.getWidth(), mh = m.getHeight();
+                int[] px = new int[mw * mh];
+                for (int y = 0; y < mh; y++) {
+                    for (int x = 0; x < mw; x++) px[y * mw + x] = m.get(x, y) ? 0xFF111111 : 0xFFFFFFFF;
+                }
+                qr = Bitmap.createBitmap(px, mw, mh, Bitmap.Config.ARGB_8888);
+            } catch (Throwable ignored) {
+                qr = null;
+            }
+        }
+        invalidate();
+    }
+
     void setAutoClear(int minutes) {
         autoClearMin = minutes;
         invalidate();
@@ -477,7 +504,7 @@ final class TokenBoardView extends View {
         float pad = 44 * s;
         drawHeader(c, pad, 34 * s, w - 2 * pad, 104 * s, t);
 
-        float footH = 96 * s;
+        float footH = (qr != null ? 150 : 96) * s; // taller footer holds a QR code big enough to scan
         float footY = h - 30 * s - footH;
         float top = 160 * s;
         if (land) {
@@ -1076,12 +1103,16 @@ final class TokenBoardView extends View {
     private void drawFooter(Canvas c, float x, float y, float w, float h, float t) {
         float gap = 18 * s;
         float w1 = 300 * s, w2 = 240 * s;
+        if (qr != null) w = w - drawQr(c, x + w, y, h, t) - gap;
+        float ty = y + (h - 96 * s) / 2f; // tiles and facts stay centred in a taller footer
         panel(c, x, y, w1, h, 20 * s, alpha(0xFF140F08, 0xC8), alpha(theme.P, 0x77));
-        tile(c, x + 22 * s, y, h, "DOSA WAIT", waitLabel, theme.P);
+        tile(c, x + 22 * s, ty, h, "DOSA WAIT", waitLabel, theme.P);
         panel(c, x + w1 + gap, y, w2, h, 20 * s, alpha(0xFF140F08, 0xC8), alpha(theme.P, 0x77));
-        tile(c, x + w1 + gap + 22 * s, y, h, "ON THE TAWA", onTawa == 1 ? "1 dosa" : onTawa + " dosas", theme.P);
+        tile(c, x + w1 + gap + 22 * s, ty, h, "ON THE TAWA", onTawa == 1 ? "1 dosa" : onTawa + " dosas", theme.P);
         float fx = x + w1 + w2 + 2 * gap, fw = w - w1 - w2 - 2 * gap;
+        if (fw < 160 * s) return; // narrow (portrait) screen with the QR card: no room for facts
         panel(c, fx, y, fw, h, 20 * s, alpha(0xFF140F08, 0xC8), alpha(theme.T, 0x88));
+        y = ty;
         text.setTextAlign(Paint.Align.LEFT);
         text.setTypeface(condensed);
         text.setLetterSpacing(0.2f);
@@ -1099,6 +1130,38 @@ final class TokenBoardView extends View {
             text.setColor(alpha(Color.WHITE, (int) (255 * a)));
             c.drawText(f, fx + 22 * s, y + 72 * s, text);
         }
+    }
+
+    /** QR card at the right end of the footer ("Track your dosa on your phone"); returns its width. */
+    private float drawQr(Canvas c, float right, float y, float h, float t) {
+        float textW = 230 * s, cw = textW + h;
+        float x = right - cw;
+        panel(c, x, y, cw, h, 20 * s, alpha(0xFF140F08, 0xC8), alpha(theme.T, 0xAA));
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.16f);
+        text.setTextSize(16 * s);
+        text.setColor(theme.T);
+        c.drawText("\uD83D\uDCF1 ON YOUR PHONE", x + 20 * s, y + h * 0.30f, text);
+        text.setLetterSpacing(0f);
+        text.setTypeface(bold);
+        text.setTextSize(fit("Track your dosa", 30 * s, textW - 30 * s));
+        text.setColor(Color.WHITE);
+        c.drawText("Track your dosa", x + 20 * s, y + h * 0.56f, text);
+        float nudge = (float) Math.sin(t * Math.PI) * 4 * s;
+        text.setTypeface(medium);
+        text.setTextSize(20 * s);
+        text.setColor(alpha(Color.WHITE, 0xCC));
+        c.drawText("Scan  \u25B6", x + 20 * s + nudge, y + h * 0.80f, text);
+        // white square with the code, quiet zone included in the bitmap
+        float q = h - 16 * s, qx = right - q - 8 * s, qy = y + 8 * s;
+        rect.set(qx, qy, qx + q, qy + q);
+        fill.setColor(Color.WHITE);
+        c.drawRoundRect(rect, 10 * s, 10 * s, fill);
+        float inset = 4 * s;
+        qrDst.set(qx + inset, qy + inset, qx + q - inset, qy + q - inset);
+        c.drawBitmap(qr, null, qrDst, qrPaint);
+        return cw;
     }
 
     private void tile(Canvas c, float x, float y, float h, String label, String value, int color) {

@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Babai Dosa Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Mukta:wght@400;600&display=swap">
+<style>
+/* Layout: one phone-width column; a token "slip" with a tawa ring holds the status, everything else is quiet. */
+:root{
+  --bg:#fbf6ef; --card:#ffffff; --ink:#2a1d14; --muted:#7a6656; --line:#eadfd2;
+  --saffron:#ff5200; --ghee:#ffb547; --ready:#1f8a4c; --ready-soft:#e3f5ea; --warn:#b5560d; --warn-soft:#fff1e2;
+  --track:#f1e6d8;
+  --display:"Baloo 2","Trebuchet MS",system-ui,sans-serif;
+  --body:"Mukta","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17110d; --card:#221a14; --ink:#f6ece2; --muted:#b8a493; --line:#3a2d23;
+  --saffron:#ff7a33; --ghee:#ffc266; --ready:#3ccf7d; --ready-soft:#16301f; --warn:#ffad66; --warn-soft:#33220f;
+  --track:#33271e; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17110d; --card:#221a14; --ink:#f6ece2; --muted:#b8a493; --line:#3a2d23;
+  --saffron:#ff7a33; --ghee:#ffc266; --ready:#3ccf7d; --ready-soft:#16301f; --warn:#ffad66; --warn-soft:#33220f;
+  --track:#33271e; color-scheme:dark}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.45;
+  padding-inline:16px;padding-block:18px 28px;box-sizing:border-box}
+.wrap{max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{font-family:var(--display);font-weight:800;font-size:1.35rem;line-height:1;color:var(--saffron);letter-spacing:.2px}
+.brand small{display:block;font-family:var(--body);font-weight:600;font-size:.72rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);margin-top:4px}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted);white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ready);animation:pulse 1.6s ease-in-out infinite}
+.live.stale .dot{background:var(--warn);animation:none}
+@keyframes pulse{50%{opacity:.35}}
+.slip{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px 20px 20px;
+  display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;position:relative}
+/* perforated top edge like a token slip */
+.slip::before{content:"";position:absolute;left:18px;right:18px;top:-1px;height:2px;
+  background:repeating-linear-gradient(90deg,var(--bg) 0 6px,transparent 6px 12px)}
+.ring{position:relative;width:min(64vw,230px);aspect-ratio:1;max-width:100%}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:14}
+.ring .bg{stroke:var(--track)}
+.ring .fg{stroke:var(--saffron);stroke-linecap:round;transition:stroke-dashoffset .9s ease,stroke .4s}
+.ready .ring .fg{stroke:var(--ready)}
+.ring .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .lbl{font-size:.75rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.ring .num{font-family:var(--display);font-weight:800;font-size:clamp(3rem,17vw,4.4rem);line-height:1;
+  font-variant-numeric:tabular-nums}
+.state{font-family:var(--display);font-weight:800;font-size:1.7rem;line-height:1.1;text-wrap:balance;margin:0}
+.ready .state{color:var(--ready)}
+.sub{margin:0;color:var(--muted);text-wrap:balance}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
+.fact{background:var(--bg);border-radius:14px;padding:10px 12px;text-align:left}
+.fact b{display:block;font-family:var(--display);font-size:1.45rem;line-height:1.1;font-variant-numeric:tabular-nums}
+.fact span{font-size:.78rem;color:var(--muted);letter-spacing:.04em}
+.ready .slip{border-color:var(--ready);background:linear-gradient(var(--ready-soft),var(--card) 70%)}
+.ready .ring{animation:pop .6s ease}
+@keyframes pop{40%{transform:scale(1.06)}}
+.note{border-radius:14px;padding:10px 14px;font-size:.92rem;background:var(--warn-soft);color:var(--warn)}
+.row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+button{font:inherit;font-weight:600;border-radius:999px;padding:10px 18px;border:1px solid var(--line);
+  background:var(--card);color:var(--ink);cursor:pointer}
+button.primary{background:var(--saffron);border-color:var(--saffron);color:#fff;font-size:1.1rem;padding:13px 22px;width:100%}
+button:focus-visible,input:focus-visible{outline:3px solid var(--ghee);outline-offset:2px}
+.entry{display:flex;flex-direction:column;gap:12px;width:100%}
+.entry label{font-weight:600}
+.entry input{font-family:var(--display);font-weight:800;font-size:2.4rem;text-align:center;letter-spacing:.08em;
+  padding:8px 12px;border-radius:16px;border:2px solid var(--line);background:var(--bg);color:var(--ink);width:100%;box-sizing:border-box}
+.entry p{margin:0;color:var(--muted);font-size:.9rem}
+.err{color:var(--warn);font-size:.9rem;margin:0}
+footer{font-size:.8rem;color:var(--muted);text-align:center}
+.poster{display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center;padding-top:20px}
+.poster h1{font-family:var(--display);font-size:2.6rem;line-height:1.05;margin:0;color:var(--saffron);text-wrap:balance}
+.poster #qr{background:#fff;padding:18px;border-radius:18px}
+.poster ol{text-align:left;font-size:1.15rem;margin:0;padding-left:1.3em}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap" id="app">
+  <header>
+    <div class="brand">Babai Tiffins<small>Dosa tracker</small></div>
+    <div class="live" id="live" hidden><span class="dot"></span><span id="liveText">Live</span></div>
+  </header>
+
+  <div class="note" id="demoNote" hidden>Demo: token 42 moves from the queue to ready in about a minute. At Babai Tiffins, scan the QR code at the counter to track your own token.</div>
+
+  <!-- 1. token entry -->
+  <section class="slip" id="entry" hidden>
+    <form class="entry" id="form" novalidate>
+      <label for="tok">Your token number</label>
+      <input id="tok" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="42">
+      <p>It's printed on your bill / token slip.</p>
+      <p class="err" id="formErr" hidden></p>
+      <button class="primary" type="submit">Track my dosa</button>
+    </form>
+  </section>
+
+  <!-- 2. status -->
+  <section id="status" hidden>
+    <div class="slip">
+      <div class="ring" aria-hidden="true">
+        <svg viewBox="0 0 200 200"><circle class="bg" cx="100" cy="100" r="86"/><circle class="fg" id="arc" cx="100" cy="100" r="86"/></svg>
+        <div class="mid"><span class="lbl">Token</span><span class="num" id="num">42</span></div>
+      </div>
+      <h1 class="state" id="state" aria-live="polite">Checking…</h1>
+      <p class="sub" id="sub"></p>
+      <div class="facts" id="facts" hidden>
+        <div class="fact"><b id="ahead">–</b><span id="aheadLbl">orders before yours</span></div>
+        <div class="fact"><b id="eta">–</b><span>about this long</span></div>
+      </div>
+    </div>
+    <div class="note" id="stale" hidden>The kitchen screen hasn't updated for a while, so this may be out of date. Please check the TV at the counter.</div>
+    <div class="row">
+      <button type="button" id="sound" aria-pressed="true">🔔 Alert on</button>
+      <button type="button" id="change">Change token</button>
+    </div>
+  </section>
+
+  <!-- poster for printing (…/dosa/?poster=1&d=…) -->
+  <section class="poster" id="poster" hidden>
+    <h1>Where's my dosa?</h1>
+    <div id="qr"></div>
+    <ol><li>Scan this code with your phone camera</li><li>Type the token number on your bill</li><li>We'll buzz your phone when it's ready</li></ol>
+  </section>
+
+  <footer id="foot">Only token numbers are shown. No app or login needed.</footer>
+</div>
+
+<script>
+(function(){
+  var qs=new URLSearchParams(location.search);
+  var host=(qs.get('d')||'').toLowerCase();
+  var okHost=/^[a-z0-9-]+(\.[a-z0-9-]+)*\.(firebaseio\.com|firebasedatabase\.app)$/.test(host);
+  var DEMO=!okHost;                 // no database in the link: show the demo
+  var $=function(id){return document.getElementById(id)};
+  var store={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},
+             set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+
+  // ---- poster mode -------------------------------------------------------------------------
+  if(qs.get('poster')&&okHost){
+    $('poster').hidden=false;$('foot').hidden=true;
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    s.onload=function(){new QRCode($('qr'),{text:location.origin+location.pathname+'?d='+host,width:260,height:260,correctLevel:QRCode.CorrectLevel.M})};
+    document.head.appendChild(s);
+    return;
+  }
+
+  function norm(t){t=String(t||'').toUpperCase().replace(/[^A-Z0-9]/g,'');return /^\d+$/.test(t)?String(parseInt(t,10)):t}
+
+  // a token typed in the last 3 hours is offered again (yesterday's token is not)
+  var saved=(store.get('babai_token')||'').split('|');
+  var token=norm(qs.get('t')||(saved[1]&&Date.now()-Number(saved[1])<3*3600000?saved[0]:''));
+  var soundOn=store.get('babai_sound')!=='0';
+  var everSeen=false, wasReady=false, alerted=false, lastData=null, ctx=null, wake=null, firstPos=null;
+  var C=2*Math.PI*86; $('arc').style.strokeDasharray=C;
+
+  function showEntry(msg){
+    $('status').hidden=true;$('entry').hidden=false;$('live').hidden=true;
+    $('tok').value=token||'';$('formErr').hidden=!msg;$('formErr').textContent=msg||'';
+  }
+  function startTracking(){
+    $('entry').hidden=true;$('status').hidden=false;$('live').hidden=false;
+    $('num').textContent=token;everSeen=false;wasReady=false;alerted=false;firstPos=null;
+    document.body.classList.remove('ready');
+    render();
+    poll();
+  }
+
+  $('form').addEventListener('submit',function(e){
+    e.preventDefault();
+    var t=norm($('tok').value);
+    if(!t){showEntry('Type the token number from your bill.');return}
+    token=t;store.set('babai_token',t+'|'+Date.now());
+    unlockAudio();keepAwake();
+    if(DEMO)demoStart();
+    startTracking();
+  });
+  $('change').addEventListener('click',function(){showEntry()});
+  $('sound').addEventListener('click',function(){
+    soundOn=!soundOn;store.set('babai_sound',soundOn?'1':'0');
+    if(soundOn){unlockAudio();chime()}
+    paintSound();
+  });
+  function paintSound(){$('sound').textContent=soundOn?'🔔 Alert on':'🔕 Alert off';$('sound').setAttribute('aria-pressed',soundOn)}
+  paintSound();
+
+  // ---- data ------------------------------------------------------------------------------
+  var timer=null;
+  function poll(){
+    clearTimeout(timer);
+    var done=function(){timer=setTimeout(poll,document.hidden?15000:5000)};
+    if(DEMO){lastData=demoData();render();done();return}
+    fetch('https://'+host+'/babai/dosa.json',{cache:'no-store'})
+      .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
+      .then(function(d){lastData=d;render()})
+      .catch(function(){$('liveText').textContent='Reconnecting…';$('live').classList.add('stale')})
+      .then(done);
+  }
+  document.addEventListener('visibilitychange',function(){if(!document.hidden&&!$('status').hidden){poll();keepAwake()}});
+
+  function find(list){if(!list)return -1;for(var i=0;i<list.length;i++)if(norm(list[i].t)===token)return i;return -1}
+
+  function render(){
+    var d=lastData;
+    if(!d){setView('wait','Checking…','Connecting to the kitchen.');return}
+    var age=Date.now()-(d.u||0);
+    var stale=age>90000;
+    $('stale').hidden=!stale;
+    $('live').classList.toggle('stale',stale);
+    $('liveText').textContent=stale?'Paused':'Live';
+    var ri=find(d.r), pi=find(d.p);
+    if(ri>=0){
+      everSeen=true;wasReady=true;
+      setView('ready','Your dosa is ready!','Please collect it at the counter. Show token '+token+'.');
+      progress(1);$('facts').hidden=true;
+      if(!alerted){alerted=true;alertReady()}
+      return;
+    }
+    if(pi>=0){
+      everSeen=true;
+      var it=d.p[pi];
+      if(firstPos===null||pi>firstPos)firstPos=pi;
+      $('facts').hidden=false;
+      $('ahead').textContent=pi===0?'Next!':pi;
+      $('aheadLbl').textContent=pi===0?'yours is on the tawa':(pi===1?'order before yours':'orders before yours');
+      $('eta').textContent=it.m>=0?(it.m<1.5?'1 min':Math.round(it.m)+' min'):'–';
+      var sub=it.o?'A bigger order is taking a little longer. Thanks for waiting, it’s being made fresh.'
+                  :(pi===0?'Your dosa is next on the tawa.':'Made fresh to order. We’ll buzz your phone when it’s ready.');
+      setView('wait',pi===0?'Almost ready':'Preparing',sub);
+      progress(firstPos?0.15+0.75*(1-pi/(firstPos+1)):0.85);
+      return;
+    }
+    $('facts').hidden=true;
+    if(wasReady){setView('done','Collected. Enjoy!','Hope you love it. See you again at Babai Tiffins.');progress(1);return}
+    if(everSeen){setView('done','Not on the kitchen screen','Please check with the counter staff.');progress(0);return}
+    setView('wait','Waiting for the kitchen','Token '+token+' shows here once the kitchen gets your order'+(d.w?' (current dosa wait: '+d.w+').':'.'));
+    progress(0.05);
+  }
+  function setView(kind,state,sub){
+    document.body.classList.toggle('ready',kind==='ready');
+    $('state').textContent=state;$('sub').textContent=sub;
+  }
+  function progress(f){$('arc').style.strokeDashoffset=C*(1-Math.max(0,Math.min(1,f)))}
+
+  // ---- alerts ----------------------------------------------------------------------------
+  function unlockAudio(){try{ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();ctx.resume()}catch(e){}}
+  function chime(){
+    if(!ctx||!soundOn)return;
+    var t=ctx.currentTime;
+    [[1318.5,0],[1046.5,.28]].forEach(function(n){
+      var o=ctx.createOscillator(),g=ctx.createGain();
+      o.frequency.value=n[0];o.connect(g);g.connect(ctx.destination);
+      g.gain.setValueAtTime(0,t+n[1]);g.gain.linearRampToValueAtTime(.35,t+n[1]+.01);
+      g.gain.exponentialRampToValueAtTime(.001,t+n[1]+.9);o.start(t+n[1]);o.stop(t+n[1]+1);
+    });
+  }
+  function alertReady(){
+    if(soundOn){chime();setTimeout(chime,1500);setTimeout(chime,3000)}
+    try{navigator.vibrate&&navigator.vibrate([400,150,400,150,700])}catch(e){}
+    document.title='✅ Token '+token+' ready';
+  }
+  function keepAwake(){try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(function(w){wake=w}).catch(function(){})}catch(e){}}
+
+  // ---- demo ------------------------------------------------------------------------------
+  var demoT0=0;
+  function demoStart(){demoT0=Date.now()}
+  function demoData(){
+    var s=(Date.now()-demoT0)/1000, pos=Math.max(0,3-Math.floor(s/12)), others=['38','39','40','41'];
+    var p=[];for(var i=0;i<pos;i++)p.push({t:others[i],m:2+i*2.5,o:0});
+    var ready=s>=50;
+    if(!ready)p.push({t:token,m:Math.max(1,(50-s)/60*6),o:0});
+    return {u:Date.now(),w:'8–10 min',r:ready?[{t:token,a:Date.now()}]:[{t:'37',a:Date.now()}],p:p.concat([{t:'44',m:9,o:0},{t:'45',m:11,o:0}])};
+  }
+
+  if(DEMO){$('demoNote').hidden=false;if(!token)token='42'}
+  showEntry(); // one tap on "Track my dosa" also allows the phone to beep and vibrate
+})();
+</script>
+</body>
+</html>

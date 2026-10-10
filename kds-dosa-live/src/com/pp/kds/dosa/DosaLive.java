@@ -232,6 +232,8 @@ public final class DosaLive {
         riderMaxMin = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("rider_max_min", 0);
         riders.setMaxMinutes(riderMaxMin);
         tokens.setAutoClearMinutes(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("autoclear_min", 10));
+        SharedPreferences tp = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
+        PhoneTrack.configure(tp.getString("track_db", ""), tp.getString("track_secret", ""), tp.getString("track_page", ""));
         stats = new DosaStats();
         Map<String, String> saved = new HashMap<String, String>();
         for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
@@ -308,6 +310,10 @@ public final class DosaLive {
         try {
             tokens.refresh(now); // auto-clear long-ready tokens even when the board is quiet
             if (panel != null) panel.bindTokens();
+            if (PhoneTrack.enabled()) {
+                // customers' phones: token status to the cloud (only when it changes, + 30 s heartbeat)
+                PhoneTrack.publish(PhoneTrack.payload(tokens.ready(), tokens.preparing(), last, now), now);
+            }
             List<TokenBoard.Token> call = tokens.takeCall(now);
             if (!call.isEmpty() && panel != null) panel.announce(call);
         } catch (Throwable ignored) {
@@ -554,6 +560,13 @@ public final class DosaLive {
         TextView dosa = pill(activity, small ? "\u2726 DOSA" : "\u2726 DOSA LIVE",
                 new int[]{0xFFFF5200, 0xFFFF8A00, 0xFFFFC107}, 0xFFFF5200);
         dosa.setContentDescription("Dosa Live Wait");
+        dosaButton = dosa;
+        dosa.setOnLongClickListener(new View.OnLongClickListener() { // TV remote: hold OK
+            @Override public boolean onLongClick(View v) {
+                phoneDialog(activity);
+                return true;
+            }
+        });
         dosa.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 showPanel(activity, -1);
@@ -656,6 +669,8 @@ public final class DosaLive {
                                 ui.edit().putString(key, (fin.leftMargin / (float) content.getWidth()) + ","
                                         + (fin.topMargin / (float) content.getHeight())).apply();
                             }
+                        } else if (v == dosaButton && e.getEventTime() - e.getDownTime() >= 700) {
+                            phoneDialog(activity); // long-press DOSA LIVE: customer phone tracking setup
                         } else if (v == riderButton && e.getEventTime() - e.getDownTime() >= 700) {
                             bridgeDialog(activity); // long-press the rider button: Bridge Print setup
                         } else if (v.hasOnClickListeners()) {
@@ -684,7 +699,76 @@ public final class DosaLive {
         });
     }
 
-    private static View riderButton;
+    private static View riderButton, dosaButton;
+
+    /** Long-press DOSA LIVE: "Track your dosa" on customers' phones (Firebase database + QR page). */
+    private static void phoneDialog(final Activity a) {
+        final SharedPreferences ui = a.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE);
+        float d = a.getResources().getDisplayMetrics().density;
+        LinearLayout box = new LinearLayout(a);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding((int) (20 * d), (int) (8 * d), (int) (20 * d), 0);
+        TextView info = new TextView(a);
+        info.setText("Customers scan the QR code on the Order Ready screen, type their token number and "
+                + "see Preparing / Ready live on their phone. Only token numbers and wait times are sent.\n\n"
+                + "Status: " + PhoneTrack.status() + "\n\nFirebase Realtime Database address:");
+        box.addView(info);
+        final android.widget.EditText db = field(a, "babai-dosa-default-rtdb.asia-southeast1.firebasedatabase.app",
+                ui.getString("track_db", ""));
+        box.addView(db);
+        TextView l2 = new TextView(a);
+        l2.setText("\nDatabase secret (Project settings \u2192 Service accounts \u2192 Database secrets):");
+        box.addView(l2);
+        final android.widget.EditText key = field(a, "secret", ui.getString("track_secret", ""));
+        box.addView(key);
+        TextView l3 = new TextView(a);
+        l3.setText("\nStatus page address (leave empty for the Babai Tiffins page):");
+        box.addView(l3);
+        final android.widget.EditText pg = field(a, PhoneTrack.DEFAULT_PAGE, ui.getString("track_page", ""));
+        box.addView(pg);
+        new android.app.AlertDialog.Builder(a)
+                .setTitle("\uD83D\uDCF1 Track your dosa \u2022 customer phones")
+                .setView(scrollable(a, box))
+                .setPositiveButton("Save & test", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface dlg, int which) {
+                        ui.edit().putString("track_db", db.getText().toString().trim())
+                                .putString("track_secret", key.getText().toString().trim())
+                                .putString("track_page", pg.getText().toString().trim()).apply();
+                        PhoneTrack.configure(db.getText().toString(), key.getText().toString(), pg.getText().toString());
+                        if (panel != null) panel.bindTokens();
+                        if (!PhoneTrack.enabled()) {
+                            android.widget.Toast.makeText(a, "Phone tracking off (no database set)",
+                                    android.widget.Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        final String body = PhoneTrack.payload(tokens.ready(), tokens.preparing(), last,
+                                System.currentTimeMillis());
+                        new Thread(new Runnable() {
+                            @Override public void run() {
+                                final String err = PhoneTrack.test(body);
+                                a.runOnUiThread(new Runnable() {
+                                    @Override public void run() {
+                                        android.widget.Toast.makeText(a, err == null
+                                                ? "\u2713 Connected. The QR code now shows on the Order Ready screen."
+                                                : "\u26A0 " + err, android.widget.Toast.LENGTH_LONG).show();
+                                    }
+                                });
+                            }
+                        }).start();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private static android.widget.EditText field(Activity a, String hint, String value) {
+        android.widget.EditText e = new android.widget.EditText(a);
+        e.setSingleLine(true);
+        e.setHint(hint);
+        e.setText(value);
+        e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        return e;
+    }
     private static boolean riderSmall;
 
     static void setRiderCalls(Context c, boolean on) {
@@ -1051,6 +1135,7 @@ public final class DosaLive {
             if (mode == ORDER_READY && board != null) {
                 board.setTheme(ui.getInt("theme", 0)); // follows the Dosa Live theme / auto theme
                 board.setData(tokens.ready(), tokens.preparing(), last);
+                board.setQr(PhoneTrack.qrUrl());
             }
         }
 
