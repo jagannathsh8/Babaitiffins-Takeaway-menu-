@@ -65,6 +65,17 @@ body{margin:0;min-height:100vh;color:#fff;font-family:var(--num);font-size:16px;
   background:linear-gradient(90deg,var(--p),var(--yellow));border:0;border-radius:999px;padding:14px;cursor:pointer;
   box-shadow:0 6px 24px rgba(245,178,27,.35)}
 .btn:focus-visible,.chip-btn:focus-visible{outline:3px solid var(--l);outline-offset:3px}
+.scan{text-align:center;padding:28px 18px}
+.scan h2{margin:14px 0 6px;font-weight:900;font-size:1.35rem;color:var(--l)}
+.scan p{margin:0;color:var(--t);font-size:1.02rem}
+.scanicon{position:relative;width:96px;height:96px;margin:0 auto;border-radius:18px;background:rgba(245,178,27,.08)}
+.scanicon i{position:absolute;width:28px;height:28px;border:4px solid var(--p)}
+.scanicon i:nth-child(1){top:10px;left:10px;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
+.scanicon i:nth-child(2){top:10px;right:10px;border-left:0;border-bottom:0;border-radius:0 8px 0 0}
+.scanicon i:nth-child(3){bottom:10px;left:10px;border-right:0;border-top:0;border-radius:0 0 0 8px}
+.scanicon i:nth-child(4){bottom:10px;right:10px;border-left:0;border-top:0;border-radius:0 0 8px 0}
+.scanicon::after{content:"";position:absolute;left:14px;right:14px;height:3px;border-radius:3px;background:var(--green);box-shadow:0 0 12px var(--green);animation:scanline 2.2s ease-in-out infinite}
+@keyframes scanline{0%,100%{top:18px}50%{top:75px}}
 .err{color:var(--orange);font-size:.88rem;margin:8px 0 0;text-align:center}
 
 /* your token */
@@ -149,7 +160,14 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   </header>
   <h1 class="title">ORDER READY</h1>
 
-  <div class="note" id="demoNote" hidden>Demo: token 42 moves up the queue and turns ready in about a minute. At Babai Tiffins, scan the QR code to follow your own token.</div>
+  <div class="note" id="demoNote" hidden>Demo preview: token 42 moves up the queue and turns ready in about a minute.</div>
+
+  <!-- opened without the QR code -->
+  <section class="panel scan" id="scan" hidden>
+    <div class="scanicon" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <h2>Scan the QR code at Babai Tiffins</h2>
+    <p>to know your dosa status, live on your phone.</p>
+  </section>
 
   <!-- token entry -->
   <section class="panel entry" id="entry" hidden>
@@ -188,12 +206,12 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
 
 
   <div class="tiles" id="tiles">
-    <div class="tile"><small>DOSA WAIT</small><b id="tWait">–</b></div>
-    <div class="tile"><small>ON THE TAWA</small><b id="tTawa">–</b></div>
+    <div class="tile" id="tileWait"><small>DOSA WAIT</small><b id="tWait">–</b></div>
+    <div class="tile" id="tileTawa"><small>ON THE TAWA</small><b id="tTawa">–</b></div>
     <div class="tile fact"><small>✦ DID YOU KNOW</small><p id="fact"></p></div>
   </div>
 
-  <footer>Only token numbers are shown. No app or login needed.</footer>
+  <footer>Live from the Babai Tiffins kitchen. No app or login needed.</footer>
 </div>
 
 <div class="call" id="call" hidden role="alertdialog" aria-label="Your dosa is ready">
@@ -205,7 +223,8 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   var qs=new URLSearchParams(location.search);
   var host=(qs.get('d')||'').toLowerCase();
   var okHost=/^[a-z0-9-]+(\.[a-z0-9-]+)*\.(firebaseio\.com|firebasedatabase\.app)$/.test(host);
-  var DEMO=!okHost;
+  var DEMO=!okHost&&qs.has('demo');   // ?demo=1: preview without the kitchen
+  var NOQR=!okHost&&!DEMO;             // opened without the QR code
   var $=function(id){return document.getElementById(id)};
   var store={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},
              set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
@@ -238,7 +257,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   var saved=(store.get('babai_token')||'').split('|');
   var token=norm(qs.get('t')||(saved[1]&&Date.now()-Number(saved[1])<3*3600000?saved[0]:''));
   var soundOn=store.get('babai_sound')!=='0';
-  var tracking=false, everSeen=false, wasReady=false, alerted=false, data=null, ctx=null, firstPos=null;
+  var tracking=false, everSeen=false, wasReady=false, alerted=false, data=null, meta=null, mine=null, ctx=null, firstPos=null;
   var seenReady={}, boardStarted=false, t0=Date.now();
 
   // ---- clock + sparks -------------------------------------------------------------------------
@@ -265,7 +284,9 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
 
   // ---- did you know (9 s, 0.8 s fade, like the TV) ---------------------------------------------
   var factI=0;
-  function facts(){var f=(data&&data.f&&data.f.length)?data.f.concat(TRIVIA):TRIVIA;return f}
+  function facts(){ // like the TV: a live fact from today's orders between the menu stories
+    var live=(meta&&meta.f)||[];if(!live.length)return TRIVIA;
+    var out=[];for(var i=0;i<TRIVIA.length;i++){out.push(live[i%live.length]);out.push(TRIVIA[i])}return out}
   function showFact(){var f=facts(),el=$('fact');el.style.opacity=0;
     setTimeout(function(){el.textContent=f[factI%f.length];factI++;el.style.opacity=1},800)}
   $('fact').textContent=TRIVIA[0];factI=1;setInterval(showFact,FACT_S*1000);
@@ -291,13 +312,16 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
 
   // ---- data -----------------------------------------------------------------------------------
   var timer=null;
+  // Reads only what this customer needs: the small /babai/meta and their own /babai/t/<token>.
+  function get(path){return fetch('https://'+host+'/babai/'+path+'.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})}
   function poll(){
     clearTimeout(timer);
     var next=function(){timer=setTimeout(poll,document.hidden?15000:5000)};
-    if(DEMO){data=demoData();render();next();return}
-    fetch('https://'+host+'/babai/dosa.json',{cache:'no-store'})
-      .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
-      .then(function(d){data=d||{};render()})
+    if(NOQR)return;
+    if(DEMO){demoTick();render();next();return}
+    var want=tracking&&token;
+    Promise.all([get('meta'),want?get('t/'+encodeURIComponent(token)):Promise.resolve(null)])
+      .then(function(r){meta=r[0]||{};mine=r[1];data=true;render()})
       .catch(function(){$('liveText').textContent='RECONNECTING';$('live').classList.add('stale')})
       .then(next);
   }
@@ -314,7 +338,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     return Math.max(.04,Math.min(.98,el/(el+it.m)));
   }
   function subFor(it,i,mine){
-    if(it.o){var k=Math.floor(Date.now()/1000/KIND_S)+hash(String(it.t));return {kind:true,text:(it.d>1&&k%3===0)?BIG:KIND[k%KIND.length]}}
+    if(it.o){var k=Math.floor(Date.now()/1000/KIND_S)+hash(String(token));return {kind:true,text:(it.d>1&&k%3===0)?BIG:KIND[k%KIND.length]}}
     var s='DINE-IN'+(it.d?' · '+(it.d===1?'1 DOSA':it.d+' DOSAS'):'')+(i===0?' · NEXT':'');
     return {kind:false,text:s};
   }
@@ -324,16 +348,13 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   }
 
   function render(){
-    var d=data;
-    if(!d)return;
-    var stale=!DEMO&&Date.now()-(d.u||0)>90000;
+    if(!data||!meta)return;
+    var stale=!DEMO&&Date.now()-(meta.u||0)>90000;
     $('stale').hidden=!stale||!tracking;
     $('live').classList.toggle('stale',stale);$('liveText').textContent=stale?'PAUSED':'LIVE';
-    var R=d.r||[],P=d.p||[];
-    $('tWait').textContent=d.w||'–';
-    var tawa=d.n!=null?d.n:P.reduce(function(s,x){return s+(x.d||1)},0);
-    $('tTawa').textContent=tawa===1?'1 dosa':tawa+' dosas';
-    if(tracking)renderMine(R,P,d);
+    $('tWait').textContent=meta.w||'\u2013';
+    var tawa=meta.n||0;$('tTawa').textContent=tawa===1?'1 dosa':tawa+' dosas';
+    if(tracking)renderMine(mine);
   }
 
   // Items of this token only: dosas first (big), other dishes as small chips.
@@ -350,36 +371,37 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     $('otherList').innerHTML=others.map(function(x,i){return '<span class="other'+(x.s?' done':'')+'" style="animation-delay:'+(i*60)+'ms"><b>'+q(x.q||1)+'\u00D7</b> '+esc(x.n)+(x.s?' \u2713':'')+'</span>'}).join('');
   }
 
-  function renderMine(R,P,d){
-    var ri=find(R),pi=find(P),mine=$('mine');
-    renderItems(ri>=0?R[ri]:pi>=0?P[pi]:null);
-    mine.classList.remove('ready','done');
+  function renderMine(tk){
+    var box=$('mine');
+    renderItems(tk);
+    box.classList.remove('ready','done');
     $('mPrep').hidden=true;$('mReady').hidden=true;$('mOther').hidden=true;$('mEtaBox').hidden=true;
     $('mLbl').textContent='YOUR TOKEN';
-    if(ri>=0){
-      everSeen=true;wasReady=true;mine.classList.add('ready');$('mReady').hidden=false;$('mLbl').textContent='YOUR TOKEN · FOOD READY';
-      $('mReadySub').textContent='Please collect at the counter · '+agoLabel(R[ri].a);
+    if(tk&&tk.l)$('mTok').textContent=tk.l;
+    if(tk&&tk.s==='r'){
+      everSeen=true;wasReady=true;box.classList.add('ready');$('mReady').hidden=false;$('mLbl').textContent='YOUR TOKEN \u00B7 FOOD READY';
+      $('mReadySub').textContent='Please collect at the counter \u00B7 '+agoLabel(tk.a);
       if(!alerted){alerted=true;callMine()}
       return;
     }
-    if(pi>=0){
-      everSeen=true;var it=P[pi];
+    if(tk&&tk.s==='p'){
+      everSeen=true;var pi=tk.pos||0;
       if(firstPos===null||pi>firstPos)firstPos=pi;
       $('mPrep').hidden=false;$('mEtaBox').hidden=false;
-      $('mEta').textContent=minsLabel(it.m).replace('~','');$('mEta').classList.toggle('soon',it.m>=0&&it.m<=2);
-      $('mEtaLbl').textContent=it.m>=0?'ABOUT':'';
-      var sb=subFor(it,pi,true);$('mSub').textContent=sb.text;$('mSub').className='sub'+(sb.kind?' kind':'');
-      var p=progress(it);if(p==null&&it.m>=0)p=Math.max(.06,Math.min(.95,1-(pi+1)/(firstPos+2)));
+      $('mEta').textContent=minsLabel(tk.m).replace('~','');$('mEta').classList.toggle('soon',tk.m>=0&&tk.m<=2);
+      $('mEtaLbl').textContent=tk.m>=0?'ABOUT':'';
+      var sb=subFor(tk,pi);$('mSub').textContent=sb.text;$('mSub').className='sub'+(sb.kind?' kind':'');
+      var p=progress(tk);if(p==null&&tk.m>=0)p=Math.max(.06,Math.min(.95,1-(pi+1)/(firstPos+2)));
       setBar($('mBar'),$('mFill'),p);
       $('mAhead').textContent=pi===0?'Next!':pi;
       $('mAheadLbl').textContent=pi===0?'yours is next on the tawa':(pi===1?'order before yours':'orders before yours');
-      $('mWait').textContent=d.w||'–';
+      $('mWait').textContent=meta.w||'\u2013';
       return;
     }
     $('mOther').hidden=false;
-    if(wasReady){mine.classList.add('done');$('mOtherText').textContent='Collected. Enjoy your dosa! See you again at Babai Tiffins.';return}
-    if(everSeen){mine.classList.add('done');$('mOtherText').textContent='Not on the kitchen screen any more. Please check with the counter.';return}
-    $('mOtherText').textContent='Waiting for the kitchen — your token shows here as soon as your order reaches the tawa.';
+    if(wasReady){box.classList.add('done');$('mOtherText').textContent='Collected. Enjoy your dosa! See you again at Babai Tiffins.';return}
+    if(everSeen){box.classList.add('done');$('mOtherText').textContent='Not on the kitchen screen any more. Please check with the counter.';return}
+    $('mOtherText').textContent='Waiting for the kitchen \u2014 your token shows here as soon as your dosa order reaches the tawa.';
   }
 
  // the "kind words" rotate every 6 s even between data updates
@@ -412,28 +434,26 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   }
   function keepAwake(){try{navigator.wakeLock&&navigator.wakeLock.request('screen').catch(function(){})}catch(e){}}
 
-  // ---- demo: a busy board, token 42 moves up and turns ready ----------------------------------
+  // ---- demo preview (?demo=1): token 42 moves up and turns ready --------------------------------
   var demoT0=Date.now();
-  function demoData(){
+  function demoTick(){
     var s=(Date.now()-demoT0)/1000,now=Date.now(),me=token||'42';
-    var queue=['38','39','40',me,'44','45','47','48','50','51','53','54','56'];
-    var done=Math.min(4,Math.floor(s/12));            // one order comes off the tawa every 12 s
-    var ready=[{t:'31',a:now-7*60000},{t:'35',a:now-4*60000},{t:'37',a:now-90000}];
-    for(var i=0;i<done;i++)ready.push({t:queue[i],a:demoT0+(i+1)*12000});
-    var p=queue.slice(done).map(function(t,i){return {t:t,m:2+i*1.6,o:t==='45'?1:0,d:t==='45'?4:1+(hash(t)%2),c:now-(6+i)*60000+(s*1000)%60000}});
-    if(s>70){ready=ready.filter(function(r){return r.t!=='31'})}
-    var myItems=function(r){return [{n:'Ghee Karam Dosa',q:2,k:'d',s:r||s>30?1:0},{n:'Masala Dosa',q:1,k:'d',s:r?1:0},
-      {n:'Ghee Idli',q:2,k:'o',s:1},{n:'Filter Coffee',q:2,k:'o',s:r?1:0}]};
-    p.forEach(function(x){if(x.t===me){x.i=myItems(false);x.d=3}});
-    ready.forEach(function(x){if(x.t===me)x.i=myItems(true)});
-    return {u:now,w:'8–10 min',r:ready,p:p,n:p.reduce(function(a,x){return a+x.d},0),
-            f:['Masala Dosa is today’s favourite at Babai Tiffins','42 happy plates of dosa served so far today']};
+    var pos=Math.max(0,3-Math.floor(s/12)),ready=s>=48;
+    var items=[{n:'Ghee Karam Dosa',q:2,k:'d',s:ready||s>30?1:0},{n:'Masala Dosa',q:1,k:'d',s:ready?1:0},
+      {n:'Ghee Idli',q:2,k:'o',s:1},{n:'Filter Coffee',q:2,k:'o',s:ready?1:0}];
+    meta={u:now,w:'8\u201310 min',n:14,f:['Masala Dosa is today\u2019s favourite at Babai Tiffins','42 happy plates of dosa served so far today']};
+    mine=ready?{s:'r',a:demoT0+48000,d:3,i:items,l:me}:{s:'p',pos:pos,m:Math.max(1,Math.round((48-s)/60*7)),o:0,d:3,c:now-6*60000,i:items,l:me};
+    data=true;
   }
 
   // ---- start ----------------------------------------------------------------------------------
+  if(NOQR){
+    $('scan').hidden=false;$('entry').hidden=true;$('tileWait').hidden=true;$('tileTawa').hidden=true;
+    return;
+  }
   if(DEMO){$('demoNote').hidden=false;if(!token)token='42'}
   showEntry();
-  poll(); // the board is live even before a token is typed
+  poll(); // dosa wait and facts are live even before a token is typed
 })();
 </script>
 </body>

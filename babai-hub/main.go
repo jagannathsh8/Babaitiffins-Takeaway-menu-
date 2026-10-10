@@ -1,14 +1,13 @@
-// Babai Hub: a small program for a shop PC.
+// Babai Hub: a small program for any PC on the shop network.
 //
-// The kitchen TV (Petpooja KDS with Dosa Live) sends its live data here over the shop Wi-Fi:
-// the dine-in dosa token status and the open KOTs. The hub
-//   - puts the token status online (Firebase Realtime Database) for the customers'
-//     "Track your dosa" page, opened from a printed QR code,
-//   - keeps a copy of the open KOTs online and a day-by-day archive of finished KOTs
-//     (online and in local files on this PC) for later features such as reports and indent,
-//   - stays inside Firebase's free plan (small, throttled writes; old days are pruned).
+// It reads the live kitchen orders from the Petpooja billing station the same way the Petpooja
+// KDS app on the TV does (read-only), works out the dine-in dosa tokens exactly like the Order
+// Ready TV screen, and puts them in a free Firebase Realtime Database for the customers'
+// "Track your dosa" page, opened from a printed QR code. It also keeps the open KOTs, the item
+// on/off list and a day-by-day archive of finished KOTs (online and on this PC) for later
+// features, staying inside Firebase's free plan.
 //
-// The hub never talks to Petpooja. Its page is at http://localhost:8790 on this PC.
+// Its page is at http://localhost:8790 on this PC.
 package main
 
 import (
@@ -27,17 +26,19 @@ import (
 )
 
 const (
-	version     = "1.0"
+	version     = "2.0"
 	defaultPort = 8790
-	defaultPage = "https://jagannathsh8.github.io/Babaitiffins-Takeaway-menu-/dosa/"
+	defaultPage = "https://babaidosa.netlify.app/"
 )
 
 // Config is saved in config.json in the data folder.
 type Config struct {
-	DB     string `json:"db"`     // https://xxx.firebasedatabase.app
-	Secret string `json:"secret"` // Firebase database secret
-	Page   string `json:"page"`   // customer page address
-	Port   int    `json:"port"`
+	Server       string `json:"server"`       // Petpooja billing station IP (port 3000 by default)
+	AutoClearMin int    `json:"autoClearMin"` // ready tokens leave after this many minutes (TV default 10)
+	DB           string `json:"db"`           // https://xxx.firebasedatabase.app
+	Secret       string `json:"secret"`       // Firebase database secret
+	Page         string `json:"page"`         // customer page address
+	Port         int    `json:"port"`
 }
 
 var (
@@ -67,18 +68,19 @@ func main() {
 	log.Printf("Babai Hub %s listening on :%d, data in %s", version, port, dataDir)
 
 	go cloudLoop()
+	go petpoojaLoop()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/ingest", handleIngest)
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "babai-hub "+version) })
 	mux.HandleFunc("/", localOnly(handleHome))
 	mux.HandleFunc("/status.json", localOnly(handleStatus))
 	mux.HandleFunc("/settings", localOnly(handleSettings))
 	mux.HandleFunc("/test", localOnly(handleTest))
+	mux.HandleFunc("/petpooja", localOnly(handlePetpooja))
 	mux.HandleFunc("/autostart", localOnly(handleAutostart))
 	mux.HandleFunc("/poster", localOnly(handlePoster))
 
-	if !configured() {
+	if !configured() || getConfig().Server == "" {
 		go func() {
 			time.Sleep(800 * time.Millisecond)
 			openBrowser(fmt.Sprintf("http://localhost:%d/", port))
@@ -97,8 +99,11 @@ func loadConfig() {
 	if err == nil {
 		_ = json.Unmarshal(b, &cfg)
 	}
-	if cfg.Page == "" {
+	if cfg.Page == "" || strings.Contains(cfg.Page, "github.io") {
 		cfg.Page = defaultPage
+	}
+	if cfg.AutoClearMin <= 0 {
+		cfg.AutoClearMin = defaultClrM
 	}
 }
 
@@ -116,10 +121,13 @@ func getConfig() Config {
 	return cfg
 }
 
+// configured: the cloud part is set up.
 func configured() bool {
 	c := getConfig()
 	return c.DB != "" && c.Secret != ""
 }
+
+func cloudConfigured() bool { return configured() }
 
 // normaliseDB turns "babai-x-default-rtdb.asia-southeast1.firebasedatabase.app/" into
 // "https://babai-x-default-rtdb.asia-southeast1.firebasedatabase.app". Only Firebase hosts.
@@ -188,31 +196,4 @@ func localOnly(h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
-}
-
-// fromShop: the TV must be on the shop network (private address).
-func fromShop(r *http.Request) bool {
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	ip := net.ParseIP(host)
-	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
-}
-
-// lanAddresses lists this PC's shop-network addresses (to type into the TV).
-func lanAddresses() []string {
-	var out []string
-	ifaces, _ := net.Interfaces()
-	for _, ifc := range ifaces {
-		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, _ := ifc.Addrs()
-		for _, a := range addrs {
-			if ipn, ok := a.(*net.IPNet); ok {
-				if ip4 := ipn.IP.To4(); ip4 != nil && ip4.IsPrivate() {
-					out = append(out, ip4.String())
-				}
-			}
-		}
-	}
-	return out
 }

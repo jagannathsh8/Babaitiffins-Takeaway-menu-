@@ -1,0 +1,63 @@
+# Babai Hub – setup steps
+
+About 30 minutes, once. You need: any Windows 10/11 PC on the shop Wi-Fi/network that stays on
+during business hours (the Bridge Print PC is fine), the IP address of the main Petpooja billing PC,
+and a Google account.
+
+## 1. Customer page (Netlify)
+
+1. Put the new `index.html` in a folder (for example `babaidosa`).
+2. Netlify → your **babaidosa** site → **Deploys** → drag the folder into the box at the bottom.
+3. Open https://babaidosa.netlify.app on a phone. It should say
+   "Scan the QR code at Babai Tiffins to know your dosa status".
+
+## 2. Firebase (free cloud database)
+
+1. Go to https://console.firebase.google.com → **Create a project** → name `babai-dosa` →
+   Google Analytics not needed → Create.
+2. Left menu **Build → Realtime Database → Create database** → location **Singapore
+   (asia-southeast1)** → **Start in locked mode** → Enable.
+3. Open the **Rules** tab, replace everything with the line below, and click **Publish**:
+
+   ```
+   {"rules":{".read":false,".write":false,"babai":{"meta":{".read":true},"t":{"$tok":{".read":true}}}}}
+   ```
+
+4. Go back to the **Data** tab and copy the address at the top
+   (like `https://babai-dosa-default-rtdb.asia-southeast1.firebasedatabase.app`).
+5. ⚙ (next to Project Overview) → **Project settings → Service accounts → Database secrets** →
+   **Show** → copy the secret. Keep it private.
+
+## 3. Babai Hub on the PC
+
+1. Copy `babai-hub.exe` to the PC, for example into `C:\BabaiHub\`.
+2. Double-click it. If Windows says "Windows protected your PC": **More info → Run anyway**.
+   If Windows asks about the firewall, click **Allow**.
+3. The hub page opens in the browser (later: http://localhost:8790 on that PC).
+4. **Step 1 – Petpooja billing station:** type the billing PC's IP (the same one typed on the KDS
+   TV, for example `192.168.1.5`) → **Save & test**. You should see
+   "Connected to Petpooja: N KOTs in the kitchen right now". The KOTs appear under
+   **What Petpooja sent** at the bottom.
+5. **Step 2 – Firebase:** paste the database address and the secret. The customer page address is
+   already `https://babaidosa.netlify.app/`. → **Save & test** → "Saved and connected to Firebase".
+6. Tick **Start Babai Hub when Windows starts**.
+7. The top of the page should now say **Live: Petpooja → cloud**.
+
+## 4. QR poster
+
+1. On the hub page, Step 3 → **Open printable poster** → Ctrl+P → print (A4).
+2. Stick it at the counter and on tables.
+3. Test with your phone: scan, type a dine-in token that has a dosa → you see it preparing; when
+   the kitchen marks the dosa ready, the phone pops up, chimes, speaks and vibrates.
+
+## If something isn't right
+
+- **"Can't reach the Petpooja billing PC"**: check the IP, that Petpooja is open on the billing PC,
+  and that the hub PC is on the same network.
+- **"Petpooja refused the request"** or no KOTs although the TV shows some: open
+  **What Petpooja sent → Raw answer** and send a photo.
+- **"Firebase refused the database secret"**: copy the secret again (Step 2.5).
+- **Customer sees "Waiting for the kitchen"**: the token has no dine-in dosa yet, or the order
+  hasn't reached the kitchen. Only dine-in orders with a dosa are tracked (same as the TV).
+- The hub only needs to run on **one** PC. If that PC is off, the TVs work as usual; the phone page
+  shows "updates paused".

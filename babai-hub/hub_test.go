@@ -1,8 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +14,8 @@ import (
 	"time"
 )
 
-// fakeFirebase records every request the hub makes.
+// ---- fakes ----------------------------------------------------------------------------------
+
 type fakeFirebase struct {
 	mu   sync.Mutex
 	reqs []string
@@ -53,170 +54,284 @@ func (f *fakeFirebase) count(prefix string) int {
 	return n
 }
 
-func setup(t *testing.T) (*fakeFirebase, func()) {
-	fake := &fakeFirebase{data: map[string]string{}}
-	srv := httptest.NewServer(fake)
+func (f *fakeFirebase) get(path string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.data[path]
+}
+
+// fakePetpooja answers like the billing station: default data, then KOT rows.
+type fakePetpooja struct {
+	mu       sync.Mutex
+	rows     string
+	bodies   map[string]map[string]any
+	headers  http.Header
+	syncAsks int
+}
+
+func (p *fakePetpooja) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var body map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.bodies[r.URL.Path] = body
+	p.headers = r.Header.Clone()
+	switch r.URL.Path {
+	case "/petpooja_server/kiosk_get_default_data":
+		p.syncAsks++
+		io.WriteString(w, `{"error":"","message":"","data":{"sync_code":"SYNC123","restaurant_id":"77"}}`)
+	case "/petpooja_server/get_kot_data_for_kitchen_view":
+		if body["sync_code"] != "SYNC123" {
+			io.WriteString(w, `{"error":"1","message":"Invalid sync code","data":[]}`)
+			return
+		}
+		io.WriteString(w, `{"error":"","message":"","data":[`+p.rows+`]}`)
+	case "/petpooja_server/touch_items":
+		io.WriteString(w, `{"items":[{"id":"11","name":"Masala Dosa","category":"Dosa","in_stock":1},{"id":"12","name":"Pesarattu","category":"Dosa","in_stock":0}]}`)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (p *fakePetpooja) set(rows ...string) {
+	p.mu.Lock()
+	p.rows = strings.Join(rows, ",")
+	p.mu.Unlock()
+}
+
+func row(id, token int64, ot int, kotSt string, created time.Time, name, cat string, qty float64, st int) string {
+	return fmt.Sprintf(`{"id":%d,"kot_unique_id":%d,"table_no":"","order_type":%d,"kot_status":"%s","created":"%s","p_o_id":"","o_u_id":"","name":%q,"category":%q,"quantity":%g,"status":%d,"customer_name":"Ravi","customer_phone":"9999999999"}`,
+		id, token, ot, kotSt, created.Format("2006-01-02 15:04:05"), name, cat, qty, st)
+}
+
+func setup(t *testing.T) (*fakeFirebase, *fakePetpooja, func()) {
+	fb := &fakeFirebase{data: map[string]string{}}
+	fsrv := httptest.NewServer(fb)
+	pp := &fakePetpooja{bodies: map[string]map[string]any{}}
+	psrv := httptest.NewServer(pp)
 	dataDir = t.TempDir()
 	_ = os.MkdirAll(filepath.Join(dataDir, "days"), 0o755)
-	cfg = Config{DB: srv.URL, Secret: "s3cret", Page: defaultPage}
+	cfg = Config{Server: strings.TrimPrefix(psrv.URL, "http://"), DB: fsrv.URL, Secret: "s3cret", Page: defaultPage, AutoClearMin: 10}
 	mu.Lock()
-	dosaRaw, liveRaw, lastIngest = nil, nil, time.Time{}
+	tokensRaw, metaRaw, liveRaw, lastBoard = nil, nil, nil, time.Time{}
 	open = map[int64]*Rec{}
 	pending = map[string]map[string]*Rec{}
+	board, stats, statsLoad = newTokenBoard(), newDosaStats(), true
 	mu.Unlock()
-	sentDosa, sentDosaAt, sentLive, sentLiveAt, archAt = nil, time.Time{}, nil, time.Time{}, time.Time{}
-	lastOKAt, lastErrAt, lastErr = time.Time{}, time.Time{}, ""
-	prunedDay = time.Now().Format("2006-01-02") // no prune during tests
-	return fake, srv.Close
-}
-
-func ingest(t *testing.T, body string) map[string]any {
-	req := httptest.NewRequest(http.MethodPost, "/ingest", strings.NewReader(body))
-	req.RemoteAddr = "192.168.1.20:5555"
-	w := httptest.NewRecorder()
-	handleIngest(w, req)
-	if w.Code != 200 {
-		t.Fatalf("ingest: HTTP %d %s", w.Code, w.Body.String())
-	}
-	var out map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &out)
-	return out
-}
-
-func tvBody(tokensReady string, kots string) string {
-	return `{"v":1,"dev":"Test TV","dosa":{"v":1,"w":"8-10 min","r":[` + tokensReady + `],"p":[{"t":"42","m":6,"o":0}]},"kots":` + kots + `}`
-}
-
-const kot1 = `{"id":101,"tk":42,"tb":"","ot":1,"ch":"","po":"","st":"1","c":1760000000000,"rd":0,"i":[{"n":"Masala Dosa","c":"Dosa","q":2,"s":1}]}`
-const kot1Ready = `{"id":101,"tk":42,"tb":"","ot":1,"ch":"","po":"","st":"9","c":1760000000000,"rd":1,"i":[{"n":"Masala Dosa","c":"Dosa","q":2,"s":9}]}`
-const kot2 = `{"id":202,"tk":7,"tb":"","ot":3,"ch":"Swiggy","po":"250413427652902","st":"1","c":1760000005000,"rd":0,"i":[{"n":"Idli","c":"Tiffin","q":1,"s":1}]}`
-
-func TestFlow(t *testing.T) {
-	fake, stop := setup(t)
-	defer stop()
-	t0 := time.Now()
-
-	// first data from the TV: no QR yet (cloud not proven)
-	out := ingest(t, tvBody("", "["+kot1+","+kot2+"]"))
-	if out["qr"] != "" {
-		t.Fatalf("QR before cloud OK: %v", out["qr"])
-	}
-	cloudStep(t0)
-	if fake.count("PUT /babai/dosa.json") != 1 || fake.count("PUT /babai/live.json") != 1 {
-		t.Fatalf("first push missing: %v", fake.reqs)
-	}
-	d := fake.data["/babai/dosa.json"]
-	if !strings.HasPrefix(d, `{"u":{".sv":"timestamp"},"v":1`) {
-		t.Fatalf("dosa body: %s", d)
-	}
-	for _, r := range fake.reqs {
-		if !strings.Contains(r, "auth=s3cret") || !strings.Contains(r, "print=silent") {
-			t.Fatalf("auth/silent missing: %s", r)
-		}
-	}
-	// now the TV gets the QR address
-	out = ingest(t, tvBody("", "["+kot1+","+kot2+"]"))
-	if !strings.HasPrefix(out["qr"].(string), defaultPage+"?d=") {
-		t.Fatalf("QR: %v", out["qr"])
-	}
-
-	// unchanged data: nothing sent for a while (free plan)
-	for s := 1; s <= 40; s++ {
-		cloudStep(t0.Add(time.Duration(s) * time.Second))
-	}
-	if n := fake.count("PUT /babai/dosa.json"); n != 1 {
-		t.Fatalf("unchanged dosa re-sent %d times", n)
-	}
-	// changed: sent, but not more than once per 5 s
-	ingest(t, tvBody(`{"t":"42","a":1}`, "["+kot1Ready+","+kot2+"]"))
-	for s := 41; s <= 44; s++ {
-		cloudStep(t0.Add(time.Duration(s) * time.Second))
-	}
-	if n := fake.count("PUT /babai/dosa.json"); n != 2 {
-		t.Fatalf("changed dosa: %d sends", n)
-	}
-	// heartbeat after a minute even when unchanged (the TV is still sending)
-	ingest(t, tvBody(`{"t":"42","a":1}`, "["+kot1Ready+","+kot2+"]"))
-	lastIngest = t0.Add(101 * time.Second)
-	cloudStep(t0.Add(102 * time.Second))
-	if n := fake.count("PUT /babai/dosa.json"); n != 3 {
-		t.Fatalf("heartbeat: %d sends", n)
-	}
-
-	// KOT 101 leaves the board; archived after a minute of absence, once
-	base := t0.Add(110 * time.Second)
-	mu.Lock()
-	track([]Kot{}, base) // (via the same path as an ingest)
-	mu.Unlock()
-	ingest(t, tvBody("", "["+kot2+"]"))
-	mu.Lock()
-	track(mustKots(t, "["+kot2+"]"), base.Add(61*time.Second))
-	n := len(pending)
-	mu.Unlock()
-	if n != 1 {
-		t.Fatalf("finished KOT not queued: %d", n)
+	resetPetpooja()
+	for _, s := range []*stream{stTokens, stMeta, stLive, stStock} {
+		s.sent, s.at = nil, time.Time{}
 	}
 	archAt = time.Time{}
-	lastIngest = base.Add(61 * time.Second)
-	cloudStep(base.Add(62 * time.Second))
-	var day string
-	for p := range fake.data {
-		if strings.HasPrefix(p, "/babai/days/") {
-			day = p
+	lastOKAt, lastErrAt, lastErr = time.Time{}, time.Time{}, ""
+	prunedDay = time.Now().Format("2006-01-02")
+	return fb, pp, func() { fsrv.Close(); psrv.Close() }
+}
+
+func phoneToken(t *testing.T, fb *fakeFirebase, key string) (PhoneToken, bool) {
+	var m map[string]PhoneToken
+	raw := fb.get("/babai/t.json")
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("tokens JSON: %v %s", err, raw)
+	}
+	tk, ok := m[key]
+	return tk, ok
+}
+
+// ---- tests ----------------------------------------------------------------------------------
+
+func TestPetpoojaToPhone(t *testing.T) {
+	fb, pp, stop := setup(t)
+	defer stop()
+	now := time.Now()
+	t0 := now.Add(-12 * time.Minute)
+	// token 41: dine-in, 2 Ghee Karam Dosa + 2 Idli (idli ready); token 42 dine-in dosa; token 50 delivery
+	pp.set(
+		row(1001, 41, 3, "1", t0, "Ghee Karam Dosa", "Dosa", 2, 1),
+		row(1001, 41, 3, "1", t0, "Ghee Idli", "Idli", 2, 9),
+		row(1002, 42, 3, "1", t0.Add(time.Minute), "Masala Dosa", "DOSA Items", 1, 1),
+		row(1003, 50, 1, "1", t0, "Masala Dosa", "Dosa", 1, 1),
+	)
+	if err := pollOnce(cfg.Server); err != nil {
+		t.Fatal(err)
+	}
+	// the request looks like the KDS app's
+	pp.mu.Lock()
+	kb := pp.bodies["/petpooja_server/get_kot_data_for_kitchen_view"]
+	db := pp.bodies["/petpooja_server/kiosk_get_default_data"]
+	hdr := pp.headers.Get("x-app-client")
+	pp.mu.Unlock()
+	if kb["clientIdentifier"] != "android_kds" || kb["order_type"] != "1,2,3" || kb["category_ids"] != "-1" || kb["intra_server_version"] != float64(7) {
+		t.Fatalf("KOT request: %v", kb)
+	}
+	if obj, _ := db["kds_details_obj"].(map[string]any); obj["ip"] != "127.0.0.1" {
+		t.Fatalf("default data request: %v", db)
+	}
+	if hdr != "android-kds" {
+		t.Fatalf("header: %q", hdr)
+	}
+	cloudStep(now)
+	tk, ok := phoneToken(t, fb, "41")
+	if !ok || tk.S != "p" || tk.Pos != 0 || tk.D != 2 {
+		t.Fatalf("token 41: %+v %v", tk, ok)
+	}
+	if len(tk.I) != 2 || tk.I[0].K != "d" || tk.I[0].Q != 2 || tk.I[1].K != "o" || tk.I[1].S != 1 {
+		t.Fatalf("token 41 items: %+v", tk.I)
+	}
+	if t42, _ := phoneToken(t, fb, "42"); t42.Pos != 1 {
+		t.Fatalf("token 42 place: %+v", t42)
+	}
+	if _, ok := phoneToken(t, fb, "50"); ok {
+		t.Fatal("delivery order shown as a dine-in token")
+	}
+	if strings.Contains(fb.get("/babai/live.json"), "9999999999") || strings.Contains(fb.get("/babai/live.json"), "Ravi") {
+		t.Fatal("customer details sent to the cloud")
+	}
+	if !strings.HasPrefix(fb.get("/babai/meta.json"), `{"u":{".sv":"timestamp"},`) {
+		t.Fatalf("meta: %s", fb.get("/babai/meta.json"))
+	}
+	if !strings.Contains(fb.get("/babai/stock.json"), `"12":{"c":"Dosa","n":"Pesarattu","on":0}`) {
+		t.Fatalf("stock: %s", fb.get("/babai/stock.json"))
+	}
+
+	// 42's dosa comes out first: 41 is "overtaken"
+	pp.set(
+		row(1001, 41, 3, "1", t0, "Ghee Karam Dosa", "Dosa", 2, 1),
+		row(1001, 41, 3, "1", t0, "Ghee Idli", "Idli", 2, 9),
+		row(1002, 42, 3, "1", t0.Add(time.Minute), "Masala Dosa", "DOSA Items", 1, 9),
+	)
+	if err := pollOnce(cfg.Server); err != nil {
+		t.Fatal(err)
+	}
+	cloudStep(now.Add(6 * time.Second))
+	if t42, _ := phoneToken(t, fb, "42"); t42.S != "r" || t42.A == 0 {
+		t.Fatalf("42 not ready: %+v", t42)
+	}
+	if t41, _ := phoneToken(t, fb, "41"); t41.O != 1 {
+		t.Fatalf("41 not overtaken: %+v", t41)
+	}
+	// unchanged: not re-sent within the gap
+	n := fb.count("PUT /babai/t.json")
+	cloudStep(now.Add(8 * time.Second))
+	if fb.count("PUT /babai/t.json") != n {
+		t.Fatal("unchanged tokens re-sent")
+	}
+
+	// both KOTs dispatched / gone: 41 drops after the board blip time, archive after a minute
+	pp.set()
+	_ = pollOnce(cfg.Server)
+	mu.Lock()
+	board.update(nil, now.Add(20*time.Second).UnixMilli())
+	track(nil, now.Add(80*time.Second))
+	q := len(pending)
+	mu.Unlock()
+	if q != 1 {
+		t.Fatalf("finished KOTs not queued (%d days)", q)
+	}
+	archAt = time.Time{}
+	mu.Lock()
+	lastBoard = now.Add(80 * time.Second)
+	mu.Unlock()
+	cloudStep(now.Add(81 * time.Second))
+	var arch string
+	for _, r := range fb.reqs {
+		if strings.HasPrefix(r, "PATCH /babai/days/") {
+			arch = r
 		}
 	}
-	if day == "" || !strings.Contains(fake.data[day], `"101":{"id":101,"tk":42`) {
-		t.Fatalf("archive not uploaded: %v / %s", fake.reqs, fake.data[day])
-	}
-	if !strings.Contains(fake.data[day], `"rdy":`) || !strings.Contains(fake.data[day], `"r":`) {
-		t.Fatalf("ready times missing: %s", fake.data[day])
+	if arch == "" {
+		t.Fatalf("archive not uploaded: %v", fb.reqs)
 	}
 	files, _ := filepath.Glob(filepath.Join(dataDir, "days", "*.jsonl"))
 	if len(files) != 1 {
-		t.Fatalf("local archive file missing")
+		t.Fatal("local archive missing")
 	}
-	mu.Lock()
-	left := len(pending)
-	mu.Unlock()
-	if left != 0 {
-		t.Fatalf("pending not cleared")
+	b, _ := os.ReadFile(files[0])
+	if strings.Contains(string(b), "Ravi") || !strings.Contains(string(b), `"rdy":`) {
+		t.Fatalf("archive content: %s", b)
 	}
+}
 
-	// TV stops sending: hub stops re-sending old data
-	before := fake.count("PUT")
-	for s := 0; s < 300; s += 5 {
-		cloudStep(base.Add(time.Duration(200+s) * time.Second))
+func TestSyncCodeRenewed(t *testing.T) {
+	_, pp, stop := setup(t)
+	defer stop()
+	pp.set(row(1, 7, 3, "1", time.Now(), "Masala Dosa", "Dosa", 1, 1))
+	if err := pollOnce(cfg.Server); err != nil {
+		t.Fatal(err)
 	}
-	if fake.count("PUT") != before {
-		t.Fatalf("stale data re-sent")
+	ppMu.Lock()
+	syncCode = "OLD"
+	ppMu.Unlock()
+	if err := pollOnce(cfg.Server); err == nil || !strings.Contains(err.Error(), "Invalid sync code") {
+		t.Fatalf("expected refusal, got %v", err)
+	}
+	if err := pollOnce(cfg.Server); err != nil {
+		t.Fatalf("not recovered: %v", err)
+	}
+	if pp.syncAsks != 2 {
+		t.Fatalf("sync code asked %d times", pp.syncAsks)
+	}
+}
+
+func TestAutoClearAndStale(t *testing.T) {
+	b := newTokenBoard()
+	now := time.Now().UnixMilli()
+	b.update([]tbKot{{id: 1, label: "5", created: now - 60_000, ready: true, dosas: 1}}, now)
+	if len(b.ready) != 1 {
+		t.Fatal("ready token missing")
+	}
+	b.update([]tbKot{{id: 1, label: "5", created: now - 60_000, ready: true, dosas: 1}}, now+11*60_000)
+	if len(b.ready) != 0 {
+		t.Fatal("not auto-cleared after 10 min")
+	}
+	b2 := newTokenBoard()
+	b2.update([]tbKot{{id: 2, label: "6", created: now - 40*60_000, ready: true}}, now)
+	if len(b2.ready) != 0 {
+		t.Fatal("old leftover shown")
+	}
+}
+
+func TestStatsAndLabels(t *testing.T) {
+	if friendlyRange(9.4) != "8–11 min" || friendlyRange(3) != "Under 5 min" {
+		t.Fatalf("range: %s", friendlyRange(9.4))
+	}
+	if tokenKey("042") != "42" || tokenKey("T4") != "T4" || tokenKey("#123") != "X123" {
+		t.Fatal("token keys")
+	}
+	s := newDosaStats()
+	now := time.Now()
+	c := now.Add(-9 * time.Minute).UnixMilli()
+	s.update([]dsEntry{{id: 1, created: c, names: []string{"Masala Dosa"}, qty: []float64{2}}}, now, false)
+	s.update([]dsEntry{{id: 1, created: c, ready: true, names: []string{"Masala Dosa"}, qty: []float64{2}}}, now.Add(time.Minute), false)
+	r := s.compute(now.Add(time.Minute))
+	if r.avgPrep < 9.9 || r.avgPrep > 10.1 || r.etaLabel == "" || len(r.facts) == 0 {
+		t.Fatalf("stats: %+v", r)
+	}
+	if !strings.Contains(strings.Join(r.facts, "|"), "Masala Dosa is today's favourite") {
+		t.Fatalf("facts: %v", r.facts)
+	}
+	// survives a restart
+	p := filepath.Join(t.TempDir(), "stats.json")
+	s.save(p)
+	s2 := newDosaStats()
+	s2.load(p, now.Add(time.Minute))
+	if s2.Completed != 1 || s2.Kinds["Masala Dosa"] != 2 {
+		t.Fatalf("reload: %+v", s2.DayStats)
 	}
 }
 
 func TestCloudErrorHidesQR(t *testing.T) {
-	fake, stop := setup(t)
+	fb, pp, stop := setup(t)
 	defer stop()
-	fake.code = 401
-	ingest(t, tvBody("", "[]"))
+	fb.code = 401
+	pp.set(row(1, 7, 3, "1", time.Now(), "Masala Dosa", "Dosa", 1, 1))
+	_ = pollOnce(cfg.Server)
 	cloudStep(time.Now())
 	if cloudOK() {
 		t.Fatal("cloud OK after 401")
 	}
-	out := ingest(t, tvBody("", "[]"))
-	if out["qr"] != "" {
-		t.Fatalf("QR shown with a broken cloud")
-	}
 	if !strings.Contains(cloudStatus()["cloudErr"].(string), "secret") {
 		t.Fatalf("error text: %v", cloudStatus()["cloudErr"])
-	}
-}
-
-func TestIngestOnlyFromShop(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/ingest", bytes.NewBufferString(`{}`))
-	req.RemoteAddr = "8.8.8.8:1234"
-	w := httptest.NewRecorder()
-	handleIngest(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("public address allowed: %d", w.Code)
 	}
 }
 
@@ -245,15 +360,7 @@ func TestNormalise(t *testing.T) {
 	if _, err := normaliseDB("evil.example.com"); err == nil {
 		t.Fatal("non-Firebase host accepted")
 	}
-	if string(withServerTime([]byte(`{}`))) != `{"u":{".sv":"timestamp"}}` {
-		t.Fatal("empty object")
+	if serverBase("192.168.1.5") != "http://192.168.1.5:3000/" || serverBase("http://192.168.1.5:8080/") != "http://192.168.1.5:8080/" {
+		t.Fatalf("server base: %s", serverBase("192.168.1.5"))
 	}
-}
-
-func mustKots(t *testing.T, s string) []Kot {
-	var k []Kot
-	if err := json.Unmarshal([]byte(s), &k); err != nil {
-		t.Fatal(err)
-	}
-	return k
 }

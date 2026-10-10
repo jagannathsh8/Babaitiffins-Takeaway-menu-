@@ -12,43 +12,81 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Firebase Realtime Database layout (all under /babai):
 //
-//	dosa                 token status for the customers' page (public read)        ~1-2 KB
-//	live                 open KOTs on the kitchen board (private)                  ~10-20 KB
-//	days/<date>/<kotId>  finished KOTs, one small record each (private)            ~0.4 KB each
-//	hub                  hub heartbeat / version (private)
+//	t/<token>            one customer's token: status, place, minutes, items (public: that token only)
+//	meta                 dosa wait, dosas on the tawa, live facts, time of the last update (public)
+//	live                 open KOTs on the kitchen board (private)
+//	stock                item on/off list (private)
+//	days/<date>/<kotId>  finished KOTs, one small record each (private)
+//	hub                  hub version and PC name (private)
 //
-// Free plan (Spark): 1 GB stored, 10 GB downloaded per month. The hub keeps far below it:
-// token status at most every 5 s and only when it changed, open KOTs at most every 15 s,
-// finished KOTs once each, days older than KEEP_DAYS deleted.
+// Free plan (Spark): 1 GB stored, 10 GB downloaded per month. Phones read only their own token
+// (~0.5 KB) and the small meta; the hub writes only when something changed, at most every few
+// seconds, with print=silent, and deletes online days older than keepDays.
 const (
-	dosaGap       = 5 * time.Second
-	dosaHeartbeat = time.Minute
-	liveGap       = 15 * time.Second
-	liveHeartbeat = 5 * time.Minute
-	archiveEvery  = time.Minute
-	freshFor      = 90 * time.Second // TV data older than this is not re-sent
-	keepDays      = 400
+	tokensGap    = 5 * time.Second
+	tokensHB     = 10 * time.Minute
+	metaGap      = 15 * time.Second
+	metaHB       = time.Minute // phones use meta.u to see that the hub is live
+	liveGap      = 15 * time.Second
+	liveHB       = 5 * time.Minute
+	stockGap     = 5 * time.Minute
+	stockHB      = 6 * time.Hour
+	archiveEvery = time.Minute
+	freshFor     = 90 * time.Second // Petpooja data older than this is not re-sent
+	keepDays     = 400
 )
+
+// stream is one path that is re-sent when its data changed (not more often than gap) and
+// at least every heartbeat.
+type stream struct {
+	path           string
+	gap, heartbeat time.Duration
+	stamp          bool // add the server time "u"
+	sent           []byte
+	at             time.Time
+}
+
+func (s *stream) push(now time.Time, data []byte) {
+	if data == nil {
+		return
+	}
+	changed := !bytes.Equal(data, s.sent)
+	if !((changed && now.Sub(s.at) >= s.gap) || now.Sub(s.at) >= s.heartbeat) {
+		return
+	}
+	body := data
+	if s.stamp {
+		body = withServerTime(data)
+	}
+	err := fb(http.MethodPut, s.path, "", body)
+	noteResult(err)
+	s.at = now
+	if err == nil {
+		s.sent = data
+	}
+}
 
 var (
 	httpc = &http.Client{Timeout: 20 * time.Second}
 
-	cmu        sync.Mutex
-	lastOKAt   time.Time
-	lastErr    string
-	lastErrAt  time.Time
-	sentDosa   []byte
-	sentDosaAt time.Time
-	sentLive   []byte
-	sentLiveAt time.Time
-	archAt     time.Time
-	prunedDay  string
+	cmu       sync.Mutex
+	lastOKAt  time.Time
+	lastErr   string
+	lastErrAt time.Time
+	archAt    time.Time
+	prunedDay string
+
+	stTokens = &stream{path: "/babai/t", gap: tokensGap, heartbeat: tokensHB}
+	stMeta   = &stream{path: "/babai/meta", gap: metaGap, heartbeat: metaHB, stamp: true}
+	stLive   = &stream{path: "/babai/live", gap: liveGap, heartbeat: liveHB, stamp: true}
+	stStock  = &stream{path: "/babai/stock", gap: stockGap, heartbeat: stockHB, stamp: true}
 )
 
 func cloudOK() bool {
@@ -101,35 +139,16 @@ func cloudStep(now time.Time) {
 		return
 	}
 	mu.Lock()
-	fresh := !lastIngest.IsZero() && now.Sub(lastIngest) < freshFor
-	dosa := dosaRaw
-	live := liveRaw
-	dev := lastDev
+	fresh := !lastBoard.IsZero() && now.Sub(lastBoard) < freshFor
+	tokens, meta, live := tokensRaw, metaRaw, liveRaw
 	mu.Unlock()
-
-	if fresh && dosa != nil {
-		changed := !bytes.Equal(dosa, sentDosa)
-		if (changed && now.Sub(sentDosaAt) >= dosaGap) || now.Sub(sentDosaAt) >= dosaHeartbeat {
-			err := fb(http.MethodPut, "/babai/dosa", "", withServerTime(dosa))
-			noteResult(err)
-			sentDosaAt = now
-			if err == nil {
-				sentDosa = dosa
-			}
+	if fresh {
+		stTokens.push(now, tokens)
+		stMeta.push(now, meta)
+		if live != nil {
+			stLive.push(now, []byte(`{"kots":`+string(live)+`}`))
 		}
-	}
-	if fresh && live != nil {
-		changed := !bytes.Equal(live, sentLive)
-		if (changed && now.Sub(sentLiveAt) >= liveGap) || now.Sub(sentLiveAt) >= liveHeartbeat {
-			body, _ := json.Marshal(map[string]any{"u": map[string]string{".sv": "timestamp"}, "dev": dev,
-				"kots": json.RawMessage(live)})
-			err := fb(http.MethodPut, "/babai/live", "", body)
-			noteResult(err)
-			sentLiveAt = now
-			if err == nil {
-				sentLive = live
-			}
-		}
+		stStock.push(now, stockJSON())
 	}
 	if now.Sub(archAt) >= archiveEvery {
 		archAt = now
@@ -306,4 +325,32 @@ func saveUsageMaybe(now time.Time) {
 	b, _ := json.Marshal(usage)
 	um.Unlock()
 	_ = writeFileAtomic(filepath.Join(dataDir, "usage.json"), b)
+}
+
+// stockJSON: {"items":{"<id>":{"n":name,"c":category,"on":1}}} or nil before the first read.
+func stockJSON() []byte {
+	ppMu.Lock()
+	defer ppMu.Unlock()
+	if ppStock == nil {
+		return nil
+	}
+	m := map[string]map[string]any{}
+	for _, it := range ppStock {
+		id := strings.Map(func(r rune) rune {
+			if strings.ContainsRune(".#$[]/", r) {
+				return '_'
+			}
+			return r
+		}, it.ID)
+		if id == "" {
+			continue
+		}
+		on := 1
+		if it.InStock != nil && *it.InStock == 0 {
+			on = 0
+		}
+		m[id] = map[string]any{"n": it.Name, "c": it.Category, "on": on}
+	}
+	b, _ := json.Marshal(map[string]any{"items": m})
+	return b
 }

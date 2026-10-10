@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"html"
 	"io"
 	"net/http"
@@ -77,6 +78,38 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 	reply(w, true, "Saved and connected to Firebase.")
 }
 
+func handlePetpooja(w http.ResponseWriter, r *http.Request) {
+	if !fromOwnPage(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	var in struct{ Server string }
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&in); err != nil {
+		reply(w, false, "Couldn't read the form.")
+		return
+	}
+	c := getConfig()
+	c.Server = strings.TrimSpace(in.Server)
+	if err := saveConfig(c); err != nil {
+		reply(w, false, "Couldn't save: "+err.Error())
+		return
+	}
+	resetPetpooja()
+	if c.Server == "" {
+		reply(w, true, "Saved. Reading Petpooja is off.")
+		return
+	}
+	if err := pollOnce(c.Server); err != nil {
+		notePP(err)
+		reply(w, false, err.Error())
+		return
+	}
+	ppMu.Lock()
+	n, rows := len(ppKots), ppRows
+	ppMu.Unlock()
+	reply(w, true, fmt.Sprintf("Connected to Petpooja: %d KOTs in the kitchen right now (%d item lines).", n, rows))
+}
+
 func handleTest(w http.ResponseWriter, r *http.Request) {
 	if !fromOwnPage(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)
@@ -132,38 +165,40 @@ const homeHTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Babai Hub</title>
 <style>
-:root{--bg:#f7f3ee;--card:#fff;--ink:#271c14;--muted:#76675a;--line:#e7ddd1;--accent:#ff5200;--ok:#1f8a4c;--bad:#b3261e;--warnbg:#fff3e6;
+:root{--bg:#f7f3ee;--card:#fff;--ink:#271c14;--muted:#76675a;--line:#e7ddd1;--accent:#e08a00;--ok:#1f8a4c;--bad:#b3261e;--warnbg:#fff3e6;
 --f:"Segoe UI",system-ui,-apple-system,sans-serif;--mono:Consolas,"Cascadia Mono",ui-monospace,monospace}
-@media (prefers-color-scheme:dark){:root{--bg:#16110d;--card:#211913;--ink:#f4ebe2;--muted:#b5a393;--line:#3a2d23;--accent:#ff7a33;--ok:#48c97f;--bad:#ff8a80;--warnbg:#33230f;color-scheme:dark}}
+@media (prefers-color-scheme:dark){:root{--bg:#16110d;--card:#211913;--ink:#f4ebe2;--muted:#b5a393;--line:#3a2d23;--accent:#f5b21b;--ok:#48c97f;--bad:#ff8a80;--warnbg:#33230f;color-scheme:dark}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--f);padding-inline:16px;padding-block:20px 40px}
-.wrap{max-width:980px;margin:0 auto;display:grid;gap:16px}
+.wrap{max-width:1000px;margin:0 auto;display:grid;gap:16px}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-h1{margin:0;font-size:1.6rem;letter-spacing:.2px}h1 span{color:var(--accent)}
+h1{margin:0;font-size:1.6rem}h1 span{color:var(--accent)}
 h2{margin:0 0 8px;font-size:1.05rem}
 .pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:6px 14px;font-weight:600;background:var(--card);border:1px solid var(--line)}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
 .ok .dot{background:var(--ok)}.bad .dot{background:var(--bad)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px}
 section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;min-width:0}
 .step{font-size:.75rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
 label{display:block;font-weight:600;margin:10px 0 4px}
 input[type=text],input[type=password]{width:100%;font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
-button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:9px 16px;background:var(--accent);color:#fff;cursor:pointer}
+button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:9px 16px;background:var(--accent);color:#1b1203;cursor:pointer}
 button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
 button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
 .msg{margin-top:10px;font-weight:600}.msg.ok{color:var(--ok)}.msg.bad{color:var(--bad)}
 .hint{color:var(--muted);font-size:.9rem;margin:6px 0 0}
-code,pre{font-family:var(--mono);font-size:.85rem;word-break:break-all}
-pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto;margin:6px 0 0;white-space:pre-wrap;word-break:break-all}
-.big{font-size:1.6rem;font-weight:700;font-family:var(--mono);color:var(--accent)}
+code,pre{font-family:var(--mono);font-size:.82rem;word-break:break-all}
+pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;max-height:260px;margin:6px 0 0;white-space:pre-wrap}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
 .stat{background:var(--bg);border-radius:10px;padding:10px 12px}
 .stat b{display:block;font-size:1.4rem;font-variant-numeric:tabular-nums}.stat span{color:var(--muted);font-size:.85rem}
 #qrbox{background:#fff;padding:10px;border-radius:10px;display:inline-block;margin-top:8px}
-.warn{background:var(--warnbg);border-radius:10px;padding:10px 12px;margin-top:10px}
-ul{margin:6px 0 0;padding-left:1.2em}
+.tbl{overflow-x:auto;margin-top:8px}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 a{color:var(--accent)}
 </style></head><body><div class="wrap">
 <header><h1><span>Babai</span> Hub</h1><div class="pill" id="pill"><span class="dot"></span><span id="pillText">Starting…</span></div></header>
@@ -171,41 +206,38 @@ a{color:var(--accent)}
 <section><h2>Right now</h2><div class="stats">
 <div class="stat"><b id="sReady">–</b><span>dosa tokens ready</span></div>
 <div class="stat"><b id="sPrep">–</b><span>dosa tokens preparing</span></div>
-<div class="stat"><b id="sOpen">–</b><span>KOTs on the kitchen board</span></div>
+<div class="stat"><b id="sOpen">–</b><span>KOTs in the kitchen</span></div>
 <div class="stat"><b id="sDone">–</b><span>KOTs finished today (saved)</span></div>
-<div class="stat"><b id="sTv">–</b><span>last data from the TV</span></div>
+<div class="stat"><b id="sPP">–</b><span>last read from Petpooja</span></div>
 <div class="stat"><b id="sCloud">–</b><span>last cloud update</span></div>
-</div><p class="hint" id="cloudErr"></p></section>
+</div><p class="hint" id="problems"></p></section>
 
 <div class="grid">
-<section><div class="step">Step 1</div><h2>Firebase (free cloud database)</h2>
+<section><div class="step">Step 1</div><h2>Petpooja billing station</h2>
+<form id="fp" autocomplete="off">
+<label for="server">IP address of the main Petpooja billing PC</label>
+<input type="text" id="server" placeholder="192.168.1.5">
+<p class="hint">The same address you typed on the KDS TV. Port 3000 is used unless you add one (192.168.1.5:3000).</p>
+<div class="row"><button type="submit">Save &amp; test</button></div>
+<div class="msg" id="pmsg" role="status"></div></form>
+</section>
+
+<section><div class="step">Step 2</div><h2>Firebase (free cloud database)</h2>
 <form id="f" autocomplete="off">
 <label for="db">Database address</label><input type="text" id="db" placeholder="babai-dosa-default-rtdb.asia-southeast1.firebasedatabase.app">
 <label for="secret">Database secret</label><input type="password" id="secret" placeholder="leave empty to keep the saved one">
 <label for="page">Customer page address</label><input type="text" id="page">
 <div class="row"><button type="submit">Save &amp; test</button><button type="button" class="ghost" id="test">Test again</button></div>
 <div class="msg" id="fmsg" role="status"></div></form>
-<details><summary class="hint">How to get these (once, about 10 minutes)</summary><ol class="hint">
-<li>console.firebase.google.com → <b>Add project</b> (Analytics not needed).</li>
-<li>Build → <b>Realtime Database</b> → Create database → Singapore → <b>locked mode</b>.</li>
-<li><b>Rules</b> tab → paste the rules below → Publish.</li>
-<li>Copy the address shown above the data (…firebasedatabase.app).</li>
-<li>⚙ Project settings → <b>Service accounts</b> → <b>Database secrets</b> → Show → copy.</li></ol>
-<pre id="rules">{"rules":{".read":false,".write":false,"babai":{"dosa":{".read":true}}}}</pre>
-<p class="hint">Only the dosa token status is readable by the public. Everything else is private.</p></details>
-</section>
-
-<section><div class="step">Step 2</div><h2>Kitchen TV</h2>
-<p>On the <b>main kitchen TV only</b>: long-press <b>✦ DOSA LIVE</b> (hold OK on the remote) and enter</p>
-<div class="big" id="addr">…</div>
-<p class="hint">If the TV says "not answering": when Windows asked about Babai Hub and the firewall, it needed <b>Allow</b> on private networks. Windows Security → Firewall → Allow an app → tick Babai Hub (Private).</p>
-<div id="devs" class="hint"></div>
+<p class="hint">Rules to paste in Firebase (Realtime Database → Rules):</p>
+<pre id="rules">{"rules":{".read":false,".write":false,"babai":{"meta":{".read":true},"t":{"$tok":{".read":true}}}}}</pre>
+<p class="hint">Customers can read only one token at a time and the dosa wait. Everything else is private.</p>
 </section>
 
 <section><div class="step">Step 3</div><h2>QR code for customers</h2>
 <div id="qrwrap" hidden><div id="qrbox"></div><div class="row"><a href="/poster" target="_blank"><button type="button">Open printable poster</button></a></div>
-<p class="hint">Print it, stick it at the counter and on tables. Customers scan, type their token number and see Preparing / Ready live.</p></div>
-<p id="qrnone" class="hint">Appears after Step 1.</p>
+<p class="hint">Print it (Ctrl+P), stick it at the counter and on tables. Customers scan, type their token number and see their dosa live.</p></div>
+<p id="qrnone" class="hint">Appears after Step 2.</p>
 </section>
 
 <section><h2>This PC</h2>
@@ -214,29 +246,42 @@ a{color:var(--accent)}
 <p class="hint">Cloud use this month (<span id="month"></span>): <span id="use"></span>. Firebase's free plan allows 10 GB downloaded a month and 1 GB stored.</p>
 <p class="hint">Finished KOTs are also saved on this PC in <code id="dir"></code>\days</p>
 </section>
-</div></div>
+</div>
+
+<section><h2>What Petpooja sent</h2>
+<p class="hint" id="ppInfo">Nothing yet.</p>
+<div class="tbl"><table><thead><tr><th>Token</th><th>Table</th><th>Type</th><th>Status</th><th>Items</th></tr></thead><tbody id="kots"></tbody></table></div>
+<details><summary class="hint">Raw answer (send a photo of this if something looks wrong)</summary><pre id="raw"></pre></details>
+</section>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 var $=function(i){return document.getElementById(i)},loaded=false,qrDone="";
+var OT={1:"Delivery",2:"Pick-up",3:"Dine-in"},ST={"9":"Food ready","10":"Dispatched","0":"Cancelled"};
 function ago(s){if(s<0)return "never";if(s<60)return s+" s ago";if(s<3600)return Math.round(s/60)+" min ago";return Math.round(s/3600)+" h ago"}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
 function post(u,b){return fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Babai-Hub":"1"},body:JSON.stringify(b)}).then(function(r){return r.json()})}
 function show(el,r){el.textContent=r.msg;el.className="msg "+(r.ok?"ok":"bad")}
 function refresh(){fetch("/status.json").then(function(r){return r.json()}).then(function(s){
- if(!loaded){$("db").value=(s.db||"").replace(/^https:\/\//,"");$("page").value=s.page||"";$("auto").checked=!!s.autostart;loaded=true}
+ if(!loaded){$("server").value=s.server||"";$("db").value=(s.db||"").replace(/^https:\/\//,"");$("page").value=s.page||"";$("auto").checked=!!s.autostart;loaded=true}
  $("sReady").textContent=s.ready;$("sPrep").textContent=s.preparing;$("sOpen").textContent=s.openKots;$("sDone").textContent=s.finishedToday;
- $("sTv").textContent=ago(s.ingestAgo);$("sCloud").textContent=s.configured?ago(s.cloudOkAgo):"not set up";
- $("cloudErr").textContent=s.cloudErrAgo>=0?"Cloud problem ("+ago(s.cloudErrAgo)+"): "+s.cloudErr:"";
- $("addr").textContent=(s.lan&&s.lan.length)?s.lan.map(function(a){return a+":"+s.port}).join("  or  "):"This PC isn't on the shop Wi-Fi / network";
- $("devs").innerHTML=(s.devices||[]).length?"Sending: "+s.devices.map(function(d){return d.name.replace(/[<>&]/g,"")+" ("+ago(d.ago)+")"}).join(", ")+(s.devices.filter(function(d){return d.ago<120}).length>1?"<div class=warn>More than one TV is sending. Set the hub address on one TV only.</div>":""):"No TV has sent data yet.";
+ $("sPP").textContent=s.server?ago(s.ppOkAgo):"not set up";$("sCloud").textContent=s.configured?ago(s.cloudOkAgo):"not set up";
+ var probs=[];if(s.ppErrAgo>=0)probs.push("Petpooja ("+ago(s.ppErrAgo)+"): "+s.ppErr);if(s.cloudErrAgo>=0)probs.push("Cloud ("+ago(s.cloudErrAgo)+"): "+s.cloudErr);
+ $("problems").textContent=probs.join("  •  ");
  $("month").textContent=s.month||"–";$("use").textContent=(s.upMB||0).toFixed(1)+" MB sent, "+(s.downMB||0).toFixed(1)+" MB received, "+(s.writes||0)+" updates";
  $("dir").textContent=s.dataDir;
- var tvOk=s.ingestAgo>=0&&s.ingestAgo<90,cloud=s.configured&&s.cloudOkAgo>=0&&s.cloudErrAgo<0;
- $("pill").className="pill "+(tvOk&&cloud?"ok":(s.configured?"bad":""));
- $("pillText").textContent=!s.configured?"Set up Firebase (Step 1)":!tvOk?"Waiting for the kitchen TV":cloud?"Live: TV → cloud":"Cloud problem";
+ var ppOk=s.server&&s.ppOkAgo>=0&&s.ppOkAgo<30,cloud=s.configured&&s.cloudOkAgo>=0&&s.cloudErrAgo<0;
+ $("pill").className="pill "+(ppOk&&cloud?"ok":((s.server||s.configured)?"bad":""));
+ $("pillText").textContent=!s.server?"Enter the Petpooja IP (Step 1)":!ppOk?"Can't read Petpooja":!s.configured?"Set up Firebase (Step 2)":cloud?"Live: Petpooja → cloud":"Cloud problem";
  if(s.qr&&s.qr!==qrDone&&window.QRCode){$("qrbox").innerHTML="";new QRCode($("qrbox"),{text:s.qr,width:180,height:180,correctLevel:QRCode.CorrectLevel.M});qrDone=s.qr}
  $("qrwrap").hidden=!s.qr;$("qrnone").hidden=!!s.qr;
+ $("ppInfo").textContent=s.ppOkAgo>=0?(s.ppRows+" item lines in "+(s.ppKots||[]).length+" KOTs"+(s.ppStock?", "+s.ppStock+" menu items ("+s.ppStockOff+" switched off)":"")):"Nothing yet.";
+ $("kots").innerHTML=(s.ppKots||[]).map(function(k){return "<tr><td class=n>"+esc(k.tk||"–")+"</td><td>"+esc(k.tb)+"</td><td>"+esc(OT[k.ot]||k.ot)+(k.ch?" · "+esc(k.ch):"")+"</td><td>"+esc(ST[k.st]||"Preparing")+"</td><td>"+esc(k.items)+"</td></tr>"}).join("");
+ $("raw").textContent=s.ppSample||"";
 }).catch(function(){$("pillText").textContent="Hub not responding"})}
+$("fp").addEventListener("submit",function(e){e.preventDefault();$("pmsg").textContent="Connecting…";$("pmsg").className="msg";
+ post("/petpooja",{Server:$("server").value}).then(function(r){show($("pmsg"),r);refresh()})});
 $("f").addEventListener("submit",function(e){e.preventDefault();$("fmsg").textContent="Testing…";$("fmsg").className="msg";
  post("/settings",{DB:$("db").value,Secret:$("secret").value,Page:$("page").value}).then(function(r){show($("fmsg"),r);$("secret").value="";refresh()})});
 $("test").addEventListener("click",function(){$("fmsg").textContent="Testing…";post("/test",{}).then(function(r){show($("fmsg"),r);refresh()})});
