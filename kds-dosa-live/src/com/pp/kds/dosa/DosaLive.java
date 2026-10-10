@@ -57,6 +57,14 @@ public final class DosaLive {
     private static DosaStats.Result last;
     private static Handler handler;
     private static Object lastCards;
+    /** When the board list last changed / when we last asked the KDS to re-fetch it. */
+    private static long lastBoardChangeAt, lastReloadAt;
+    /**
+     * The KDS refreshes its board only when the server pushes a change (MQTT). On TV Wi-Fi that
+     * link can go quiet without an error, and the board (and our screens) then show old orders until
+     * the KDS screen is reopened. So when nothing has changed for this long, ask it to re-fetch.
+     */
+    private static final long QUIET_RELOAD_MS = 20_000L;
     private static long lastComputeAt;
     private static Field vmField;
     private static Panel panel;
@@ -259,6 +267,7 @@ public final class DosaLive {
             boolean shaky = state.getError() != null || state.isLoading() || state.getReconnecting();
             if (cards != null && cards != lastCards && !(shaky && cards.isEmpty())) { // new list on every change
                 lastCards = cards;
+                lastBoardChangeAt = now;
                 List<TokenBoard.Kot> tk = new ArrayList<TokenBoard.Kot>();
                 changed = stats.update(dosaEntries(cards, tk), now, cards.size() >= BOARD_CAP - 5);
                 try {
@@ -286,6 +295,7 @@ public final class DosaLive {
                 }
             }
         }
+        reloadIfQuiet(now);
         try {
             if (!seedApplied && PrepLive.available()) {
                 stats.setSeedAvg(PrepLive.seedDosaAvg()); // real Petpooja Dine-In dosa average
@@ -463,6 +473,21 @@ public final class DosaLive {
             }
         }
         return allReady && !names.isEmpty();
+    }
+
+    /** Board quiet for a while: make the KDS fetch the latest KOTs from the server (same as reopening it). */
+    private static void reloadIfQuiet(long now) {
+        if (now - lastBoardChangeAt < QUIET_RELOAD_MS || now - lastReloadAt < QUIET_RELOAD_MS) return;
+        lastReloadAt = now;
+        try {
+            if (vmField == null) {
+                vmField = ScannerBridge.class.getDeclaredField("dashboardViewModel");
+                vmField.setAccessible(true);
+            }
+            DashboardViewModel vm = (DashboardViewModel) vmField.get(null);
+            if (vm != null) vm.reload();
+        } catch (Throwable ignored) {
+        }
     }
 
     private static DashboardUiState currentState() {
