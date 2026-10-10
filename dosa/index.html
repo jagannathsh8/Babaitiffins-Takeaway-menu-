@@ -415,7 +415,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     $('cTok').textContent=token;$('call').hidden=false;
     setTimeout(function(){$('call').hidden=true},CALL_MS);
     if(soundOn){chime();setTimeout(speak,900);setTimeout(chime,4500)}
-    try{navigator.vibrate&&navigator.vibrate([400,150,400,150,700])}catch(e){}
+    try{navigator.vibrate&&navigator.vibrate(200)}catch(e){}
     document.title='✅ Token '+token+' ready — Babai';
   }
   function unlockAudio(){try{ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();ctx.resume()}catch(e){}
