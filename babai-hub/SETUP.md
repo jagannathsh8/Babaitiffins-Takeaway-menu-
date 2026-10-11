@@ -6,10 +6,7 @@ and a Google account.
 
 ## 1. Customer page (Netlify)
 
-1. Put the new `index.html` in a folder (for example `babaidosa`).
-2. Netlify → your **babaidosa** site → **Deploys** → drag the folder into the box at the bottom.
-3. Open https://babaidosa.netlify.app on a phone. It should say
-   "Scan the QR code at Babai Tiffins to know your dosa status".
+Already done: https://babaidosa.netlify.app. In step 4 you upload the final page made by the hub.
 
 ## 2. Firebase (free cloud database)
 
@@ -43,7 +40,15 @@ and a Google account.
 6. Tick **Start Babai Hub when Windows starts**.
 7. The top of the page should now say **Live: Petpooja → cloud**.
 
-## 4. QR poster
+## 4. Customer page with token entry (once)
+
+1. On the hub page, Step 3 → **Download customer page**. This saves an `index.html` that already
+   knows your Firebase database.
+2. Put that file in a folder → Netlify → **babaidosa** → **Deploys** → drag the folder in.
+3. Now https://babaidosa.netlify.app works both ways: customers can scan the QR code, or open the
+   site and type their token number.
+
+## 5. QR poster
 
 1. On the hub page, Step 3 → **Open printable poster** → Ctrl+P → print (A4).
 2. Stick it at the counter and on tables.

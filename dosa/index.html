@@ -174,7 +174,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     <form id="form" novalidate>
       <label for="tok">Your token number</label>
       <input id="tok" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="42">
-      <p>It's printed on your bill / token slip.</p>
+      <p>It's printed on your bill / token slip. You can also scan the QR code at the counter.</p>
       <p class="err" id="formErr" hidden></p>
       <button class="btn" type="submit">Track my dosa</button>
     </form>
@@ -221,13 +221,19 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
 <script>
 (function(){
   var qs=new URLSearchParams(location.search);
+  var store={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},
+             set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+  var HOSTRE=/^[a-z0-9-]+(\.[a-z0-9-]+)*\.(firebaseio\.com|firebasedatabase\.app)$/;
+  // Which kitchen to read: from the QR code (?d=...), else the address Babai Hub built into this
+  // page ("Download customer page"), else the one remembered from an earlier scan.
+  var BUILT_IN='__BABAI_DB__';
   var host=(qs.get('d')||'').toLowerCase();
-  var okHost=/^[a-z0-9-]+(\.[a-z0-9-]+)*\.(firebaseio\.com|firebasedatabase\.app)$/.test(host);
+  if(!HOSTRE.test(host))host=HOSTRE.test(BUILT_IN)?BUILT_IN:(store.get('babai_db')||'');
+  var okHost=HOSTRE.test(host);
+  if(okHost&&qs.get('d'))store.set('babai_db',host);
   var DEMO=!okHost&&qs.has('demo');   // ?demo=1: preview without the kitchen
   var NOQR=!okHost&&!DEMO;             // opened without the QR code
   var $=function(id){return document.getElementById(id)};
-  var store={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},
-             set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 
   // Same words and timing as the TV (TokenBoardView / DosaStats)
   var KIND=["❤ Made fresh just for you — almost there!","❤ Extra crisp on its way — thank you for waiting",

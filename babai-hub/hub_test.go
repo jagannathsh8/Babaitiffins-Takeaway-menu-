@@ -299,7 +299,8 @@ func TestStatsAndLabels(t *testing.T) {
 		t.Fatal("token keys")
 	}
 	s := newDosaStats()
-	now := time.Now()
+	y, mo, d := time.Now().Date()
+	now := time.Date(y, mo, d, 12, 0, 0, 0, time.Local) // midday: the test order is from today
 	c := now.Add(-9 * time.Minute).UnixMilli()
 	s.update([]dsEntry{{id: 1, created: c, names: []string{"Masala Dosa"}, qty: []float64{2}}}, now, false)
 	s.update([]dsEntry{{id: 1, created: c, ready: true, names: []string{"Masala Dosa"}, qty: []float64{2}}}, now.Add(time.Minute), false)
@@ -362,5 +363,16 @@ func TestNormalise(t *testing.T) {
 	}
 	if serverBase("192.168.1.5") != "http://192.168.1.5:3000/" || serverBase("http://192.168.1.5:8080/") != "http://192.168.1.5:8080/" {
 		t.Fatalf("server base: %s", serverBase("192.168.1.5"))
+	}
+}
+
+func TestCustomerPage(t *testing.T) {
+	cfg = Config{DB: "https://babai-x-default-rtdb.asia-southeast1.firebasedatabase.app"}
+	w := httptest.NewRecorder()
+	handleCustomerPage(w, httptest.NewRequest(http.MethodGet, "/customer-page", nil))
+	b := w.Body.String()
+	if !strings.Contains(b, "var BUILT_IN='babai-x-default-rtdb.asia-southeast1.firebasedatabase.app'") ||
+		!strings.Contains(w.Header().Get("Content-Disposition"), "index.html") {
+		t.Fatalf("page: %d %s", w.Code, w.Header())
 	}
 }

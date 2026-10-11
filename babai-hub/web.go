@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -149,6 +150,25 @@ func reply(w http.ResponseWriter, ok bool, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "msg": msg})
 }
 
+// The customers' page (a copy of ../dosa/index.html, synced by build.sh).
+//
+//go:embed customer/index.html
+var customerPage string
+
+// handleCustomerPage gives index.html with this hub's Firebase address built in, so customers
+// who open https://babaidosa.netlify.app without scanning can still type their token.
+func handleCustomerPage(w http.ResponseWriter, r *http.Request) {
+	c := getConfig()
+	if c.DB == "" {
+		http.Error(w, "Set up Firebase (Step 2) first.", http.StatusConflict)
+		return
+	}
+	host := strings.TrimPrefix(c.DB, "https://")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="index.html"`)
+	io.WriteString(w, strings.Replace(customerPage, "__BABAI_DB__", host, 1))
+}
+
 func handlePoster(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -235,7 +255,8 @@ a{color:var(--accent)}
 </section>
 
 <section><div class="step">Step 3</div><h2>QR code for customers</h2>
-<div id="qrwrap" hidden><div id="qrbox"></div><div class="row"><a href="/poster" target="_blank"><button type="button">Open printable poster</button></a></div>
+<div id="qrwrap" hidden><div id="qrbox"></div><div class="row"><a href="/poster" target="_blank"><button type="button">Open printable poster</button></a><a href="/customer-page"><button type="button" class="ghost">Download customer page</button></a></div>
+<p class="hint">Upload the downloaded index.html to Netlify (babaidosa → Deploys) once: then customers can also open babaidosa.netlify.app and type their token without scanning.</p>
 <p class="hint">Print it (Ctrl+P), stick it at the counter and on tables. Customers scan, type their token number and see their dosa live.</p></div>
 <p id="qrnone" class="hint">Appears after Step 2.</p>
 </section>

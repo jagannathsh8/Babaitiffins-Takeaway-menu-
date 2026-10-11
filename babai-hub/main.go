@@ -79,6 +79,7 @@ func main() {
 	mux.HandleFunc("/petpooja", localOnly(handlePetpooja))
 	mux.HandleFunc("/autostart", localOnly(handleAutostart))
 	mux.HandleFunc("/poster", localOnly(handlePoster))
+	mux.HandleFunc("/customer-page", localOnly(handleCustomerPage))
 
 	if !configured() || getConfig().Server == "" {
 		go func() {

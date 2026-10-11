@@ -2,6 +2,7 @@
 # Builds babai-hub.exe (Windows 10/11, 64-bit; no install needed) after running the tests.
 set -euo pipefail
 cd "$(dirname "$0")"
+cp ../dosa/index.html customer/index.html   # the customer page served by "Download customer page"
 go vet ./...
 go test -count=1 ./...
 mkdir -p dist
