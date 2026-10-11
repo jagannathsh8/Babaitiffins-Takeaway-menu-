@@ -46,7 +46,8 @@ Already done: https://babaidosa.netlify.app. In step 4 you upload the final page
    knows your Firebase database.
 2. Put that file in a folder → Netlify → **babaidosa** → **Deploys** → drag the folder in.
 3. Now https://babaidosa.netlify.app works both ways: customers can scan the QR code, or open the
-   site and type their token number.
+   site and type their token number, or tap **📷 Scan my bill** and photograph the bill: the page
+   reads "Token No.: 1400" from it (on the phone; the photo is not uploaded anywhere).
 
 ## 5. QR poster
 

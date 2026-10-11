@@ -76,15 +76,25 @@ body{margin:0;min-height:100vh;color:#fff;font-family:var(--num);font-size:16px;
 .scanicon i:nth-child(4){bottom:10px;right:10px;border-left:0;border-top:0;border-radius:0 0 8px 0}
 .scanicon::after{content:"";position:absolute;left:14px;right:14px;height:3px;border-radius:3px;background:var(--green);box-shadow:0 0 12px var(--green);animation:scanline 2.2s ease-in-out infinite}
 @keyframes scanline{0%,100%{top:18px}50%{top:75px}}
+.or{display:flex;align-items:center;gap:10px;margin:14px 0 0;color:var(--muted);font-size:.8rem;letter-spacing:.2em;text-transform:uppercase}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.scanbtn{display:block;width:100%;margin-top:12px;font:700 1.05rem var(--num);color:var(--l);background:rgba(255,255,255,.06);
+  border:2px solid rgba(245,178,27,.55);border-radius:999px;padding:12px;cursor:pointer}
+.scanbtn:focus-visible{outline:3px solid var(--l);outline-offset:3px}
+.scanbtn[disabled]{opacity:.6}
+.scanmsg{margin:10px 0 0;text-align:center;color:var(--t);font-size:.92rem}
+.scanmsg.busy::before{content:"";display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border-radius:50%;
+  border:2px solid var(--p);border-right-color:transparent;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 .err{color:var(--orange);font-size:.88rem;margin:8px 0 0;text-align:center}
 
 /* your token */
 .mine{transition:background .5s,border-color .5s}
 .mine .lbl{font-family:var(--cond);font-weight:700;letter-spacing:.24em;font-size:.75rem;color:var(--p)}
 .mine .row1{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:2px}
-.mine .tok{font-weight:900;font-size:4.6rem;line-height:.95;font-variant-numeric:tabular-nums}
+.mine .tok{font-weight:900;font-size:clamp(3.2rem,17vw,4.6rem);line-height:.95;font-variant-numeric:tabular-nums}
 .mine .eta{text-align:right}
-.mine .eta b{display:block;font-weight:700;font-size:2rem;line-height:1;color:var(--s);font-variant-numeric:tabular-nums}
+.mine .eta b{display:block;white-space:nowrap;font-weight:700;font-size:2rem;line-height:1;color:var(--s);font-variant-numeric:tabular-nums}
 .mine .eta span{font-family:var(--cond);font-weight:700;font-size:.72rem;letter-spacing:.14em;color:var(--muted)}
 .mine .eta b.soon{color:var(--green)}
 .sub{margin-top:10px;font-family:var(--cond);font-weight:700;letter-spacing:.14em;font-size:.8rem;color:var(--muted);min-height:1.2em;transition:opacity .5s}
@@ -177,6 +187,10 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
       <p>It's printed on your bill / token slip. You can also scan the QR code at the counter.</p>
       <p class="err" id="formErr" hidden></p>
       <button class="btn" type="submit">Track my dosa</button>
+      <div class="or"><span>or</span></div>
+      <button class="scanbtn" type="button" id="scanBill">📷 Scan my bill</button>
+      <input type="file" id="billPhoto" accept="image/*" capture="environment" hidden>
+      <p class="scanmsg" id="scanMsg" role="status" hidden></p>
     </form>
   </section>
 
@@ -301,7 +315,10 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   function showEntry(msg){tracking=false;$('entry').hidden=false;$('mine').hidden=true;$('actions').hidden=true;
     $('tok').value=token||'';$('formErr').hidden=!msg;$('formErr').textContent=msg||''}
   $('form').addEventListener('submit',function(e){
-    e.preventDefault();var t=norm($('tok').value);
+    e.preventDefault();startTracking($('tok').value);
+  });
+  function startTracking(raw){
+    var t=norm(raw);
     if(!t){showEntry('Type the token number from your bill.');return}
     token=t;store.set('babai_token',t+'|'+Date.now());
     unlockAudio();keepAwake();
@@ -309,6 +326,62 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     tracking=true;everSeen=false;wasReady=false;alerted=false;firstPos=null;
     $('entry').hidden=true;$('mine').hidden=false;$('actions').hidden=false;$('mTok').textContent=token;
     render();poll();
+  }
+
+  // ---- 📷 scan my bill: read "Token No.: 1400" from a photo of the bill -----------------------
+  // Petpooja bills have no barcode for the token, so the page reads the printed text (OCR,
+  // tesseract.js, loaded only when someone taps the button; the photo never leaves the phone).
+  var OCR={js:'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+    worker:'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+    core:'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
+    lang:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int'};
+  var ocrWorker=null;
+  function scanMsg(t,busy){var m=$('scanMsg');m.hidden=!t;m.textContent=t||'';m.className='scanmsg'+(busy?' busy':'')}
+  function loadScript(src){return new Promise(function(ok,no){if(window.Tesseract)return ok();var s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
+  function getWorker(){
+    if(ocrWorker)return ocrWorker;
+    ocrWorker=loadScript(OCR.js).then(function(){return Tesseract.createWorker('eng',1,{workerPath:OCR.worker,corePath:OCR.core,langPath:OCR.lang})})
+      .then(function(w){return w.setParameters({tessedit_pageseg_mode:'11'}).then(function(){return w})});
+    ocrWorker.catch(function(){ocrWorker=null});
+    return ocrWorker;
+  }
+  // Clean the photo: grey, then each pixel against its neighbourhood (removes shadows and the
+  // table under the bill), black text on white.
+  function cleanPhoto(img){
+    var maxW=1600,sc=Math.min(1,maxW/Math.max(img.naturalWidth,img.naturalHeight)*1.0);
+    var W=Math.round(img.naturalWidth*sc),H=Math.round(img.naturalHeight*sc);
+    var cv=document.createElement('canvas');cv.width=W;cv.height=H;var g=cv.getContext('2d');
+    g.drawImage(img,0,0,W,H);var id=g.getImageData(0,0,W,H),d=id.data,n=W*H,gray=new Float32Array(n),I=new Float64Array((W+1)*(H+1));
+    for(var i=0;i<n;i++)gray[i]=d[i*4]*.299+d[i*4+1]*.587+d[i*4+2]*.114;
+    for(var y=0;y<H;y++){var rs=0;for(var x=0;x<W;x++){rs+=gray[y*W+x];I[(y+1)*(W+1)+x+1]=I[y*(W+1)+x+1]+rs}}
+    var r=Math.max(8,Math.round(Math.max(W,H)/60));
+    for(y=0;y<H;y++){var y0=Math.max(0,y-r),y1=Math.min(H,y+r+1);
+      for(x=0;x<W;x++){var x0=Math.max(0,x-r),x1=Math.min(W,x+r+1);
+        var mean=(I[y1*(W+1)+x1]-I[y0*(W+1)+x1]-I[y1*(W+1)+x0]+I[y0*(W+1)+x0])/((y1-y0)*(x1-x0));
+        var v=gray[y*W+x]<mean*0.84?0:255,k=(y*W+x)*4;d[k]=d[k+1]=d[k+2]=v;d[k+3]=255}}
+    g.putImageData(id,0,0);return cv;
+  }
+  function findToken(text){
+    var t=text.replace(/[|]/g,'1');
+    var m=t.match(/t[o0]k[e3]n\s*n[o0]?\W{0,4}(\d{1,6})/i)||t.match(/t[o0]k[e3]n[^\d\n]{0,14}(\d{1,6})/i);
+    return m?m[1]:null;
+  }
+  $('scanBill').addEventListener('click',function(){unlockAudio();getWorker();$('billPhoto').value='';$('billPhoto').click()});
+  $('billPhoto').addEventListener('change',function(){
+    var f=this.files&&this.files[0];if(!f)return;
+    $('scanBill').disabled=true;scanMsg('Reading your bill\u2026',true);
+    var url=URL.createObjectURL(f),img=new Image();
+    img.onload=function(){
+      var cv=cleanPhoto(img);URL.revokeObjectURL(url);
+      getWorker().then(function(w){return w.recognize(cv)}).then(function(res){
+        var tk=findToken(res.data.text||'');
+        $('scanBill').disabled=false;
+        if(tk){$('tok').value=tk;scanMsg('Found token '+tk);setTimeout(function(){startTracking(tk)},600)}
+        else scanMsg('Couldn\u2019t read the token. Hold the bill flat and close, or type the number above.');
+      }).catch(function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t read the bill here. Please type the token number above.')});
+    };
+    img.onerror=function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t open that photo. Please type the token number.')};
+    img.src=url;
   });
   $('change').addEventListener('click',function(){showEntry()});
   $('sound').addEventListener('click',function(){soundOn=!soundOn;store.set('babai_sound',soundOn?'1':'0');if(soundOn){unlockAudio();chime()}paintSound()});
