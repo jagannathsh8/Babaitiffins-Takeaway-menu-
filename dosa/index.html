@@ -443,8 +443,8 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   function loadScript(src){return new Promise(function(ok,no){if(window.Tesseract)return ok();var s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
   function getWorker(){
     if(ocrWorker)return ocrWorker;
-    ocrWorker=loadScript(OCR.js).then(function(){return Tesseract.createWorker('eng',1,{workerPath:OCR.worker,corePath:OCR.core,langPath:OCR.lang})})
-      .then(function(w){return w.setParameters({tessedit_pageseg_mode:'11'}).then(function(){return w})});
+    ocrWorker=loadScript(OCR.js).then(function(){return Tesseract.createWorker('eng',1,{workerPath:OCR.worker,corePath:OCR.core,langPath:OCR.lang,
+        logger:function(m){if(scanning&&m.status==='recognizing text')scanMsg('Reading your bill\u2026 '+scanStep+(scanStep?' ':'')+Math.round(m.progress*100)+'%',true)}})});
     ocrWorker.catch(function(){ocrWorker=null});
     return ocrWorker;
   }
@@ -483,6 +483,18 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     }
     return null;
   }
+  // Turns a canvas a quarter (bills are often photographed sideways).
+  function turn(cv,deg){var o=document.createElement('canvas');o.width=cv.height;o.height=cv.width;var g=o.getContext('2d');
+    g.translate(o.width/2,o.height/2);g.rotate(deg*Math.PI/180);g.drawImage(cv,-cv.width/2,-cv.height/2);return o}
+  // Upright first; if no token is found, the photo turned both ways, then sparse-text mode.
+  var scanning=false,scanStep='',TRIES=[[0,'3'],[90,'3'],[270,'3'],[0,'11']];
+  function readBill(w,cv,i){
+    if(i>=TRIES.length)return Promise.resolve(null);
+    var t=TRIES[i];scanStep=i?'(try '+(i+1)+' of '+TRIES.length+')':'';
+    return w.setParameters({tessedit_pageseg_mode:t[1]}).then(function(){return w.recognize(t[0]?turn(cv,t[0]):cv)}).then(function(res){
+      var txt=res.data.text||'',tk=findToken(txt);
+      return tk?{tk:tk,txt:txt}:readBill(w,cv,i+1)});
+  }
   function findToken(text){
     var t=text.replace(/[|]/g,'1');
     var m=t.match(/t[o0]k[e3]n\s*n[o0]?\W{0,4}(\d{1,6})/i)||t.match(/t[o0]k[e3]n[^\d\n]{0,14}(\d{1,6})/i);
@@ -495,14 +507,19 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     var url=URL.createObjectURL(f),img=new Image();
     img.onload=function(){
       var cv=cleanPhoto(img);URL.revokeObjectURL(url);
-      getWorker().then(function(w){return w.recognize(cv)}).then(function(res){
-        var txt=res.data.text||'',tk=findToken(txt),oc=findOutlet(txt);
+      scanning=true;
+      getWorker().catch(function(){throw 'load'}).then(function(w){return readBill(w,cv,0)}).then(function(r){
+        scanning=false;scanStep='';
+        var txt=r?r.txt:'',tk=r?r.tk:null,oc=findOutlet(txt),ks=Object.keys(outlets);
+        if(!oc&&!outlet&&tk&&ks.length===1)oc=ks[0];     // only one outlet uses live tracking
         if(oc)setOutlet(oc);
         $('scanBill').disabled=false;
-        if(tk&&!outlet){$('tok').value=tk;pendingTok=tk;needOutlet=true;paintOutlets();scanMsg('Found token '+tk+'. Tap your outlet above.')}
+        if(tk&&!outlet&&!ks.length)scanMsg('Found token '+tk+', but live tracking isn\u2019t switched on at this outlet yet. Please ask at the counter.');
+        else if(tk&&!outlet){$('tok').value=tk;pendingTok=tk;needOutlet=true;paintOutlets();scanMsg('Found token '+tk+'. Tap your outlet above.')}
         else if(tk){$('tok').value=tk;scanMsg('Found token '+tk+(outlets[outlet]?' \u00B7 '+outlets[outlet]:''));setTimeout(function(){startTracking(tk)},600)}
         else scanMsg('Couldn\u2019t read the token. Hold the bill flat, close and in good light, and try again.');
-      }).catch(function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t read the bill. Check the internet and try again.')});
+      }).catch(function(e){scanning=false;scanStep='';$('scanBill').disabled=false;
+        scanMsg(e==='load'?'Couldn\u2019t load the bill reader. Check the internet and try again.':'Couldn\u2019t read the bill. Please try again.')});
     };
     img.onerror=function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t open that photo. Please try again.')};
     img.src=url;
