@@ -147,8 +147,8 @@ final class RiderBoardView extends View {
     void setData(List<RiderCalls.Waiting> readyOrders, List<RiderCalls.Order> preparingOrders, String bridge,
                  boolean bridgeConnected) {
         long now = SystemClock.uptimeMillis();
-        ready = new ArrayList<RiderCalls.Waiting>(readyOrders);
-        preparing = new ArrayList<RiderCalls.Order>(preparingOrders);
+        ready = RiderCalls.readyByBrand(readyOrders);       // Swiggy, Zomato, then the others
+        preparing = RiderCalls.byBrand(preparingOrders);
         bridgeStatus = bridge;
         bridgeOk = bridgeConnected;
         List<Long> live = new ArrayList<Long>();
@@ -276,7 +276,7 @@ final class RiderBoardView extends View {
         int dg = digitOf(k);
         if (dg < 0 && !(del && searchOn)) return false;
         if (e.getAction() == KeyEvent.ACTION_DOWN) {
-            long now = SystemClock.uptimeMillis();
+            long now = e.getEventTime();
             if (now - lastTypeAt > 80) {
                 onBeforeBurst = searchOn;
                 queryBeforeBurst = query.toString();

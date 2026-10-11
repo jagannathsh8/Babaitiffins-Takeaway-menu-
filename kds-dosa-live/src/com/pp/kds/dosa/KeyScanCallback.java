@@ -1,7 +1,6 @@
 package com.pp.kds.dosa;
 
 import android.app.Activity;
-import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.Window;
@@ -14,7 +13,8 @@ import com.pp.kds.scan.ScannerActivity;
  * Wraps the KDS window callback:
  *  - USB / Bluetooth barcode scanners (keyboard style) work directly on the board: a burst of
  *    fast keystrokes (< 80 ms apart, 4+ chars) ended by Enter/Tab is treated as a scan. Normal,
- *    slower typing is passed through untouched.
+ *    slower typing is passed through untouched. Gaps use the key's own time stamp, so a busy
+ *    screen (animations) cannot stretch them.
  *  - Any touch brings the auto-hidden buttons back.
  */
 final class KeyScanCallback extends WindowCallbackWrapper {
@@ -39,7 +39,9 @@ final class KeyScanCallback extends WindowCallbackWrapper {
                 return true;
             }
             if (e.getAction() == KeyEvent.ACTION_DOWN) {
-                long now = SystemClock.uptimeMillis();
+                // When the key was pressed (by the scanner), not when it reached us: while the Dosa
+                // Live / rider screens animate, keys queue up and arrive late and bunched together.
+                long now = e.getEventTime();
                 if (k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_NUMPAD_ENTER || k == KeyEvent.KEYCODE_TAB) {
                     boolean scan = buf.length() >= 4 && now - lastKeyAt < 300;
                     String code = buf.toString();

@@ -211,6 +211,38 @@ final class RiderCalls {
         return sb.toString();
     }
 
+    /** Board order of the brands: Swiggy, then Zomato, then the rest (Ownly, ...) by name. */
+    static int brandRank(String platform) {
+        String l = platform == null ? "" : platform.toLowerCase(java.util.Locale.US);
+        if (l.contains("swiggy")) return 0;
+        if (l.contains("zomato")) return 1;
+        return 2;
+    }
+
+    private static int compareBrand(String a, String b) {
+        int c = Integer.compare(brandRank(a), brandRank(b));
+        if (c != 0) return c;
+        return String.valueOf(a).compareToIgnoreCase(String.valueOf(b));
+    }
+
+    /** Groups ready orders brand by brand; inside a brand the order stays as it was. */
+    static List<Waiting> readyByBrand(List<Waiting> l) {
+        List<Waiting> out = new ArrayList<Waiting>(l);
+        Collections.sort(out, new Comparator<Waiting>() {
+            @Override public int compare(Waiting a, Waiting b) { return compareBrand(a.order.platform, b.order.platform); }
+        });
+        return out;
+    }
+
+    /** Groups preparing orders brand by brand; inside a brand the order stays as it was (oldest first). */
+    static List<Order> byBrand(List<Order> l) {
+        List<Order> out = new ArrayList<Order>(l);
+        Collections.sort(out, new Comparator<Order>() {
+            @Override public int compare(Order a, Order b) { return compareBrand(a.platform, b.platform); }
+        });
+        return out;
+    }
+
     /** One search result on the rider board: the order and whether it is ready (and since when). */
     static final class Hit {
         final Order order;

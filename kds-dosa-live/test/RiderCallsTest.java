@@ -23,6 +23,18 @@ public final class RiderCallsTest {
     }
 
     public static void main(String[] a) {
+        {   // brand order: Swiggy, Zomato, others by name; order inside a brand kept
+            List<RiderCalls.Order> l = new ArrayList<RiderCalls.Order>();
+            l.add(o(1, "Ownly", "1111", "", 1, false, false));
+            l.add(o(2, "Zomato", "2222", "", 2, false, false));
+            l.add(o(3, "Swiggy", "3333", "", 3, false, false));
+            l.add(o(4, "Magicpin", "4444", "", 4, false, false));
+            l.add(o(5, "Swiggy", "5555", "", 5, false, false));
+            l.add(o(6, "Zomato", "6666", "", 6, false, false));
+            StringBuilder sb = new StringBuilder();
+            for (RiderCalls.Order x : RiderCalls.byBrand(l)) sb.append(x.id);
+            check("brand order", sb.toString().equals("352641"), sb);
+        }
         {   // search on the rider board
             RiderCalls.Order r1 = new RiderCalls.Order(1, "Swiggy", "3136", "250412237103136", "47", 0, true, false);
             RiderCalls.Order p1 = new RiderCalls.Order(2, "Zomato", "3190", "88233190", "", 0, false, false);
