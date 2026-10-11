@@ -218,6 +218,79 @@ final class BridgeSlots {
         return false;
     }
 
+    /** Default Bridge Print port (its rider screen: http://PC:8787). */
+    static final int[] PORTS = {8787};
+    private static volatile String autoNote = "";
+    private static Thread finder;
+
+    /** "Found automatically on the Petpooja PC 192.168.1.3:8787" etc., for the settings window. */
+    static String autoNote() {
+        return autoNote;
+    }
+
+    /** True when Bridge Print answers on that address (any of its JSON paths). Background thread. */
+    static boolean probe(String addr) {
+        for (String p : PATHS) {
+            try {
+                String b = get("http://" + addr + p).trim();
+                if (b.startsWith("{") || b.startsWith("[")) return true;
+            } catch (Throwable ignored) {
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Bridge Print usually runs on the Petpooja billing PC: while no address is set, look for it
+     * there (the KDS already knows that PC's IP) every 2 minutes, and save it when it answers.
+     */
+    static synchronized void autoFind(final android.content.Context ctx) {
+        if (finder != null) return;
+        finder = new Thread(new Runnable() {
+            @Override public void run() {
+                android.content.SharedPreferences ui = ctx.getSharedPreferences("dosa_live_ui", android.content.Context.MODE_PRIVATE);
+                try {
+                    Thread.sleep(30_000L);   // let the KDS start and connect first
+                } catch (InterruptedException e) {
+                    return;
+                }
+                while (true) {
+                    try {
+                        String cur = address;
+                        if (cur == null || cur.isEmpty()) {
+                            String ip = PetpoojaServer.ip(ctx);
+                            if (ip == null) {
+                                autoNote = "Petpooja server IP not known yet";
+                            } else {
+                                boolean found = false;
+                                for (int port : PORTS) {
+                                    String addr = ip + ":" + port;
+                                    if (probe(addr)) {
+                                        ui.edit().putString("bridge_addr", addr).apply();
+                                        setAddress(addr);
+                                        autoNote = "Found automatically on the Petpooja PC (" + addr + ")";
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if (!found) autoNote = "Not found on the Petpooja PC " + ip + " (port 8787) \u2022 checking every 2 min";
+                            }
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    try {
+                        Thread.sleep(120_000L);
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                }
+            }
+        }, "bridge-find");
+        finder.setDaemon(true);
+        finder.setPriority(Thread.MIN_PRIORITY);
+        finder.start();
+    }
+
     private static String get(String url) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(2000);

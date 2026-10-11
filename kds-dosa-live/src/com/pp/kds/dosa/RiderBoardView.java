@@ -29,6 +29,8 @@ import java.util.Map;
  *         and the big last 4 digits of the platform order ID; cards auto-size to fit all.
  *  Right: PREPARING - online / delivery orders still in the kitchen, oldest first.
  *  Call : big pop-up while the voice calls new ready orders.
+ *  Card : the camera read a rider's phone: brand, full order ID (last 4 highlighted), SLOT,
+ *         READY / PREPARING, times and the KOT items; back to the board after 20 s quiet or OK.
  *  Find : the search button (or any number key) opens a keypad: type the last 4 digits of the
  *         order ID to see brand, full order ID, slot and READY / PREPARING. It stays open, and
  *         keeps updating, until it is closed.
@@ -111,6 +113,21 @@ final class RiderBoardView extends View {
     private int keyFlash = -1;
     private boolean onBeforeBurst;
     private String queryBeforeBurst = "";
+
+    /** One rider's order as found by the camera. */
+    static final class Lookup {
+        RiderCalls.Order order;        // null: the number is not on the board
+        boolean ready;
+        long readyAt, createdMs;       // wall clock
+        String unknown;                // the number read, when not on the board
+        String note;                   // e.g. "Already handed over"
+        final List<String> items = new ArrayList<String>();
+        long shownAt, seenAt;          // uptime
+    }
+
+    private static final long LOOKUP_IDLE_MS = 20_000L;
+    private Lookup lookup;
+    private final RectF hitLookupOk = new RectF();
     private RadialGradient bg;
     private float bgKey;
     private String clockStr = "";
@@ -157,6 +174,7 @@ final class RiderBoardView extends View {
             if (!firstSeen.containsKey(w.order.id)) firstSeen.put(w.order.id, now);
         }
         firstSeen.keySet().retainAll(live);
+        refreshLookup();
         invalidate();
     }
 
@@ -164,6 +182,58 @@ final class RiderBoardView extends View {
         call = new ArrayList<RiderCalls.Waiting>(orders);
         callAt = SystemClock.uptimeMillis();
         invalidate();
+    }
+
+    /** Shows (or refreshes) the details card; a new order replaces the one showing. */
+    void showLookup(Lookup l, boolean fresh) {
+        long now = SystemClock.uptimeMillis();
+        if (!fresh && lookup != null) {
+            lookup.seenAt = now;          // same phone still there
+            return;
+        }
+        l.shownAt = now;
+        l.seenAt = now;
+        lookup = l;
+        refreshLookup();
+        invalidate();
+    }
+
+    /** Keeps the card open (activity at the counter). */
+    void keepLookup() {
+        if (lookup != null) lookup.seenAt = SystemClock.uptimeMillis();
+    }
+
+    private void closeLookup() {
+        closeLookup(true);
+    }
+
+    private void closeLookup(boolean byUser) {
+        lookup = null;
+        RiderCam.lookupClosed(byUser);
+        controlsAt = SystemClock.uptimeMillis();
+        invalidate();
+    }
+
+    /** The order on the card follows the board: PREPARING turns READY, the slot appears. */
+    private void refreshLookup() {
+        Lookup l = lookup;
+        if (l == null || l.order == null) return;
+        String id = l.order.orderId;
+        for (RiderCalls.Waiting w : ready) {
+            if (w.order.id == l.order.id || (!id.isEmpty() && id.equals(w.order.orderId))) {
+                l.order = w.order;
+                l.ready = true;
+                l.readyAt = w.readyAt;
+                return;
+            }
+        }
+        for (RiderCalls.Order o : preparing) {
+            if (o.id == l.order.id || (!id.isEmpty() && id.equals(o.orderId))) {
+                l.order = o;
+                l.ready = false;
+                return;
+            }
+        }
     }
 
     // ---- input ---------------------------------------------------------------------------
@@ -174,7 +244,10 @@ final class RiderBoardView extends View {
             float x = ev.getX(), y = ev.getY();
             boolean visible = controlsAlpha() > 0.3f;
             if (call != null && SystemClock.uptimeMillis() - callAt < CALL_MS) call = null;
-            else if (searchOn) searchTouch(x, y);
+            else if (lookup != null) {
+                if (hitLookupOk.contains(x, y)) closeLookup();
+                else keepLookup();
+            } else if (searchOn) searchTouch(x, y);
             else if (hitSearch.contains(x, y)) activate(0);
             else if (visible && hitClose.contains(x, y)) activate(4);
             else if (visible && hitVoice.contains(x, y)) activate(3);
@@ -207,6 +280,14 @@ final class RiderBoardView extends View {
 
     /** TV remote: LEFT/RIGHT between SEARCH ... close, OK presses, BACK closes. */
     boolean handleKey(KeyEvent e) {
+        if (lookup != null) {
+            int k = e.getKeyCode();
+            if (e.getAction() == KeyEvent.ACTION_UP && (k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_DPAD_CENTER
+                    || k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_NUMPAD_ENTER || k == KeyEvent.KEYCODE_BUTTON_A)) {
+                closeLookup();
+            }
+            return true;
+        }
         if (searchOn) return searchKey(e);
         int k = e.getKeyCode();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
@@ -420,6 +501,8 @@ final class RiderBoardView extends View {
         if (f < 1f) drawFooter(c, pad, h - 52 * s, w - 2 * pad, 1f - f);
         drawControls(c, w);
         if (searchOn) drawSearch(c, w, h, now, land);
+        if (lookup != null && now - lookup.seenAt > LOOKUP_IDLE_MS) closeLookup(false);
+        if (lookup != null) drawLookup(c, w, h, now, land);
         drawCall(c, w, h, now, t);
 
         if (lite) postInvalidateDelayed(Math.max(1L, 33L - (SystemClock.uptimeMillis() - frameStart)));
@@ -992,6 +1075,202 @@ final class RiderBoardView extends View {
             c.drawText(sub, rect.centerX(), y + h * 0.88f, text);
         }
         text.setTextAlign(Paint.Align.LEFT);
+    }
+
+    /**
+     * Rider details card: brand strip with status, full order ID with the last 4 highlighted,
+     * a big SLOT, order / ready times, the KOT items and a big OK.
+     */
+    private void drawLookup(Canvas c, float w, float h, long now, boolean land) {
+        Lookup l = lookup;
+        long wall = System.currentTimeMillis();
+        float age = Math.min(1f, (now - l.shownAt) / 220f);
+        fill.setColor(alpha(0xFF04070B, (int) (225 * age)));
+        c.drawRect(0, 0, w, h, fill);
+        float cw = Math.min(w - 40 * s, land ? 1640 * s : w), ch = Math.min(h - 40 * s, land ? 1000 * s : h - 40 * s);
+        float x = (w - cw) / 2f, y = (h - ch) / 2f;
+        c.save();
+        float sc = 0.94f + 0.06f * age;
+        c.scale(sc, sc, w / 2f, h / 2f);
+        RiderCalls.Order o = l.order;
+        int pc = o != null ? platformColor(o.platform) : 0xFF8E2424;
+        rect.set(x, y, x + cw, y + ch);
+        fill.setColor(0xFFF7F8FA);
+        c.drawRoundRect(rect, 30 * s, 30 * s, fill);
+
+        // brand strip + status chip
+        float stripH = Math.min(150 * s, ch * 0.17f);
+        c.save();
+        c.clipRect(x, y, x + cw, y + stripH);
+        rect.set(x, y, x + cw, y + stripH + 40 * s);
+        fill.setColor(pc);
+        c.drawRoundRect(rect, 30 * s, 30 * s, fill);
+        c.restore();
+        float pad = 40 * s;
+        String brand = o != null ? o.platform.toUpperCase(Locale.US) : "ORDER";
+        String st = o == null ? "NOT ON BOARD" : l.ready ? "\u2713 READY" : "PREPARING";
+        int stBg = o == null ? 0xFFFFFFFF : l.ready ? 0xFF1B5E20 : 0xFFF5B21B;
+        int stFg = o == null ? 0xFFB71C1C : l.ready ? Color.WHITE : 0xFF1B1203;
+        text.setTypeface(bold);
+        text.setLetterSpacing(0.06f);
+        text.setTextSize(stripH * 0.38f);
+        float stW = Math.min(cw * 0.42f, text.measureText(st) + 70 * s), stH = stripH * 0.62f;
+        rect.set(x + cw - pad - stW, y + (stripH - stH) / 2f, x + cw - pad, y + (stripH + stH) / 2f);
+        fill.setColor(stBg);
+        c.drawRoundRect(rect, stH / 2f, stH / 2f, fill);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setColor(stFg);
+        text.setTextSize(fit(st, stripH * 0.38f, stW - 40 * s));
+        c.drawText(st, rect.centerX(), rect.centerY() + text.getTextSize() * 0.36f, text);
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setColor(Color.WHITE);
+        text.setTextSize(fit(brand, stripH * 0.5f, cw - 3 * pad - stW));
+        c.drawText(brand, x + pad, y + stripH / 2f + text.getTextSize() * 0.36f, text);
+        text.setLetterSpacing(0f);
+
+        // order ID (last 4 highlighted) and SLOT
+        float top = y + stripH + 30 * s;
+        float slotW = o == null ? 0 : land ? cw * 0.28f : cw * 0.34f;   // no slot box for "not on board"
+        float idW = cw - 2 * pad - slotW - 30 * s;
+        float blockH = Math.min(ch * 0.30f, 300 * s);
+        String full = o != null ? (o.orderId.isEmpty() ? o.last4 : o.orderId) : (l.unknown == null ? "" : l.unknown);
+        String d = full.replaceAll("\\s", "");
+        int cut = Math.max(0, d.length() - 4);
+        String head = d.substring(0, cut), tail = d.substring(cut);
+        label(c, "ORDER ID", x + pad, top + 22 * s);
+        // full ID on one line: head small-ish, tail big and highlighted
+        float tailSize = Math.min(blockH * 0.62f, 190 * s);
+        text.setTypeface(bold);
+        text.setTextSize(tailSize);
+        float tailW = text.measureText(tail);
+        if (tailW > idW * 0.62f) {
+            tailSize *= idW * 0.62f / tailW;
+            text.setTextSize(tailSize);
+            tailW = text.measureText(tail);
+        }
+        text.setTypeface(medium);
+        float headSize = fit(head, tailSize * 0.42f, idW - tailW - 50 * s);
+        text.setTextSize(headSize);
+        float headW = head.isEmpty() ? 0 : text.measureText(head) + 14 * s;
+        float base = top + 40 * s + blockH * 0.62f;
+        text.setColor(0xFF4A4F57);
+        if (!head.isEmpty()) c.drawText(head, x + pad, base, text);
+        float tx = x + pad + headW;
+        rect.set(tx - 12 * s, base - tailSize * 0.86f, tx + tailW + 12 * s, base + tailSize * 0.16f);
+        fill.setColor(0xFFFFE082);
+        c.drawRoundRect(rect, 14 * s, 14 * s, fill);
+        text.setTypeface(bold);
+        text.setTextSize(tailSize);
+        text.setColor(0xFF111111);
+        c.drawText(tail, tx, base, text);
+        // slot
+        float sx = x + cw - pad - slotW, sy = top;
+        if (o != null) {
+        rect.set(sx, sy, sx + slotW, sy + blockH + 40 * s);
+        boolean hasSlot = o != null && o.slot != null && !o.slot.isEmpty();
+        fill.setColor(hasSlot ? 0xFFF5B21B : 0xFFE3E6EA);
+        c.drawRoundRect(rect, 26 * s, 26 * s, fill);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.25f);
+        text.setTextSize(24 * s);
+        text.setColor(hasSlot ? 0xFF1B1203 : 0xFF6B7280);
+        c.drawText("SLOT", rect.centerX(), sy + 40 * s, text);
+        text.setLetterSpacing(0f);
+        String slot = hasSlot ? o.slot : "\u2014";
+        text.setTypeface(bold);
+        text.setTextSize(fit(slot, blockH * 0.78f, slotW - 30 * s));
+        c.drawText(slot, rect.centerX(), sy + 40 * s + (blockH + 40 * s - 40 * s) / 2f + text.getTextSize() * 0.36f, text);
+        }
+        text.setTextAlign(Paint.Align.LEFT);
+
+        // times / note
+        float ty = top + blockH + 40 * s + 46 * s;
+        String times;
+        if (o == null) {
+            times = l.note != null ? l.note : "Picked up already, cancelled, or not in the kitchen yet";
+        } else {
+            StringBuilder sb = new StringBuilder();
+            if (l.createdMs > 0 && wall >= l.createdMs) sb.append("Ordered ").append(mins(wall - l.createdMs)).append(" ago");
+            if (l.ready && l.readyAt > 0 && wall >= l.readyAt) {
+                if (sb.length() > 0) sb.append("   \u2022   ");
+                sb.append("Ready for ").append(mins(wall - l.readyAt));
+            } else if (!l.ready) {
+                if (sb.length() > 0) sb.append("   \u2022   ");
+                sb.append("Still being prepared");
+            }
+            times = sb.toString();
+        }
+        text.setTypeface(bold);
+        text.setTextSize(fit(times, 34 * s, cw - 2 * pad));
+        text.setColor(o == null ? 0xFFB71C1C : l.ready ? 0xFF1B5E20 : 0xFF8D5A00);
+        c.drawText(times, x + pad, ty, text);
+
+        // items
+        float okH = Math.min(96 * s, ch * 0.1f);
+        float itTop = ty + 30 * s, itBottom = y + ch - okH - 50 * s;
+        if (!l.items.isEmpty() && itBottom - itTop > 60 * s) {
+            label(c, "ITEMS", x + pad, itTop + 24 * s);
+            int cols = land && l.items.size() > 4 ? 2 : 1;
+            float lineH = Math.min(48 * s, (itBottom - itTop - 40 * s) / Math.max(1, (l.items.size() + cols - 1) / cols));
+            lineH = Math.max(lineH, 30 * s);
+            int perCol = Math.max(1, (int) ((itBottom - itTop - 40 * s) / lineH));
+            int shown = Math.min(l.items.size(), perCol * cols);
+            if (shown < l.items.size()) shown = Math.max(0, shown - 1);
+            float colW = (cw - 2 * pad) / cols;
+            text.setTypeface(medium);
+            for (int i = 0; i < shown; i++) {
+                int col = i / perCol, row = i % perCol;
+                String it = l.items.get(i);
+                text.setColor(0xFF1F2933);
+                text.setTextSize(fit(it, lineH * 0.66f, colW - 24 * s));
+                c.drawText(it, x + pad + col * colW, itTop + 40 * s + (row + 0.75f) * lineH, text);
+            }
+            if (shown < l.items.size()) {
+                text.setColor(0xFF6B7280);
+                text.setTextSize(lineH * 0.6f);
+                int col = shown / perCol, row = shown % perCol;
+                c.drawText("+" + (l.items.size() - shown) + " more", x + pad + col * colW, itTop + 40 * s + (row + 0.75f) * lineH, text);
+            }
+        }
+
+        // OK + auto-close hint
+        float okW = Math.min(420 * s, cw * 0.4f);
+        rect.set(x + cw / 2f - okW / 2f, y + ch - okH - 26 * s, x + cw / 2f + okW / 2f, y + ch - 26 * s);
+        hitLookupOk.set(rect);
+        hitLookupOk.inset(-20 * s, -20 * s);
+        fill.setColor(0xFF263238);
+        c.drawRoundRect(rect, okH / 2f, okH / 2f, fill);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTypeface(bold);
+        text.setLetterSpacing(0.12f);
+        text.setTextSize(okH * 0.42f);
+        text.setColor(Color.WHITE);
+        c.drawText("OK", rect.centerX(), rect.centerY() + text.getTextSize() * 0.36f, text);
+        text.setLetterSpacing(0f);
+        long left = Math.max(0, (LOOKUP_IDLE_MS - (now - l.seenAt) + 999) / 1000);
+        text.setTypeface(medium);
+        text.setTextSize(18 * s);
+        text.setColor(0xFF6B7280);
+        text.setTextAlign(Paint.Align.RIGHT);
+        c.drawText("Back to the board in " + left + " s", x + cw - pad, rect.centerY() + 6 * s, text);
+        text.setTextAlign(Paint.Align.LEFT);
+        c.restore();
+    }
+
+    private void label(Canvas c, String s0, float x, float y) {
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.22f);
+        text.setTextSize(22 * s);
+        text.setColor(0xFF6B7280);
+        text.setTextAlign(Paint.Align.LEFT);
+        c.drawText(s0, x, y, text);
+        text.setLetterSpacing(0f);
+    }
+
+    private static String mins(long ms) {
+        long m = ms / 60_000L;
+        return m < 1 ? "under 1 min" : m + " min";
     }
 
     private void drawCall(Canvas c, float w, float h, long now, float t) {

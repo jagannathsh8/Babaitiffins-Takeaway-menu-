@@ -10,7 +10,8 @@
 #   1. classes4.dex  - MainActivity.onCreate gets ONE extra line: DosaLive.install(this);
 #                      the old camera ScannerActivity is removed (replaced from src/)
 #   2. classes7.dex  - new, contains com.pp.kds.dosa.* and the new com.pp.kds.scan.ScannerActivity
-#   3. assets/ - mascot, food photos, prep_profile.json + prep_days.txt (make_prep_profile.py)
+#   3. assets/ - mascot, food photos, prep_profile.json + prep_days.txt (make_prep_profile.py),
+#                ocr/ - Tesseract (tesseract.js-core 5.1.1, LSTM) + English data for the rider camera
 # All other dex files, resources and the manifest are copied byte-for-byte from the input,
 # ScannerBridge (marks Food Ready) and the board logic are untouched.
 set -euo pipefail
@@ -23,11 +24,14 @@ trap 'rm -rf "$WORK"' EXIT
 echo "== unit tests"
 javac -d "$WORK/test" "$HERE/src/com/pp/kds/dosa/DosaStats.java" "$HERE/src/com/pp/kds/dosa/PrepStats.java" \
     "$HERE/src/com/pp/kds/dosa/TokenBoard.java" "$HERE/src/com/pp/kds/dosa/RiderCalls.java" \
-    "$HERE/test/DosaStatsTest.java" "$HERE/test/PrepStatsTest.java" "$HERE/test/TokenBoardTest.java" "$HERE/test/RiderCallsTest.java"
+    "$HERE/src/com/pp/kds/dosa/RiderOcr.java" \
+    "$HERE/test/DosaStatsTest.java" "$HERE/test/PrepStatsTest.java" "$HERE/test/TokenBoardTest.java" "$HERE/test/RiderCallsTest.java" \
+    "$HERE/test/RiderOcrTest.java"
 java -cp "$WORK/test" DosaStatsTest | tail -1
 java -cp "$WORK/test" PrepStatsTest | tail -1
 java -cp "$WORK/test" com.pp.kds.dosa.TokenBoardTest | tail -1
 java -cp "$WORK/test" com.pp.kds.dosa.RiderCallsTest | tail -1
+java -cp "$WORK/test" com.pp.kds.dosa.RiderOcrTest | tail -1
 
 echo "== compile add-on"
 mkdir -p "$WORK/stubs" "$WORK/classes" "$WORK/dex"
@@ -68,8 +72,8 @@ cp "$IN" "$WORK/unsigned.apk"
 zip -q -d "$WORK/unsigned.apk" 'META-INF/MANIFEST.MF' 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.EC' 'META-INF/*.DSA' || true
 cp "$WORK/classes4.dex" "$WORK/apk/classes4.dex"
 cp "$WORK/dex/classes.dex" "$WORK/apk/classes7.dex"
-mkdir -p "$WORK/apk/assets" && cp "$HERE"/assets/* "$WORK/apk/assets/"
-(cd "$WORK/apk" && zip -q "$WORK/unsigned.apk" classes4.dex classes7.dex assets/*)
+mkdir -p "$WORK/apk/assets" && cp -r "$HERE"/assets/* "$WORK/apk/assets/"
+(cd "$WORK/apk" && zip -q -r "$WORK/unsigned.apk" classes4.dex classes7.dex assets)
 
 echo "== align + sign"
 java -jar "$TOOLS/uber-apk-signer.jar" -a "$WORK/unsigned.apk" -o "$WORK/signed" ${KS:+--ks "$KS" --ksAlias "$KS_ALIAS" --ksPass "$KS_PASS" --ksKeyPass "$KS_PASS"} >/dev/null

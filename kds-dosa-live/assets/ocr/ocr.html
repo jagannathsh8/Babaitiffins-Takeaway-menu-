@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Babai OCR</title>
+<script>
+// Hidden page for the KDS rider camera: reads the text in one small camera picture at a time.
+// Tesseract (LSTM) runs here, in the WebView, never on the KDS screen thread. No worker, no network:
+// every file comes from the APK (https://babai.local/ocr/ is answered from assets/ocr/).
+'use strict';
+var M = null, api = null, busy = false;
+var B = window.BabaiOcr || {ready: function () {}, result: function () {}, error: function (m) { console.log(m); }};
+
+function simdOk() {
+  try { // smallest module that uses a SIMD instruction
+    return WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11]));
+  } catch (e) { return false; }
+}
+
+function load(src) {
+  return new Promise(function (ok, bad) {
+    var s = document.createElement('script');
+    s.src = src; s.onload = ok; s.onerror = function () { bad(new Error('load ' + src)); };
+    document.head.appendChild(s);
+  });
+}
+
+function boot() {
+  var simd = simdOk(), core = simd ? 'tesseract-core-simd-lstm' : 'tesseract-core-lstm';
+  load(core + '.js').then(function () {
+    return TesseractCore({locateFile: function (f) { return f.replace(/^.*\//, ''); }});
+  }).then(function (m) {
+    M = m;
+    return fetch('eng.traineddata').then(function (r) {
+      if (!r.ok) throw new Error('traineddata ' + r.status);
+      return r.arrayBuffer();
+    });
+  }).then(function (buf) {
+    M.FS.writeFile('/eng.traineddata', new Uint8Array(buf));
+    api = new M.TessBaseAPI();
+    if (api.Init(null, 'eng', 1) === -1) throw new Error('init');   // 1 = LSTM only
+    api.SetVariable('user_defined_dpi', '300');
+    B.ready(simd ? 'simd' : 'plain');
+  }).catch(function (e) { B.error('boot: ' + e); });
+}
+
+// b64: a JPEG / PNG picture; psm: Tesseract page mode (3 auto, 11 sparse text, 6 block).
+function ocr(id, b64, psm) {
+  if (!api || busy) { B.result(id, '', -1); return; }
+  busy = true;
+  var t0 = Date.now(), text = '';
+  try {
+    var bin = atob(b64), n = bin.length, bytes = new Uint8Array(n);
+    for (var i = 0; i < n; i++) bytes[i] = bin.charCodeAt(i);
+    M.FS.writeFile('/input', bytes);
+    api.SetVariable('tessedit_pageseg_mode', String(psm || 3));
+    if (api.SetImageFile(1, 0) === 1) throw new Error('image');
+    api.Recognize(null);
+    text = api.GetUTF8Text() || '';
+    api.Clear();
+  } catch (e) {
+    B.error('ocr: ' + e);
+  }
+  busy = false;
+  B.result(id, text, Date.now() - t0);
+}
+
+boot();
+</script>

@@ -133,6 +133,11 @@ public final class DosaLive {
             w.setCallback(new KeyScanCallback(w.getCallback(), activity)); // USB/BT scanner + touch
         } catch (Throwable ignored) {
         }
+        try {
+            RiderCam.init(activity); // hands-free camera (off until switched on in the rider settings)
+        } catch (Throwable ignored) {
+        }
+        DailyCache.clearOncePerDay(activity.getApplicationContext());
     }
 
     // ---- auto-hiding buttons + scan banner ---------------------------------------------------
@@ -247,6 +252,7 @@ public final class DosaLive {
         appCtx = ctx.getApplicationContext();
         riderOn = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getBoolean("rider_calls", false);
         BridgeSlots.setAddress(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getString("bridge_addr", ""));
+        BridgeSlots.autoFind(ctx.getApplicationContext()); // Bridge Print on the Petpooja PC, when not set
         riderMaxMin = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("rider_max_min", 0);
         riders.setMaxMinutes(riderMaxMin);
         tokens.setAutoClearMinutes(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("autoclear_min", 10));
@@ -295,6 +301,7 @@ public final class DosaLive {
                 }
                 try {
                     List<RiderCalls.Order> kdsOrders = riderOrders(cards);
+                    riderInfo = riderInfo(cards);
                     Map<String, Integer> kinds = new HashMap<String, Integer>();
                     for (RiderCalls.Order o : kdsOrders) {
                         String dg = BridgeSlots.digits(o.orderId);
@@ -400,6 +407,87 @@ public final class DosaLive {
      * Online / delivery KOTs for rider calls: platform (Swiggy, Zomato, Ownly ...), last 4 digits
      * of the platform order ID and the pickup slot (the KOT token number, e.g. "Ownly 20").
      */
+    /** What the rider details card shows besides the board: KOT items, order time, picked up. */
+    static final class RiderInfo {
+        final List<String> items = new ArrayList<String>();
+        long createdMs;
+        boolean gone;
+    }
+
+    /** Platform order ID digits -> items / time (delivery and online KOTs, merged per order). */
+    private static volatile Map<String, RiderInfo> riderInfo = new HashMap<String, RiderInfo>();
+
+    private static Map<String, RiderInfo> riderInfo(List<KotCard> cards) {
+        Map<String, RiderInfo> out = new HashMap<String, RiderInfo>();
+        for (KotCard card : cards) {
+            try {
+                Kot kot = card.getKot();
+                if (kot == null) continue;
+                String key = RiderOcr.digits(kot.getPOId());
+                if (key.length() < 4) continue;
+                RiderInfo info = out.get(key);
+                if (info == null) {
+                    info = new RiderInfo();
+                    out.put(key, info);
+                }
+                Long created = BoardVisualsKt.parseCreatedMillis(kot.getCreatedTime());
+                if (created != null && created > 0 && (info.createdMs == 0 || created < info.createdMs)) info.createdMs = created;
+                String st = kot.getKotStatus();
+                info.gone = "10".equals(st) || "0".equals(st);
+                List<KotItem> items = kot.getItems();
+                if (items == null) continue;
+                for (KotItem it : items) {
+                    if (BoardVisualsKt.isItemCancelled(it.getStatus())) continue;
+                    String n = it.getName() == null ? "" : it.getName().trim();
+                    if (n.isEmpty()) continue;
+                    Double q = it.getQuantity();
+                    double qq = q == null || q <= 0 ? 1 : q;
+                    String qs = qq == Math.floor(qq) ? String.valueOf((long) qq) : String.valueOf(qq);
+                    info.items.add(qs + " \u00D7 " + n);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return out;
+    }
+
+    private static RiderInfo infoFor(String orderId) {
+        String d = RiderOcr.digits(orderId);
+        if (d.length() < 4) return null;
+        Map<String, RiderInfo> m = riderInfo;
+        RiderInfo i = m.get(d);
+        if (i != null) return i;
+        for (Map.Entry<String, RiderInfo> e : m.entrySet()) {
+            if (RiderOcr.commonTail(e.getKey(), d) >= Math.min(8, Math.min(e.getKey().length(), d.length()))) return e.getValue();
+        }
+        return null;
+    }
+
+    /** The camera found the rider's order (or a number that is not on the board). Main thread. */
+    static void showRiderLookup(RiderCalls.Order order, boolean ready, long readyAt, String unknown, boolean fresh) {
+        Panel p = panel;
+        if (p == null || p.mode != Panel.RIDER || p.riderView == null) return;
+        RiderBoardView.Lookup l = new RiderBoardView.Lookup();
+        l.order = order;
+        l.ready = ready;
+        l.readyAt = readyAt;
+        l.unknown = unknown;
+        RiderInfo info = infoFor(order != null ? order.orderId : unknown);
+        if (info != null) {
+            l.items.addAll(info.items);
+            l.createdMs = info.createdMs;
+            if (order == null && info.gone) l.note = "Already handed over (dispatched in Petpooja)";
+        }
+        if (order != null && l.createdMs == 0) l.createdMs = order.createdMs;
+        p.riderView.showLookup(l, fresh);
+    }
+
+    /** Something happened at the counter (scan): keep an open details card a little longer. */
+    static void riderActivity() {
+        Panel p = panel;
+        if (p != null && p.riderView != null) p.riderView.keepLookup();
+    }
+
     private static List<RiderCalls.Order> riderOrders(List<KotCard> cards) {
         List<RiderCalls.Order> out = new ArrayList<RiderCalls.Order>();
         for (KotCard card : cards) {
@@ -725,25 +813,59 @@ public final class DosaLive {
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding((int) (20 * d), (int) (8 * d), (int) (20 * d), 0);
+
+        // -- Bridge Print (pickup slots) --
+        box.addView(heading(a, "Bridge Print (pickup slots)"));
         final TextView info = new TextView(a);
         String sample = BridgeSlots.sample();
-        info.setText("Bridge Print PC address on the shop Wi-Fi (the one that opens the rider screen "
-                + "on a phone), e.g. 192.168.1.3:8787\n\nStatus: " + BridgeSlots.status()
+        String ip = PetpoojaServer.ip(a);
+        String auto = BridgeSlots.autoNote();
+        info.setText("Bridge Print PC address on the shop Wi-Fi, e.g. 192.168.1.3:8787. "
+                + "Left empty, it is looked for on the Petpooja PC" + (ip == null ? "" : " (" + ip + ")") + " automatically."
+                + (auto.isEmpty() ? "" : "\n" + auto)
+                + "\n\nStatus: " + BridgeSlots.status()
                 + (sample.isEmpty() ? "" : "\n\nData received (send a photo of this if orders don't show):\n" + sample));
         info.setTextIsSelectable(true);
         box.addView(info);
         final android.widget.EditText addr = new android.widget.EditText(a);
         addr.setSingleLine(true);
-        addr.setHint("192.168.1.3:8787");
+        addr.setHint(ip == null ? "192.168.1.3:8787" : ip + ":8787");
         addr.setText(ui.getString("bridge_addr", ""));
         addr.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         box.addView(addr);
+
+        // -- Camera (hands-free) --
+        box.addView(heading(a, "\uD83D\uDCF7 Camera (hands-free)"));
+        TextView camInfo = new TextView(a);
+        camInfo.setText("KOT barcode in front of the camera \u2192 Food Ready. On the rider screen, a rider's phone "
+                + "\u2192 brand, order ID, slot, status and items.\n" + RiderCam.cameras(a) + "\n" + RiderCam.status());
+        box.addView(camInfo);
+        final android.widget.RadioGroup camMode = radios(a, new String[]{"Off", "On while the rider screen is open",
+                "Always on (whole KDS)"}, RiderCam.mode());
+        box.addView(camMode);
+        box.addView(small(a, "Which camera"));
+        final android.widget.RadioGroup camWhich = radios(a, new String[]{"Auto (USB camera if plugged in, else back)",
+                "Back", "Front", "USB camera"}, RiderCam.which());
+        box.addView(camWhich);
+        final android.widget.CheckBox cFood = check(a, "\u2713 Food Ready from KOT barcode", RiderCam.food());
+        final android.widget.CheckBox cRider = check(a, "\uD83D\uDEF5 Rider phone \u2192 order details", RiderCam.riderReading());
+        final android.widget.CheckBox cPrev = check(a, "Show the small camera picture", RiderCam.preview());
+        box.addView(cFood);
+        box.addView(cRider);
+        box.addView(cPrev);
+        box.addView(small(a, "Flash / torch"));
+        final android.widget.RadioGroup camFlash = radios(a, new String[]{"Off", "On", "Auto (when dark)"}, RiderCam.flash());
+        box.addView(camFlash);
+
         new android.app.AlertDialog.Builder(a)
-                .setTitle("\uD83D\uDEF5 Rider calls \u2022 Bridge Print slots")
+                .setTitle("\uD83D\uDEF5 Rider screen settings")
                 .setView(scrollable(a, box))
-                .setPositiveButton("Save & test", new android.content.DialogInterface.OnClickListener() {
+                .setPositiveButton("Save", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface dlg, int which) {
+                        RiderCam.saveSettings(a, checked(camMode), checked(camWhich), checked(camFlash),
+                                cPrev.isChecked(), cFood.isChecked(), cRider.isChecked());
                         final String v = addr.getText().toString().trim();
+                        if (v.equals(ui.getString("bridge_addr", ""))) return;
                         ui.edit().putString("bridge_addr", v).apply();
                         BridgeSlots.setAddress(v);
                         if (v.isEmpty()) return;
@@ -762,6 +884,48 @@ public final class DosaLive {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private static TextView heading(Context c, String t) {
+        TextView v = new TextView(c);
+        v.setText(t);
+        v.setTypeface(Typeface.DEFAULT_BOLD);
+        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
+        float d = c.getResources().getDisplayMetrics().density;
+        v.setPadding(0, (int) (16 * d), 0, (int) (4 * d));
+        return v;
+    }
+
+    private static TextView small(Context c, String t) {
+        TextView v = new TextView(c);
+        v.setText(t);
+        v.setTypeface(Typeface.DEFAULT_BOLD);
+        float d = c.getResources().getDisplayMetrics().density;
+        v.setPadding(0, (int) (8 * d), 0, 0);
+        return v;
+    }
+
+    private static android.widget.RadioGroup radios(Context c, String[] labels, int selected) {
+        android.widget.RadioGroup g = new android.widget.RadioGroup(c);
+        for (int i = 0; i < labels.length; i++) {
+            android.widget.RadioButton r = new android.widget.RadioButton(c);
+            r.setText(labels[i]);
+            r.setId(1000 + i);
+            g.addView(r);
+        }
+        g.check(1000 + Math.max(0, Math.min(labels.length - 1, selected)));
+        return g;
+    }
+
+    private static int checked(android.widget.RadioGroup g) {
+        return Math.max(0, g.getCheckedRadioButtonId() - 1000);
+    }
+
+    private static android.widget.CheckBox check(Context c, String t, boolean on) {
+        android.widget.CheckBox b = new android.widget.CheckBox(c);
+        b.setText(t);
+        b.setChecked(on);
+        return b;
     }
 
     private static final int[] RIDER_OFF = {0xFF455A64, 0xFF546E7A, 0xFF607D8B};
@@ -977,6 +1141,7 @@ public final class DosaLive {
             view.setVisibility(View.INVISIBLE);
             if (board != null) board.setVisibility(View.GONE);
             bindRider();
+            RiderCam.setRiderVisible(true);
         }
 
         void bindRider() {
@@ -997,6 +1162,7 @@ public final class DosaLive {
                     : bridgeMode() ? "Orders & slots: Bridge Print \u2022 " + BridgeSlots.status()
                     : "Orders: Petpooja (Bridge Print: " + BridgeSlots.status() + ")";
             riderView.setData(rl, pl, src, bridgeMode());
+            RiderCam.setBoard(rl, pl);
         }
 
         void setMode(int m) {
@@ -1007,6 +1173,7 @@ public final class DosaLive {
                 return;
             }
             remember(activity, "dosa");
+            RiderCam.setRiderVisible(false);
             if (riderView != null) riderView.setVisibility(View.GONE);
             if (brightness != null) brightness.stop(); // normal brightness outside the rider board
             ui.edit().putInt("mode", m).apply();
@@ -1105,6 +1272,7 @@ public final class DosaLive {
         }
 
         void close() {
+            RiderCam.setRiderVisible(false);
             ViewGroup parent = (ViewGroup) view.getParent();
             if (parent != null) parent.removeView(view);
             if (board != null && board.getParent() != null) ((ViewGroup) board.getParent()).removeView(board);

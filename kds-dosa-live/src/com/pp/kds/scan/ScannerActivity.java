@@ -265,7 +265,10 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
             if (fm != null) {
                 if (fm.contains("continuous-picture")) p.setFocusMode("continuous-picture");
                 else if (fm.contains("continuous-video")) p.setFocusMode("continuous-video");
-                else if (fm.contains("auto")) p.setFocusMode("auto");
+                else if (fm.contains("auto")) {
+                    p.setFocusMode("auto");
+                    focusAutoOnly = true;     // no continuous focus: refocus every few seconds
+                }
             }
             List<String> scenes = p.getSupportedSceneModes();
             if (scenes != null && scenes.contains("barcode")) p.setSceneMode("barcode");
@@ -352,8 +355,22 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
 
     // ---- decoding --------------------------------------------------------------------------
 
+    private volatile boolean focusAutoOnly;
+    private long lastFocusAt;
+
     @Override
     public void onPreviewFrame(byte[] data, Camera c) {
+        if (focusAutoOnly) {
+            long t = SystemClock.uptimeMillis();
+            if (t - lastFocusAt > 2_500L) {
+                lastFocusAt = t;
+                try {
+                    c.cancelAutoFocus();
+                    c.autoFocus(null);
+                } catch (Throwable ignored) {
+                }
+            }
+        }
         String text = null;
         try {
             text = decoder.decode(data, pw, ph);
@@ -388,6 +405,8 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
     private void onCode(String code, String source) {
         if (isFinishing()) return;
         int n = record(this, code, source);
+        String fmt = KotDecoder.learned();   // remember the KOT barcode kind for fast scanning
+        if (fmt != null) getSharedPreferences("dosa_live_ui", MODE_PRIVATE).edit().putString("cam_fmt", fmt).apply();
         showLast();
         overlay.flash(n > 0 ? 0xFF69F0AE : 0xFFFFB300);
         if (tone != null) {

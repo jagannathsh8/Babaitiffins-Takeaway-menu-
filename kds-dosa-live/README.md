@@ -94,3 +94,24 @@ python3 tools/make_prep_profile.py BOM_SCRAP.xlsx assets/prep_profile.json repor
 ```
 
 Petpooja caps exports at 50,000 rows (~9 days here): export week by week and pass all files.
+
+## Rider screen: hands-free camera
+
+Long-press **🛵 RIDER** → *Rider screen settings* → **📷 Camera**. It's off by default, so TV boxes behave as before.
+
+* **Food Ready:** hold a KOT barcode in front of the camera and that KOT is marked Food Ready. This works the same as the USB/Bluetooth scanner.
+* **Rider phone:** while the rider screen is open, a rider's phone (Swiggy, Zomato, "Collect Food" app) held up to the camera opens a card. The card shows:
+  * the brand
+  * the full order ID, with the last 4 digits highlighted
+  * the slot
+  * READY or PREPARING
+  * when the order was placed and how long it has been ready
+  * the KOT items
+  
+  A different phone replaces the card. **OK** closes it, and it closes by itself after 20 seconds with nothing in front of the camera.
+* **Camera options:** off, on while the rider screen is open, or always on. You can pick the back, front or USB camera, show or hide the small preview, and set the flash.
+* **How it works:** the text is read on the device by Tesseract (`assets/ocr`, tesseract.js-core 5.1.1, Apache-2.0) in a hidden WebView. It needs no internet.
+  * `RiderOcr` matches the digits read from the phone against the board's order IDs, comparing from the last digit backwards. Only orders on the board can match.
+  * Camera and decoding run on their own threads. Watchdogs restart a camera that stops sending pictures or a reader that stops answering.
+* **Bridge Print:** if no address is set, the KDS looks for it on the Petpooja PC (`intra_ip` in the KDS settings, port 8787) every 2 minutes.
+* **Daily cache clear:** the app's cache folders are emptied once a day at the first start. Settings and KDS data are not touched.
