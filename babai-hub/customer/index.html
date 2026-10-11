@@ -6,8 +6,11 @@
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#16110a">
 <title>Babai Dosa Tracker</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@500;700;900&family=Roboto+Condensed:wght@600;700&display=swap">
+<link rel="preconnect" href="https://babai-dosa-default-rtdb.asia-southeast1.firebasedatabase.app">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- fonts load in the background; the page shows at once with the phone's own font -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@500;700;900&family=Roboto+Condensed:wght@600;700&display=swap" media="print" onload="this.media='all'">
 <style>
 /* Same look as the Order Ready TV screen ("Babai Classic" theme): charcoal-turmeric night,
    turmeric primary, leaf-green secondary, mint/green for ready. One dark look on purpose. */
@@ -89,7 +92,9 @@ body{margin:0;min-height:100vh;color:#fff;font-family:var(--num);font-size:16px;
 .go{flex:none;font:700 1rem var(--num);color:var(--l);background:rgba(255,255,255,.08);border:2px solid rgba(245,178,27,.55);border-radius:14px;padding:0 18px;cursor:pointer}
 .go:focus-visible{outline:3px solid var(--l);outline-offset:2px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-.near{margin:0 0 8px;font-size:.9rem;color:var(--green)}
+.nearbox{display:flex;align-items:center;gap:8px;width:max-content;max-width:100%;margin:0 auto 12px;padding:6px 12px;border-radius:999px;
+  background:rgba(105,240,174,.10);border:1px solid rgba(105,240,174,.35);color:var(--mint);font-size:.85rem;font-weight:600}
+.nearbox b{color:#fff}
 .ochip small{font-weight:500;opacity:.75;margin-left:6px;font-size:.78rem}
 .or{display:flex;align-items:center;gap:10px;margin:14px 0 0;color:var(--muted);font-size:.8rem;letter-spacing:.2em;text-transform:uppercase}
 .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
@@ -197,20 +202,22 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   <!-- token entry -->
   <section class="panel entry" id="entry" hidden>
     <form id="form" novalidate>
+      <div class="nearbox" id="near" hidden></div>
       <div class="outlet" id="outletBox" hidden>
-        <div class="olbl">YOUR BABAI TIFFINS OUTLET</div>
-        <p class="near" id="near" hidden></p>
+        <div class="olbl">WHICH OUTLET? (TOP OF YOUR BILL)</div>
         <div class="ochips" id="outletChips" role="radiogroup" aria-label="Outlet"></div>
       </div>
       <button class="btn bigscan" type="button" id="scanBill">📷 Scan my bill</button>
       <p class="scanhint">Point the camera at your bill — we read the token for you.</p>
       <input type="file" id="billPhoto" accept="image/*" capture="environment" hidden>
       <p class="scanmsg" id="scanMsg" role="status" hidden></p>
+      <div id="manualWrap" hidden>
       <div class="or"><span>or enter your token</span></div>
       <div class="manual">
         <label for="tok" class="sr">Token number</label>
         <input id="tok" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="Token no.">
         <button class="go" type="submit">Track</button>
+      </div>
       </div>
       <p class="err" id="formErr" hidden></p>
     </form>
@@ -297,15 +304,26 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 
   // Which outlet: from the QR code (?o=vtr), else remembered, else the customer picks (or the bill photo says).
-  var outlet=(qs.get('o')||store.get('babai_outlet')||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-  if(qs.get('o'))store.set('babai_outlet',outlet);
+  // Outlet: from the QR poster (?o=vtr); else the phone's location (within 3 km); else read from the
+  // bill photo. Typing the token is offered only when the outlet is already known.
+  var FROM_QR=!!qs.get('o');
+  var outlet=FROM_QR?qs.get('o').toLowerCase().replace(/[^a-z0-9]/g,''):'';
+  if(FROM_QR)store.set('babai_outlet',outlet);
+  var needOutlet=false,pendingTok='';   // bill read but outlet unknown: ask with buttons
   var outlets={};   // code -> name, from /babai/outlets
   var geo={},dist={},located=false;   // code -> {lat,lng}; code -> metres from the customer
-  function setOutlet(code){if(!code||code===outlet)return;outlet=code;store.set('babai_outlet',code);paintOutlets();meta=null;data=null;poll()}
+  function setOutlet(code){
+    if(!code)return;var changed=code!==outlet;outlet=code;store.set('babai_outlet',code);needOutlet=false;paintOutlets();
+    if(changed){meta=null;data=null;poll()}
+    if(pendingTok){var t=pendingTok;pendingTok='';startTracking(t)}
+  }
+  function showManual(){$('manualWrap').hidden=!(outlet||DEMO)}
   function paintOutlets(){
     var codes=Object.keys(outlets).sort(function(a,b){return outlets[a].localeCompare(outlets[b])});
-    $('outletBox').hidden=codes.length<2&&!!outlet;
-    if(codes.length===1&&!outlet){outlet=codes[0]}
+    if(codes.length===1&&!outlet){outlet=codes[0];poll()}   // only one outlet: nothing to choose
+    $('outletBox').hidden=!needOutlet;
+    if(FROM_QR&&outlets[outlet]&&$('near').hidden){$('near').hidden=false;$('near').innerHTML='\uD83D\uDCCD <span>Babai Tiffins <b>'+esc(outlets[outlet])+'</b></span>'}
+    showManual();
     if(located)codes.sort(function(a,b){return (dist[a]==null?1e12:dist[a])-(dist[b]==null?1e12:dist[b])});
     $('outletChips').innerHTML=codes.map(function(c){return '<button type="button" class="ochip" role="radio" aria-checked="'+(c===outlet)+'" data-o="'+esc(c)+'">'+esc(outlets[c])+(dist[c]!=null?'<small>'+km(dist[c])+'</small>':'')+'</button>'}).join('');
   }
@@ -356,7 +374,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   function startTracking(raw){
     var t=norm(raw);
     if(!t){showEntry('Type the token number from your bill.');return}
-    if(!outlet&&!DEMO){showEntry('Choose your outlet above first (it\u2019s on the top of your bill).');return}
+    if(!outlet&&!DEMO){pendingTok=t;needOutlet=true;paintOutlets();showEntry('Tap your outlet above (it\u2019s on the top of your bill).');return}
     token=t;store.set('babai_token',t+'|'+Date.now());
     unlockAudio();keepAwake();
     if(DEMO)demoT0=Date.now();
@@ -434,12 +452,12 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
         var txt=res.data.text||'',tk=findToken(txt),oc=findOutlet(txt);
         if(oc)setOutlet(oc);
         $('scanBill').disabled=false;
-        if(tk&&!outlet){$('tok').value=tk;scanMsg('Found token '+tk+'. Now tap your outlet above, then Track.')}
+        if(tk&&!outlet){$('tok').value=tk;pendingTok=tk;needOutlet=true;paintOutlets();scanMsg('Found token '+tk+'. Tap your outlet above.')}
         else if(tk){$('tok').value=tk;scanMsg('Found token '+tk+(outlets[outlet]?' \u00B7 '+outlets[outlet]:''));setTimeout(function(){startTracking(tk)},600)}
-        else scanMsg('Couldn\u2019t read the token. Hold the bill flat and close, or type the token number below.');
-      }).catch(function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t read the bill here. Please type the token number below.')});
+        else scanMsg('Couldn\u2019t read the token. Hold the bill flat, close and in good light, and try again.');
+      }).catch(function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t read the bill. Check the internet and try again.')});
     };
-    img.onerror=function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t open that photo. Please type the token number.')};
+    img.onerror=function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t open that photo. Please try again.')};
     img.src=url;
   });
   $('change').addEventListener('click',function(){showEntry()});
@@ -461,16 +479,16 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dg/2)*Math.sin(dg/2);return 2*R*Math.asin(Math.sqrt(x))}
   var locating=false;
   function locate(){
-    if(located||locating||qs.get('o')||!navigator.geolocation||!Object.keys(geo).length)return;
+    if(located||locating||FROM_QR||!navigator.geolocation||!Object.keys(geo).length)return;
     locating=true;
     navigator.geolocation.getCurrentPosition(function(p){
       located=true;var me={lat:p.coords.latitude,lng:p.coords.longitude},best=null;
       Object.keys(geo).forEach(function(c){dist[c]=metres(me,geo[c]);if(best===null||dist[c]<dist[best])best=c});
       if(best!==null&&dist[best]<=3000){
-        $('near').hidden=false;$('near').textContent='\uD83D\uDCCD You\u2019re at Babai Tiffins '+outlets[best]+' ('+km(dist[best])+' away). Not right? Tap your outlet below.';
-        if(best!==outlet){outlet='';setOutlet(best)}else paintOutlets();
+        $('near').hidden=false;$('near').innerHTML='\uD83D\uDCCD <span>Babai Tiffins <b>'+esc(outlets[best])+'</b> \u00B7 '+km(dist[best])+'</span>';
+        setOutlet(best);
       }else paintOutlets();
-    },function(){locating=false},{enableHighAccuracy:false,timeout:10000,maximumAge:600000});
+    },function(){locating=false;located=true;paintOutlets()},{enableHighAccuracy:false,timeout:10000,maximumAge:600000});
   }
   function poll(){
     clearTimeout(timer);
@@ -614,6 +632,13 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   if(DEMO){$('demoNote').hidden=false;if(!token)token='42'}
   showEntry();
   if(!DEMO)loadOutlets();
+  showManual();
+  // Get the bill reader ready in the background so "Scan my bill" answers quickly
+  // (skipped when the phone asks to save data).
+  if(!DEMO&&!(navigator.connection&&navigator.connection.saveData)){
+    var warm=function(){try{getWorker()}catch(e){}};
+    if(window.requestIdleCallback)requestIdleCallback(warm,{timeout:4000});else setTimeout(warm,2500);
+  }
   poll(); // dosa wait and facts are live even before a token is typed
 })();
 </script>
