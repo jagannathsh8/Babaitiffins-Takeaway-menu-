@@ -26,13 +26,14 @@ func trayReady(port int) {
 	page := fmt.Sprintf("http://localhost:%d/", port)
 	systray.SetIcon(trayIcon)
 	systray.SetTitle(appName)
-	systray.SetTooltip("Babai Hub")
+	systray.SetTooltip("Babai Hub " + getConfig().Outlet)
 
-	status := systray.AddMenuItem("Starting…", "")
+	status := systray.AddMenuItem("Starting\u2026", "")
 	status.Disable()
 	systray.AddSeparator()
 	open := systray.AddMenuItem("Open Babai Hub", "Settings and live status")
-	ip := systray.AddMenuItem("Petpooja server IP…", "IP address of the main Petpooja billing PC")
+	outlet := systray.AddMenuItem("Outlet name\u2026", "The outlet name exactly as on the bill")
+	ip := systray.AddMenuItem("Petpooja server IP\u2026", "IP address of the main Petpooja billing PC")
 	pause := systray.AddMenuItem("Pause", "Stop reading Petpooja and updating customers' phones")
 	poster := systray.AddMenuItem("Print QR poster", "")
 	systray.AddSeparator()
@@ -42,7 +43,7 @@ func trayReady(port int) {
 		st := snapshotStatus()
 		text := trayStatus(st)
 		status.SetTitle(text)
-		systray.SetTooltip("Babai Hub – " + text)
+		systray.SetTooltip("Babai Hub \u2013 " + text)
 		if getConfig().Paused {
 			pause.SetTitle("Resume")
 		} else {
@@ -63,10 +64,28 @@ func trayReady(port int) {
 			case <-pause.ClickedCh:
 				setPaused(!getConfig().Paused)
 				refresh()
+			case <-outlet.ClickedCh:
+				go func() {
+					v, ok := askText("Outlet name exactly as printed on the bill\n(e.g. VTR, Sarjapur, HSR, JPN)", "Babai Hub \u2013 Outlet", getConfig().Outlet)
+					if !ok || outletCode(v) == "" {
+						return
+					}
+					c := getConfig()
+					if c.Outlet != v {
+						c.Outlet = v
+						if err := saveConfig(c); err != nil {
+							msgBox("Couldn't save: "+err.Error(), true)
+							return
+						}
+						resetStreams()
+					}
+					msgBox("Outlet set to "+v+". Print the QR poster again for this outlet.", false)
+					refresh()
+				}()
 			case <-ip.ClickedCh:
 				go func() {
 					v, ok := askText("IP address of the main Petpooja billing PC\n(the same one typed on the KDS TV, e.g. 192.168.1.5)",
-						"Babai Hub – Petpooja server", getConfig().Server)
+						"Babai Hub \u2013 Petpooja server", getConfig().Server)
 					if !ok {
 						return
 					}
@@ -97,18 +116,20 @@ func trayStatus(st map[string]any) string {
 	c := getConfig()
 	switch {
 	case c.Paused:
-		return "⏸ Paused"
+		return "\u23F8 Paused"
 	case c.Server == "":
-		return "⚠ Enter the Petpooja IP"
+		return "\u26A0 Enter the Petpooja IP"
+	case outletCode(c.Outlet) == "":
+		return "\u26A0 Enter the outlet name"
 	}
 	if ago, _ := st["ppOkAgo"].(int); ago < 0 || ago > 30 {
-		return "⚠ Can't read Petpooja"
+		return "\u26A0 Can't read Petpooja"
 	}
 	if !configured() {
-		return "⚠ Set up Firebase"
+		return "\u26A0 Set up Firebase"
 	}
 	if e, _ := st["cloudErrAgo"].(int); e >= 0 {
-		return "⚠ Cloud problem"
+		return "\u26A0 Cloud problem"
 	}
-	return fmt.Sprintf("● Live – %v ready, %v preparing", st["ready"], st["preparing"])
+	return fmt.Sprintf("\u25CF Live \u2013 %v ready, %v preparing", st["ready"], st["preparing"])
 }

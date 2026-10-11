@@ -84,13 +84,21 @@ func handlePetpooja(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	var in struct{ Server string }
+	var in struct{ Server, Outlet string }
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&in); err != nil {
 		reply(w, false, "Couldn't read the form.")
 		return
 	}
 	c := getConfig()
 	c.Server = strings.TrimSpace(in.Server)
+	if name := strings.TrimSpace(in.Outlet); name != c.Outlet {
+		if outletCode(name) == "" {
+			reply(w, false, "Type the outlet name as printed on the bill, e.g. VTR or Sarjapur.")
+			return
+		}
+		c.Outlet = name
+		resetStreams()
+	}
 	if err := saveConfig(c); err != nil {
 		reply(w, false, "Couldn't save: "+err.Error())
 		return
@@ -193,7 +201,11 @@ func handlePoster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b, _ := json.Marshal(u)
-	io.WriteString(w, strings.Replace(strings.Replace(posterHTML, "__URL_JSON__", string(b), 1), "__URL_TEXT__", html.EscapeString(u), 1))
+	out := ""
+	if name := strings.TrimSpace(getConfig().Outlet); name != "" {
+		out = ", " + html.EscapeString(name)
+	}
+	io.WriteString(w, strings.NewReplacer("__URL_JSON__", string(b), "__URL_TEXT__", html.EscapeString(u), "__OUTLET__", out).Replace(posterHTML))
 }
 
 const homeHTML = `<!doctype html>
@@ -250,6 +262,9 @@ a{color:var(--accent)}
 <div class="grid">
 <section><div class="step">Step 1</div><h2>Petpooja billing station</h2>
 <form id="fp" autocomplete="off">
+<label for="outlet">Outlet name (exactly as on the bill, e.g. VTR, Sarjapur, HSR, JPN)</label>
+<input type="text" id="outlet" placeholder="VTR" maxlength="30">
+<p class="hint">One hub per outlet. Customers see this name, and their bill photo is matched to it.</p>
 <label for="server">IP address of the main Petpooja billing PC</label>
 <input type="text" id="server" placeholder="192.168.1.5">
 <p class="hint">The same address you typed on the KDS TV. Port 3000 is used unless you add one (192.168.1.5:3000).</p>
@@ -265,8 +280,8 @@ a{color:var(--accent)}
 <div class="row"><button type="submit">Save &amp; test</button><button type="button" class="ghost" id="test">Test again</button></div>
 <div class="msg" id="fmsg" role="status"></div></form>
 <p class="hint">Rules to paste in Firebase (Realtime Database → Rules):</p>
-<pre id="rules">{"rules":{".read":false,".write":false,"babai":{"meta":{".read":true},"t":{"$tok":{".read":true}}}}}</pre>
-<p class="hint">Customers can read only one token at a time and the dosa wait. Everything else is private.</p>
+<pre id="rules">{"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"t":{"$tok":{".read":true}}}}}}}</pre>
+<p class="hint">Customers can read the outlet names, one token at a time and the dosa wait. Everything else is private. The same rules, database and secret are used by every outlet.</p>
 </section>
 
 <section><div class="step">Step 3</div><h2>QR code for customers</h2>
@@ -301,7 +316,7 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return
 function post(u,b){return fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Babai-Hub":"1"},body:JSON.stringify(b)}).then(function(r){return r.json()})}
 function show(el,r){el.textContent=r.msg;el.className="msg "+(r.ok?"ok":"bad")}
 function refresh(){fetch("/status.json").then(function(r){return r.json()}).then(function(s){
- if(!loaded){$("server").value=s.server||"";$("db").value=(s.db||"").replace(/^https:\/\//,"");$("page").value=s.page||"";loaded=true}
+ if(!loaded){$("server").value=s.server||"";$("outlet").value=s.outlet||"";$("db").value=(s.db||"").replace(/^https:\/\//,"");$("page").value=s.page||"";loaded=true}
  $("sReady").textContent=s.ready;$("sPrep").textContent=s.preparing;$("sOpen").textContent=s.openKots;$("sDone").textContent=s.finishedToday;
  $("sPP").textContent=s.server?ago(s.ppOkAgo):"not set up";$("sCloud").textContent=s.configured?ago(s.cloudOkAgo):"not set up";
  var probs=[];if(s.ppErrAgo>=0)probs.push("Petpooja ("+ago(s.ppErrAgo)+"): "+s.ppErr);if(s.cloudErrAgo>=0)probs.push("Cloud ("+ago(s.cloudErrAgo)+"): "+s.cloudErr);
@@ -312,7 +327,7 @@ function refresh(){fetch("/status.json").then(function(r){return r.json()}).then
  $("pill").className="pill "+(ppOk&&cloud?"ok":((s.server||s.configured)?"bad":""));
  $("pauseBtn").textContent=s.paused?"Resume":"Pause";
  if(s.paused){$("pill").className="pill bad";$("pillText").textContent="Paused";}else
- $("pillText").textContent=!s.server?"Enter the Petpooja IP (Step 1)":!ppOk?"Can't read Petpooja":!s.configured?"Set up Firebase (Step 2)":cloud?"Live: Petpooja → cloud":"Cloud problem";
+ $("pillText").textContent=!s.outlet?"Enter the outlet name (Step 1)":!s.server?"Enter the Petpooja IP (Step 1)":!ppOk?"Can't read Petpooja":!s.configured?"Set up Firebase (Step 2)":cloud?"Live: Petpooja → cloud":"Cloud problem";
  if(s.qr&&s.qr!==qrDone&&window.QRCode){$("qrbox").innerHTML="";new QRCode($("qrbox"),{text:s.qr,width:180,height:180,correctLevel:QRCode.CorrectLevel.M});qrDone=s.qr}
  $("qrwrap").hidden=!s.qr;$("qrnone").hidden=!!s.qr;
  $("ppInfo").textContent=s.ppOkAgo>=0?(s.ppRows+" item lines in "+(s.ppKots||[]).length+" KOTs"+(s.ppStock?", "+s.ppStock+" menu items ("+s.ppStockOff+" switched off)":"")):"Nothing yet.";
@@ -320,7 +335,7 @@ function refresh(){fetch("/status.json").then(function(r){return r.json()}).then
  $("raw").textContent=s.ppSample||"";
 }).catch(function(){$("pillText").textContent="Hub not responding"})}
 $("fp").addEventListener("submit",function(e){e.preventDefault();$("pmsg").textContent="Connecting…";$("pmsg").className="msg";
- post("/petpooja",{Server:$("server").value}).then(function(r){show($("pmsg"),r);refresh()})});
+ post("/petpooja",{Server:$("server").value,Outlet:$("outlet").value}).then(function(r){show($("pmsg"),r);refresh()})});
 $("f").addEventListener("submit",function(e){e.preventDefault();$("fmsg").textContent="Testing…";$("fmsg").className="msg";
  post("/settings",{DB:$("db").value,Secret:$("secret").value,Page:$("page").value}).then(function(r){show($("fmsg"),r);$("secret").value="";refresh()})});
 $("test").addEventListener("click",function(){$("fmsg").textContent="Testing…";post("/test",{}).then(function(r){show($("fmsg"),r);refresh()})});
@@ -347,7 +362,7 @@ li::before{content:counter(s);display:block;margin:0 auto 2mm;width:11mm;height:
 .tip{font-size:11pt;color:#6b5847}
 @media screen{.sheet{box-shadow:0 2px 20px rgba(0,0,0,.12);margin:20px auto;padding:14mm}body{background:#eee}}
 </style></head><body><div class="sheet">
-<div class="brand">Babai Tiffins</div>
+<div class="brand">Babai Tiffins__OUTLET__</div>
 <h1>Where's my dosa?</h1>
 <p class="sub">Live status on your phone. No app, no login.</p>
 <div id="qr"></div>

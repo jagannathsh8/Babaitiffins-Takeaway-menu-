@@ -163,6 +163,7 @@ func snapshotStatus() map[string]any {
 	}
 	c := getConfig()
 	st["server"] = c.Server
+	st["outlet"] = c.Outlet
 	st["configured"] = c.DB != "" && c.Secret != ""
 	st["db"] = c.DB
 	st["page"] = c.Page

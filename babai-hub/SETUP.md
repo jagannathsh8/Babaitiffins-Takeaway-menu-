@@ -1,6 +1,8 @@
 # Babai Hub – setup steps
 
-About 30 minutes, once. You need: any Windows 10/11 PC on the shop Wi-Fi/network that stays on
+About 30 minutes for the first outlet, 10 minutes for each further outlet (steps 3 and 5 only:
+same Netlify page, same Firebase database and secret, one hub PC per outlet).
+You need: any Windows 10/11 PC on the shop Wi-Fi/network that stays on
 during business hours (the Bridge Print PC is fine), the IP address of the main Petpooja billing PC,
 and a Google account.
 
@@ -17,7 +19,7 @@ Already done: https://babaidosa.netlify.app. In step 4 you upload the final page
 3. Open the **Rules** tab, replace everything with the line below, and click **Publish**:
 
    ```
-   {"rules":{".read":false,".write":false,"babai":{"meta":{".read":true},"t":{"$tok":{".read":true}}}}}
+   {"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"t":{"$tok":{".read":true}}}}}}}
    ```
 
 4. Go back to the **Data** tab and copy the address at the top
@@ -34,7 +36,8 @@ Already done: https://babaidosa.netlify.app. In step 4 you upload the final page
    in the **tray** next to the clock (Babai logo; click the ^ arrow if hidden), and appears in
    **Settings → Apps** and the Start menu. You can delete the copy you double-clicked.
 3. The hub page opens in the browser (later: right-click the tray icon → **Open Babai Hub**).
-4. **Step 1 – Petpooja billing station:** type the billing PC's IP (the same one typed on the KDS
+4. **Step 1 – Outlet and Petpooja:** type the **outlet name exactly as on the bill** (VTR, Sarjapur,
+   HSR, JPN…), then the billing PC's IP (the same one typed on the KDS
    TV, for example `192.168.1.5`) → **Save & test** (or tray → **Petpooja server IP…**). You should
    see "Connected to Petpooja: N KOTs in the kitchen right now". The KOTs appear under
    **What Petpooja sent** at the bottom.
@@ -59,7 +62,8 @@ settings. **Removing:** Settings → Apps → Babai Hub → Uninstall.
 
 ## 5. QR poster
 
-1. On the hub page, Step 3 → **Open printable poster** → Ctrl+P → print (A4).
+1. On the hub page, Step 3 → **Open printable poster** → Ctrl+P → print (A4). Each outlet prints
+   its own poster (it carries that outlet's name and code).
 2. Stick it at the counter and on tables.
 3. Test with your phone: scan, type a dine-in token that has a dosa → you see it preparing; when
    the kitchen marks the dosa ready, the phone pops up, chimes, speaks and vibrates.

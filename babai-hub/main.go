@@ -34,6 +34,7 @@ const (
 // Config is saved in config.json in the data folder.
 type Config struct {
 	Server       string `json:"server"`       // Petpooja billing station IP (port 3000 by default)
+	Outlet       string `json:"outlet"`       // outlet name exactly as on the bill, e.g. "VTR", "Sarjapur"
 	AutoClearMin int    `json:"autoClearMin"` // ready tokens leave after this many minutes (TV default 10)
 	Paused       bool   `json:"paused"`       // tray: Pause / Resume
 	DB           string `json:"db"`           // https://xxx.firebasedatabase.app
@@ -172,7 +173,31 @@ func configured() bool {
 	return c.DB != "" && c.Secret != ""
 }
 
-func cloudConfigured() bool { return configured() }
+// outletCode: the outlet's key in the cloud ("Sarjapur" -> "sarjapur", "VTR" -> "vtr").
+func outletCode(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	s := b.String()
+	if len(s) > 24 {
+		s = s[:24]
+	}
+	return s
+}
+
+// outletBase is where this outlet's data lives: /babai/o/<code>.
+func outletBase() string {
+	if c := outletCode(getConfig().Outlet); c != "" {
+		return "/babai/o/" + c
+	}
+	return ""
+}
+
+// cloudReady: Firebase set up and the outlet named.
+func cloudReady() bool { return configured() && outletBase() != "" }
 
 // normaliseDB turns "babai-x-default-rtdb.asia-southeast1.firebasedatabase.app/" into
 // "https://babai-x-default-rtdb.asia-southeast1.firebasedatabase.app". Only Firebase hosts.
@@ -195,7 +220,7 @@ func normaliseDB(s string) (string, error) {
 // qrURL is the address in the printed QR code (and on the Order Ready TV screen).
 func qrURL() string {
 	c := getConfig()
-	if c.DB == "" {
+	if c.DB == "" || outletCode(c.Outlet) == "" {
 		return ""
 	}
 	page := c.Page
@@ -206,7 +231,11 @@ func qrURL() string {
 	if strings.Contains(page, "?") {
 		sep = "&"
 	}
-	return page + sep + "d=" + strings.TrimPrefix(c.DB, "https://")
+	u := page + sep + "d=" + strings.TrimPrefix(c.DB, "https://")
+	if oc := outletCode(c.Outlet); oc != "" {
+		u += "&o=" + oc
+	}
+	return u
 }
 
 // ---- helpers ------------------------------------------------------------------------------

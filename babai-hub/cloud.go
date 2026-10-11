@@ -65,7 +65,11 @@ func (s *stream) push(now time.Time, data []byte) {
 	if s.stamp {
 		body = withServerTime(data)
 	}
-	err := fb(http.MethodPut, s.path, "", body)
+	base := outletBase()
+	if base == "" {
+		return
+	}
+	err := fb(http.MethodPut, base+s.path, "", body)
 	noteResult(err)
 	s.at = now
 	if err == nil {
@@ -83,10 +87,13 @@ var (
 	archAt    time.Time
 	prunedDay string
 
-	stTokens = &stream{path: "/babai/t", gap: tokensGap, heartbeat: tokensHB}
-	stMeta   = &stream{path: "/babai/meta", gap: metaGap, heartbeat: metaHB, stamp: true}
-	stLive   = &stream{path: "/babai/live", gap: liveGap, heartbeat: liveHB, stamp: true}
-	stStock  = &stream{path: "/babai/stock", gap: stockGap, heartbeat: stockHB, stamp: true}
+	// paths below /babai/o/<outlet>
+	stTokens = &stream{path: "/t", gap: tokensGap, heartbeat: tokensHB}
+	stMeta   = &stream{path: "/meta", gap: metaGap, heartbeat: metaHB, stamp: true}
+	stLive   = &stream{path: "/live", gap: liveGap, heartbeat: liveHB, stamp: true}
+	stStock  = &stream{path: "/stock", gap: stockGap, heartbeat: stockHB, stamp: true}
+
+	registeredOutlet string // "<code>|<name>" written to /babai/outlets
 )
 
 func cloudOK() bool {
@@ -135,9 +142,10 @@ func cloudLoop() {
 
 // cloudStep sends whatever is due (called every second).
 func cloudStep(now time.Time) {
-	if !configured() || getConfig().Paused {
+	if !cloudReady() || getConfig().Paused {
 		return
 	}
+	registerOutlet()
 	mu.Lock()
 	fresh := !lastBoard.IsZero() && now.Sub(lastBoard) < freshFor
 	tokens, meta, live := tokensRaw, metaRaw, liveRaw
@@ -179,7 +187,7 @@ func flushArchive() {
 		if n == 0 {
 			continue
 		}
-		err := fb(http.MethodPatch, "/babai/days/"+d, "", body)
+		err := fb(http.MethodPatch, outletBase()+"/days/"+d, "", body)
 		noteResult(err)
 		if err != nil {
 			return // try again next minute (records also stay in the local files)
@@ -198,7 +206,11 @@ func flushArchive() {
 
 // prune deletes archived days older than keepDays online (local files are kept).
 func prune(now time.Time) {
-	b, err := fbGet("/babai/days", "shallow=true")
+	base := outletBase()
+	if base == "" {
+		return
+	}
+	b, err := fbGet(base+"/days", "shallow=true")
 	if err != nil {
 		return
 	}
@@ -209,7 +221,7 @@ func prune(now time.Time) {
 	cut := now.AddDate(0, 0, -keepDays).Format("2006-01-02")
 	for k := range keys {
 		if k < cut {
-			if err := fb(http.MethodDelete, "/babai/days/"+k, "", nil); err == nil {
+			if err := fb(http.MethodDelete, base+"/days/"+k, "", nil); err == nil {
 				log.Printf("pruned online day %s", k)
 			}
 		}
@@ -277,9 +289,39 @@ func fbDo(method, path, query string, body []byte) ([]byte, error) {
 func testCloud() error {
 	host, _ := os.Hostname()
 	body, _ := json.Marshal(map[string]any{"u": map[string]string{".sv": "timestamp"}, "v": version, "pc": host})
-	err := fb(http.MethodPut, "/babai/hub", "", body)
+	path := "/babai/hubtest" // before the outlet is named
+	if b := outletBase(); b != "" {
+		path = b + "/hub"
+	}
+	err := fb(http.MethodPut, path, "", body)
 	noteResult(err)
+	if err == nil {
+		registeredOutlet = ""
+		registerOutlet()
+	}
 	return err
+}
+
+// registerOutlet lists this outlet in /babai/outlets/<code> = {"n": name} (public), so the
+// customers' page can offer it. Done once per name.
+func registerOutlet() {
+	c := getConfig()
+	code := outletCode(c.Outlet)
+	if code == "" || registeredOutlet == code+"|"+c.Outlet {
+		return
+	}
+	body, _ := json.Marshal(map[string]string{"n": strings.TrimSpace(c.Outlet)})
+	if err := fb(http.MethodPut, "/babai/outlets/"+code, "", body); err == nil {
+		registeredOutlet = code + "|" + c.Outlet
+	}
+}
+
+// resetStreams makes everything be sent again (new outlet name).
+func resetStreams() {
+	for _, s := range []*stream{stTokens, stMeta, stLive, stStock} {
+		s.sent, s.at = nil, time.Time{}
+	}
+	registeredOutlet = ""
 }
 
 // ---- monthly usage (shown on the page, to keep an eye on the free plan) --------------------

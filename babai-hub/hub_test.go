@@ -111,7 +111,7 @@ func setup(t *testing.T) (*fakeFirebase, *fakePetpooja, func()) {
 	psrv := httptest.NewServer(pp)
 	dataDir = t.TempDir()
 	_ = os.MkdirAll(filepath.Join(dataDir, "days"), 0o755)
-	cfg = Config{Server: strings.TrimPrefix(psrv.URL, "http://"), DB: fsrv.URL, Secret: "s3cret", Page: defaultPage, AutoClearMin: 10}
+	cfg = Config{Server: strings.TrimPrefix(psrv.URL, "http://"), DB: fsrv.URL, Secret: "s3cret", Page: defaultPage, AutoClearMin: 10, Outlet: "VTR"}
 	mu.Lock()
 	tokensRaw, metaRaw, liveRaw, lastBoard = nil, nil, nil, time.Time{}
 	open = map[int64]*Rec{}
@@ -122,6 +122,7 @@ func setup(t *testing.T) (*fakeFirebase, *fakePetpooja, func()) {
 	for _, s := range []*stream{stTokens, stMeta, stLive, stStock} {
 		s.sent, s.at = nil, time.Time{}
 	}
+	resetStreams()
 	archAt = time.Time{}
 	lastOKAt, lastErrAt, lastErr = time.Time{}, time.Time{}, ""
 	prunedDay = time.Now().Format("2006-01-02")
@@ -130,7 +131,7 @@ func setup(t *testing.T) (*fakeFirebase, *fakePetpooja, func()) {
 
 func phoneToken(t *testing.T, fb *fakeFirebase, key string) (PhoneToken, bool) {
 	var m map[string]PhoneToken
-	raw := fb.get("/babai/t.json")
+	raw := fb.get("/babai/o/vtr/t.json")
 	if err := json.Unmarshal([]byte(raw), &m); err != nil {
 		t.Fatalf("tokens JSON: %v %s", err, raw)
 	}
@@ -184,14 +185,17 @@ func TestPetpoojaToPhone(t *testing.T) {
 	if _, ok := phoneToken(t, fb, "50"); ok {
 		t.Fatal("delivery order shown as a dine-in token")
 	}
-	if strings.Contains(fb.get("/babai/live.json"), "9999999999") || strings.Contains(fb.get("/babai/live.json"), "Ravi") {
+	if strings.Contains(fb.get("/babai/o/vtr/live.json"), "9999999999") || strings.Contains(fb.get("/babai/o/vtr/live.json"), "Ravi") {
 		t.Fatal("customer details sent to the cloud")
 	}
-	if !strings.HasPrefix(fb.get("/babai/meta.json"), `{"u":{".sv":"timestamp"},`) {
-		t.Fatalf("meta: %s", fb.get("/babai/meta.json"))
+	if !strings.HasPrefix(fb.get("/babai/o/vtr/meta.json"), `{"u":{".sv":"timestamp"},`) {
+		t.Fatalf("meta: %s", fb.get("/babai/o/vtr/meta.json"))
 	}
-	if !strings.Contains(fb.get("/babai/stock.json"), `"12":{"c":"Dosa","n":"Pesarattu","on":0}`) {
-		t.Fatalf("stock: %s", fb.get("/babai/stock.json"))
+	if fb.get("/babai/outlets/vtr.json") != `{"n":"VTR"}` {
+		t.Fatalf("outlet not listed: %q", fb.get("/babai/outlets/vtr.json"))
+	}
+	if !strings.Contains(fb.get("/babai/o/vtr/stock.json"), `"12":{"c":"Dosa","n":"Pesarattu","on":0}`) {
+		t.Fatalf("stock: %s", fb.get("/babai/o/vtr/stock.json"))
 	}
 
 	// 42's dosa comes out first: 41 is "overtaken"
@@ -211,9 +215,9 @@ func TestPetpoojaToPhone(t *testing.T) {
 		t.Fatalf("41 not overtaken: %+v", t41)
 	}
 	// unchanged: not re-sent within the gap
-	n := fb.count("PUT /babai/t.json")
+	n := fb.count("PUT /babai/o/vtr/t.json")
 	cloudStep(now.Add(8 * time.Second))
-	if fb.count("PUT /babai/t.json") != n {
+	if fb.count("PUT /babai/o/vtr/t.json") != n {
 		t.Fatal("unchanged tokens re-sent")
 	}
 
@@ -235,7 +239,7 @@ func TestPetpoojaToPhone(t *testing.T) {
 	cloudStep(now.Add(81 * time.Second))
 	var arch string
 	for _, r := range fb.reqs {
-		if strings.HasPrefix(r, "PATCH /babai/days/") {
+		if strings.HasPrefix(r, "PATCH /babai/o/vtr/days/") {
 			arch = r
 		}
 	}
@@ -360,6 +364,9 @@ func TestNormalise(t *testing.T) {
 	}
 	if _, err := normaliseDB("evil.example.com"); err == nil {
 		t.Fatal("non-Firebase host accepted")
+	}
+	if outletCode(" Sarjapur ") != "sarjapur" || outletCode("JP Nagar") != "jpnagar" || outletCode("--") != "" {
+		t.Fatal("outlet codes")
 	}
 	if serverBase("192.168.1.5") != "http://192.168.1.5:3000/" || serverBase("http://192.168.1.5:8080/") != "http://192.168.1.5:8080/" {
 		t.Fatalf("server base: %s", serverBase("192.168.1.5"))
