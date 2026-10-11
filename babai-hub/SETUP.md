@@ -19,7 +19,7 @@ Already done: https://babaidosa.netlify.app. In step 4 you upload the final page
 3. Open the **Rules** tab, replace everything with the line below, and click **Publish**:
 
    ```
-   {"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"t":{"$tok":{".read":true}}}}}}}
+   {"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"promo":{".read":true},"pimg":{".read":true},"t":{"$tok":{".read":true}}}}}}}
    ```
 
 4. Go back to the **Data** tab and copy the address at the top
@@ -81,3 +81,15 @@ settings. **Removing:** Settings → Apps → Babai Hub → Uninstall.
   hasn't reached the kitchen. Only dine-in orders with a dosa are tracked (same as the TV).
 - The hub only needs to run on **one** PC. If that PC is off, the TVs work as usual; the phone page
   shows "updates paused".
+
+
+## Dish carousel ("Try next time")
+
+The Hub page, **Step 4**, or tray icon → **Dish carousel…**:
+
+* Add up to **10 dishes**. Each has a photo, a name and an optional short line. You can move dishes left or right, edit them and delete them.
+* **Show no dishes (game only)**: the carousel is hidden, and customers only see the game.
+* **Use Babai's default dishes**: back to the 5 built-in dishes.
+* Photos are made small on the PC (about 10-40 KB each) before they are sent. A phone downloads each photo only when its slide comes up, and only once.
+* Each outlet's Hub has its own dishes.
+* The Hub adds the new rules to Firebase by itself. If that ever fails, paste the rules above again.

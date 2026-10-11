@@ -366,6 +366,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   var geo={},dist={},located=false;   // code -> {lat,lng}; code -> metres from the customer
   function setOutlet(code){
     if(!code)return;var changed=code!==outlet;outlet=code;store.set('babai_outlet',code);needOutlet=false;paintOutlets();
+    if(changed&&dishBuilt)loadPromo();
     if(changed){meta=null;data=null;poll()}
     if(pendingTok){var t=pendingTok;pendingTok='';startTracking(t)}
   }
@@ -706,18 +707,48 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     ['dl_masala_dosa','Masala Dosa','Golden, crisp and filled with soft potato masala'],
     ['dl_tomato_rice','Tomato Rice','Tangy Andhra-style comfort in every spoon'],
     ['dl_filter_coffee','Filter Coffee','Strong, frothy — the perfect finish']];
-  var dishBuilt=false,dishTimer=null,dishI=0;
+  // The dishes: the outlet's own (set on its Babai Hub: 0 to 10, photos fetched one by one when
+  // their slide comes up, kept on the phone) or, when it has none set, the built-in ones above.
+  var dishBuilt=false,dishTimer=null,dishI=0,dishKind='',promoFor=null,dishList=[];
+  function defaultDishes(){var imgs={};try{imgs=JSON.parse($('dishImgs').textContent)}catch(e){}
+    return DISHES.filter(function(d){return imgs[d[0]]}).map(function(d){return {t:d[1],d:d[2],src:imgs[d[0]]}})}
   function buildDishes(){
-    if(dishBuilt)return;dishBuilt=true;
-    var imgs={};try{imgs=JSON.parse($('dishImgs').textContent)}catch(e){}
-    var list=DISHES.filter(function(d){return imgs[d[0]]});
-    $('dishes').innerHTML=list.map(function(d){return '<div class="dish-card"><img alt="'+esc(d[1])+'" src="'+imgs[d[0]]+'"><span class="tag">ASK AT THE COUNTER</span><div class="cap"><b>'+esc(d[1])+'</b><span>'+esc(d[2])+'</span></div></div>'}).join('');
+    if(!dishBuilt){dishBuilt=true;
+      $('dishes').addEventListener('scroll',function(){var w=$('dishes').clientWidth||1;dishI=Math.round($('dishes').scrollLeft/w);paintDots();dishPhotos()},{passive:true})}
+    if(!dishKind)renderDishes(defaultDishes(),'default');
+    loadPromo();
+  }
+  function renderDishes(list,kind){
+    dishKind=kind;dishList=list;dishI=0;
+    var none=!list.length;
+    $('tabDish').hidden=none;if(none&&$('gamePane').hidden)tab(true);
+    $('dishes').innerHTML=list.map(function(d,i){return '<div class="dish-card"><img alt="'+esc(d.t)+'" data-i="'+i+'"'+(d.src?' src="'+d.src+'"':'')+'><span class="tag">ASK AT THE COUNTER</span><div class="cap"><b>'+esc(d.t)+'</b><span>'+esc(d.d||'')+'</span></div></div>'}).join('');
     $('dots').innerHTML=list.map(function(){return '<i></i>'}).join('');
-    $('dishes').addEventListener('scroll',function(){var w=$('dishes').clientWidth||1;dishI=Math.round($('dishes').scrollLeft/w);paintDots()},{passive:true});
-    paintDots();
+    $('dishes').scrollLeft=0;paintDots();dishPhotos();
+  }
+  function loadPromo(){
+    if(!outlet||DEMO||promoFor===outlet)return;
+    var o=outlet;promoFor=o;
+    get('o/'+o+'/promo').then(function(p){if(o!==outlet)return;
+      var own=p&&(p.n===0||Array.isArray(p.s))?(p.n===0?[]:p.s):null;   // n:0 = no dishes (Firebase drops empty lists)
+      if(own)renderDishes(own.slice(0,10).map(function(d){return {t:String(d.t||''),d:String(d.d||''),k:String(d.k||'')}}),'own:'+o+':'+p.v);
+      else if(dishKind!=='default')renderDishes(defaultDishes(),'default');
+    }).catch(function(){if(promoFor===o)promoFor=null});   // try again next time the dishes show
+  }
+  // Photos of the slide on screen and the next one; each photo is downloaded once per phone.
+  function dishPhotos(){
+    [dishI,dishI+1].forEach(function(i){var d=dishList[i];if(!d||d.src||!d.k||d.loading||!/^[0-9a-f]{16}$/.test(d.k))return;
+      var img=$('dishes').querySelector('img[data-i="'+i+'"]'),key='babai_pimg_'+d.k,c=store.get(key);
+      if(c){d.src=c;if(img)img.src=c;return}
+      d.loading=true;var o=outlet;
+      get('o/'+o+'/pimg/'+d.k).then(function(u){d.loading=false;
+        if(typeof u!=='string'||!/^data:image\/(webp|jpeg|png);base64,/.test(u))return;
+        d.src=u;var im=$('dishes').querySelector('img[data-i="'+i+'"]');if(im&&dishList[i]===d)im.src=u;
+        try{localStorage.setItem(key,u)}catch(e){try{for(var n=localStorage.length-1;n>=0;n--){var kk=localStorage.key(n);if(kk&&kk.indexOf('babai_pimg_')===0&&kk!==key)localStorage.removeItem(kk)}localStorage.setItem(key,u)}catch(e2){}}
+      }).catch(function(){d.loading=false})});
   }
   function paintDots(){var d=$('dots').children;for(var i=0;i<d.length;i++)d[i].className=i===dishI?'on':''}
-  function autoDish(on){clearInterval(dishTimer);if(on)dishTimer=setInterval(function(){var el=$('dishes'),n=el.children.length;if(!n||$('dishPane').hidden||document.hidden)return;dishI=(dishI+1)%n;el.scrollTo({left:dishI*el.clientWidth,behavior:'smooth'});paintDots()},5000)}
+  function autoDish(on){clearInterval(dishTimer);if(on)dishTimer=setInterval(function(){var el=$('dishes'),n=el.children.length;if(!n||$('dishPane').hidden||document.hidden)return;dishI=(dishI+1)%n;el.scrollTo({left:dishI*el.clientWidth,behavior:'smooth'});paintDots();dishPhotos()},5000)}
   function showFun(on){
     var f=$('fun');if(f.hidden===!on)return;f.hidden=!on;
     if(on){buildDishes();autoDish(true);if(!$('gamePane').hidden)setTimeout(gameSize,0)}else{autoDish(false);gameStop()}

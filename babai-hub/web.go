@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Requests that change something must carry this header. A web page from elsewhere can't add it
@@ -23,7 +24,7 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	io.WriteString(w, homeHTML)
+	io.WriteString(w, strings.Replace(homeHTML, "__RULES__", rulesJSON, 1))
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +69,8 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 		reply(w, false, "Couldn't save the settings: "+err.Error())
 		return
 	}
+	rulesOK, rulesTryAt = false, time.Time{} // new database: check its rules and send the dishes
+	markPromoDirty()
 	if c.DB == "" || c.Secret == "" {
 		reply(w, true, "Saved. Cloud sending is off until the database address and secret are filled in.")
 		return
@@ -248,6 +251,13 @@ code,pre{font-family:var(--mono);font-size:.82rem;word-break:break-all}
 pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;max-height:260px;margin:6px 0 0;white-space:pre-wrap}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
 .stat{background:var(--bg);border-radius:10px;padding:10px 12px}
+.dishes{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:10px}
+.dish{background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.dish img{width:100%;aspect-ratio:520/322;object-fit:cover;display:block;background:#000}
+.dish .tx{padding:8px 10px;flex:1}.dish .tx b{display:block}.dish .tx span{color:var(--muted);font-size:.85rem}
+.dish .bt{display:flex;gap:4px;padding:0 8px 8px;flex-wrap:wrap}.dish .bt button{padding:4px 9px;font-size:.85rem}
+#dprev[hidden]{display:none}
+#dprev{width:260px;max-width:100%;aspect-ratio:520/322;object-fit:cover;border-radius:10px;display:block;margin-top:8px;background:#000}
 .stat b{display:block;font-size:1.4rem;font-variant-numeric:tabular-nums}.stat span{color:var(--muted);font-size:.85rem}
 #qrbox{background:#fff;padding:10px;border-radius:10px;display:inline-block;margin-top:8px}
 .tbl{overflow-x:auto;margin-top:8px}
@@ -293,8 +303,8 @@ a{color:var(--accent)}
 <div class="row"><button type="submit">Save &amp; test</button><button type="button" class="ghost" id="test">Test again</button></div>
 <div class="msg" id="fmsg" role="status"></div></form>
 <p class="hint">Rules to paste in Firebase (Realtime Database → Rules):</p>
-<pre id="rules">{"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"t":{"$tok":{".read":true}}}}}}}</pre>
-<p class="hint">Customers can read the outlet names, one token at a time and the dosa wait. Everything else is private. The same rules, database and secret are used by every outlet.</p>
+<pre id="rules">__RULES__</pre>
+<p class="hint">Customers can read the outlet names, one token at a time, the dosa wait and the dish carousel. Everything else is private. The same rules, database and secret are used by every outlet. The hub also updates the rules by itself when it connects.</p>
 </section>
 
 <section><div class="step">Step 3</div><h2>QR code for customers</h2>
@@ -312,6 +322,22 @@ a{color:var(--accent)}
 <p class="hint">Finished KOTs are also saved on this PC in <code id="dir"></code>\days</p>
 </section>
 </div>
+
+<section id="dishes"><div class="step">Step 4 · optional</div><h2>Dish carousel on customers' phones</h2>
+<p class="hint">"Try next time" photos customers swipe through while they wait. Up to 10 dishes. With no dishes the carousel is hidden and customers only see the game.</p>
+<p class="hint" id="dmode"></p>
+<div class="dishes" id="dlist"></div>
+<form id="fd" autocomplete="off">
+<h2 id="dformTitle" style="margin-top:16px">Add a dish</h2>
+<label for="dphoto">Photo</label><input type="file" id="dphoto" accept="image/*">
+<img id="dprev" alt="" hidden>
+<label for="dname">Dish name</label><input type="text" id="dname" maxlength="40" placeholder="Ghee Karam Dosa">
+<label for="dline">Short line (optional)</label><input type="text" id="dline" maxlength="90" placeholder="Roasted chilli-garlic karam and ghee on a hot tawa">
+<div class="row"><button type="submit" id="dsave">Add dish</button><button type="button" class="ghost" id="dcancel" hidden>Cancel</button></div>
+<div class="msg" id="dmsg" role="status"></div></form>
+<div class="row"><button type="button" class="ghost" id="dnone">Show no dishes (game only)</button><button type="button" class="ghost" id="ddefault">Use Babai's default dishes</button></div>
+<p class="hint">Photos are made small here before they are sent (about 30 KB each), so the carousel stays inside Firebase's free plan.</p>
+</section>
 
 <section><h2>What Petpooja sent</h2>
 <p class="hint" id="ppInfo">Nothing yet.</p>
@@ -358,6 +384,40 @@ $("f").addEventListener("submit",function(e){e.preventDefault();$("fmsg").textCo
  post("/settings",{DB:$("db").value,Secret:$("secret").value,Page:$("page").value}).then(function(r){show($("fmsg"),r);$("secret").value="";refresh()})});
 $("test").addEventListener("click",function(){$("fmsg").textContent="Testing…";post("/test",{}).then(function(r){show($("fmsg"),r);refresh()})});
 $("pauseBtn").addEventListener("click",function(){post("/pause",{Paused:$("pauseBtn").textContent==="Pause"}).then(function(r){show($("amsg"),r);refresh()})});
+var dish=null,editI=-1,dimg="";
+function loadDishes(){fetch("/promo").then(function(r){return r.json()}).then(function(p){dish=p;var n=(p.dishes||[]).length;
+ $("dmode").textContent=!p.custom?"Now: Babai's default dishes (5). Add a dish to use your own instead.":n?("Now: your "+n+" of "+p.max+" dishes \u2022 "+p.sync):"Now: no dishes \u2014 customers see only the game \u2022 "+p.sync;
+ $("dlist").innerHTML=(p.dishes||[]).map(function(d,i){return '<div class="dish"><img alt="" src="/promo/img?k='+d.k+'"><div class="tx"><b>'+esc(d.t)+'</b><span>'+esc(d.d)+'</span></div><div class="bt">'
+  +'<button type="button" class="ghost" data-op="up" data-i="'+i+'" aria-label="Move left">\u2190</button><button type="button" class="ghost" data-op="down" data-i="'+i+'" aria-label="Move right">\u2192</button>'
+  +'<button type="button" class="ghost" data-op="edit" data-i="'+i+'">Edit</button><button type="button" class="ghost" data-op="delete" data-i="'+i+'">Delete</button></div></div>'}).join("");
+ var full=p.custom&&n>=p.max&&editI<0;$("dsave").disabled=full;if(full&&editI<0)$("dmsg").textContent="10 dishes is the most. Delete one to add another.";
+})}
+function dishForm(i){editI=i;dimg="";$("dphoto").value="";$("dprev").hidden=true;
+ var d=i>=0?dish.dishes[i]:{t:"",d:""};$("dname").value=d.t;$("dline").value=d.d;
+ $("dformTitle").textContent=i>=0?"Edit dish "+(i+1):"Add a dish";$("dsave").textContent=i>=0?"Save changes":"Add dish";$("dcancel").hidden=i<0;
+ if(i>=0){$("dprev").src="/promo/img?k="+d.k;$("dprev").hidden=false;$("dname").focus()}}
+$("dlist").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;var i=+b.dataset.i,op=b.dataset.op;
+ if(op==="edit"){dishForm(i);return}
+ if(op==="delete"&&!confirm("Delete "+dish.dishes[i].t+"?"))return;
+ post("/promo",{Op:op,I:i}).then(function(r){show($("dmsg"),r);if(editI>=0)dishForm(-1);loadDishes()})});
+// Photo -> 640 x 396 (the card's shape, centre cut), WebP (or JPEG): small enough for the free plan.
+$("dphoto").addEventListener("change",function(){var f=this.files&&this.files[0];if(!f)return;var u=URL.createObjectURL(f),im=new Image();
+ im.onload=function(){var W=640,H=396,c=document.createElement("canvas");c.width=W;c.height=H;var g=c.getContext("2d");
+  var s=Math.max(W/im.naturalWidth,H/im.naturalHeight),w=im.naturalWidth*s,h=im.naturalHeight*s;g.drawImage(im,(W-w)/2,(H-h)/2,w,h);URL.revokeObjectURL(u);
+  var q=0.72,d=c.toDataURL("image/webp",q);if(d.indexOf("data:image/webp")!==0)d=c.toDataURL("image/jpeg",0.78);
+  while(d.length>110000&&q>0.4){q-=0.1;d=d.indexOf("data:image/webp")===0?c.toDataURL("image/webp",q):c.toDataURL("image/jpeg",q)}
+  dimg=d;$("dprev").src=d;$("dprev").hidden=false;$("dmsg").textContent="Photo ready ("+Math.round(d.length*0.75/1024)+" KB).";$("dmsg").className="msg"};
+ im.onerror=function(){show($("dmsg"),{ok:false,msg:"That file is not a photo this PC can open."})};im.src=u});
+$("fd").addEventListener("submit",function(e){e.preventDefault();
+ if(editI<0&&!dimg){show($("dmsg"),{ok:false,msg:"Choose a photo of the dish."});return}
+ $("dmsg").textContent="Saving…";$("dmsg").className="msg";
+ post("/promo",{Op:editI>=0?"edit":"add",I:editI,T:$("dname").value,D:$("dline").value,Image:dimg}).then(function(r){show($("dmsg"),r);if(r.ok)dishForm(-1);loadDishes()})
+ .catch(function(){show($("dmsg"),{ok:false,msg:"Couldn't save (photo too big?)."})})});
+$("dcancel").addEventListener("click",function(){dishForm(-1)});
+$("dnone").addEventListener("click",function(){if(confirm("Hide the dish carousel? Customers will see only the game."))post("/promo",{Op:"none"}).then(function(r){show($("dmsg"),r);loadDishes()})});
+$("ddefault").addEventListener("click",function(){if(confirm("Remove your dishes and use Babai's default dishes?"))post("/promo",{Op:"default"}).then(function(r){show($("dmsg"),r);dishForm(-1);loadDishes()})});
+loadDishes();setInterval(loadDishes,15000);
+if(location.hash==="#dishes")setTimeout(function(){$("dishes").scrollIntoView()},300);
 refresh();setInterval(refresh,3000);
 </script></body></html>`
 

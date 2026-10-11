@@ -56,6 +56,7 @@ func main() {
 	_ = os.MkdirAll(filepath.Join(dataDir, "days"), 0o755)
 	setupLog()
 	loadConfig()
+	loadPromo()
 	loadUsage()
 
 	port := cfg.Port
@@ -96,6 +97,8 @@ func main() {
 	mux.HandleFunc("/poster", localOnly(handlePoster))
 	mux.HandleFunc("/customer-page", localOnly(handleCustomerPage))
 	mux.HandleFunc("/pause", localOnly(handlePause))
+	mux.HandleFunc("/promo", localOnly(handlePromo))
+	mux.HandleFunc("/promo/img", localOnly(handlePromoImage))
 	mux.HandleFunc("/quit", localOnly(func(w http.ResponseWriter, r *http.Request) {
 		if !fromOwnPage(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)

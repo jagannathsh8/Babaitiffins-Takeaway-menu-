@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -401,5 +405,130 @@ func TestLocation(t *testing.T) {
 	}
 	if _, _, err := resolveLocation("near the bus stop"); err == nil {
 		t.Fatal("nonsense accepted")
+	}
+}
+
+func dishPhoto(t *testing.T, shade uint8) string {
+	img := image.NewGray(image.Rect(0, 0, 64, 40))
+	for i := range img.Pix {
+		img.Pix[i] = shade + uint8(i%7)
+	}
+	var b bytes.Buffer
+	if err := jpeg.Encode(&b, img, nil); err != nil {
+		t.Fatal(err)
+	}
+	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(b.Bytes())
+}
+
+func promoPost(t *testing.T, body map[string]any, own bool) map[string]any {
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/promo", bytes.NewReader(b))
+	if own {
+		req.Header.Set("X-Babai-Hub", "1")
+	}
+	w := httptest.NewRecorder()
+	handlePromo(w, req)
+	if !own {
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("promo change without the hub page header: %d", w.Code)
+		}
+		return nil
+	}
+	var r map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &r)
+	return r
+}
+
+func TestDishCarousel(t *testing.T) {
+	fb, _, done := setup(t)
+	defer done()
+	promoMu.Lock()
+	promo, promoDirty, promoTryAt, promoErr = promoState{}, false, time.Time{}, ""
+	promoMu.Unlock()
+	rulesOK, rulesTryAt = false, time.Time{}
+
+	promoPost(t, map[string]any{"Op": "add", "T": "x", "Image": dishPhoto(t, 10)}, false)
+	if r := promoPost(t, map[string]any{"Op": "add", "T": "Masala Dosa", "Image": "data:text/html;base64,PGI+"}, true); r["ok"] == true {
+		t.Fatal("a non-photo was accepted")
+	}
+	if r := promoPost(t, map[string]any{"Op": "add", "T": "", "Image": dishPhoto(t, 10)}, true); r["ok"] == true {
+		t.Fatal("a dish without a name was accepted")
+	}
+	r := promoPost(t, map[string]any{"Op": "add", "T": "  Ghee   Karam Dosa ", "D": "Hot tawa", "Image": dishPhoto(t, 20)}, true)
+	if r["ok"] != true {
+		t.Fatalf("add: %v", r)
+	}
+	p := promoSnapshot()
+	if !p.Custom || len(p.Dishes) != 1 || p.Dishes[0].T != "Ghee Karam Dosa" {
+		t.Fatalf("saved: %+v", p)
+	}
+	k := p.Dishes[0].K
+	if _, err := os.Stat(promoImgPath(k)); err != nil {
+		t.Fatal("photo not kept on the PC")
+	}
+
+	cloudStep(time.Now())
+	if !strings.Contains(fb.get("/.settings/rules.json"), `"pimg"`) {
+		t.Fatalf("rules not updated: %q", fb.get("/.settings/rules.json"))
+	}
+	if !strings.HasPrefix(fb.get("/babai/o/vtr/pimg/"+k+".json"), `"data:image/jpeg;base64,`) {
+		t.Fatal("photo not sent")
+	}
+	var online struct {
+		V int64
+		S []Dish
+	}
+	_ = json.Unmarshal([]byte(fb.get("/babai/o/vtr/promo.json")), &online)
+	if len(online.S) != 1 || online.S[0].K != k || online.V == 0 {
+		t.Fatalf("list not sent: %q", fb.get("/babai/o/vtr/promo.json"))
+	}
+	puts := fb.count("PUT /babai/o/vtr/pimg/")
+	cloudStep(time.Now().Add(2 * time.Minute)) // nothing changed: nothing sent again
+	if fb.count("PUT /babai/o/vtr/pimg/") != puts || fb.count("PUT /babai/o/vtr/promo") != 1 {
+		t.Fatal("sent again without a change")
+	}
+
+	// up to 10
+	for i := 1; i < promoMax; i++ {
+		if r := promoPost(t, map[string]any{"Op": "add", "T": "Dish", "Image": dishPhoto(t, uint8(30+i))}, true); r["ok"] != true {
+			t.Fatalf("add %d: %v", i, r)
+		}
+	}
+	if r := promoPost(t, map[string]any{"Op": "add", "T": "Eleven", "Image": dishPhoto(t, 200)}, true); r["ok"] == true {
+		t.Fatal("an 11th dish was accepted")
+	}
+	promoPost(t, map[string]any{"Op": "down", "I": 0}, true)
+	if promoSnapshot().Dishes[1].K != k {
+		t.Fatal("move did not work")
+	}
+	promoPost(t, map[string]any{"Op": "delete", "I": 1}, true)
+	if n := len(promoSnapshot().Dishes); n != promoMax-1 {
+		t.Fatalf("delete: %d left", n)
+	}
+	if _, err := os.Stat(promoImgPath(k)); err == nil {
+		t.Fatal("deleted dish's photo kept")
+	}
+
+	// 0 dishes: the list is sent empty (customers' page hides the carousel)
+	promoPost(t, map[string]any{"Op": "none"}, true)
+	cloudStep(time.Now().Add(4 * time.Minute))
+	_ = json.Unmarshal([]byte(fb.get("/babai/o/vtr/promo.json")), &online)
+	if len(online.S) != 0 || !strings.Contains(fb.get("/babai/o/vtr/promo.json"), `"n":0`) {
+		t.Fatalf("0 dishes: %q", fb.get("/babai/o/vtr/promo.json"))
+	}
+	// default: the list is removed online
+	promoPost(t, map[string]any{"Op": "default"}, true)
+	cloudStep(time.Now().Add(6 * time.Minute))
+	if fb.count("DELETE /babai/o/vtr/promo") == 0 {
+		t.Fatal("default dishes: list not removed online")
+	}
+	// survives a restart
+	promoPost(t, map[string]any{"Op": "add", "T": "Pongal", "Image": dishPhoto(t, 90)}, true)
+	promoMu.Lock()
+	promo = promoState{}
+	promoMu.Unlock()
+	loadPromo()
+	if p := promoSnapshot(); len(p.Dishes) != 1 || p.Dishes[0].T != "Pongal" {
+		t.Fatalf("after restart: %+v", p)
 	}
 }

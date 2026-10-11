@@ -147,6 +147,8 @@ func cloudStep(now time.Time) {
 		return
 	}
 	registerOutlet()
+	ensureRules(now)
+	syncPromo(now)
 	mu.Lock()
 	fresh := !lastBoard.IsZero() && now.Sub(lastBoard) < freshFor
 	tokens, meta, live := tokensRaw, metaRaw, liveRaw
@@ -328,6 +330,39 @@ func resetStreams() {
 		s.sent, s.at = nil, time.Time{}
 	}
 	registeredOutlet = ""
+	markPromoDirty()
+}
+
+// rulesJSON: who may read what (see the layout above). Customers: outlet names, one token at a
+// time, the dosa wait and the dish carousel. Everything else needs the secret (the hubs).
+const rulesJSON = `{"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"promo":{".read":true},"pimg":{".read":true},"t":{"$tok":{".read":true}}}}}}}`
+
+var (
+	rulesOK    bool
+	rulesTryAt time.Time
+)
+
+// ensureRules puts the rules above in Firebase when the ones there are older (no dish
+// carousel), so nobody has to paste them again after an update. Tried every 10 minutes.
+func ensureRules(now time.Time) {
+	if rulesOK || now.Before(rulesTryAt) {
+		return
+	}
+	rulesTryAt = now.Add(10 * time.Minute)
+	b, err := fbGet("/.settings/rules", "")
+	if err != nil {
+		return
+	}
+	if strings.Contains(string(b), `"pimg"`) {
+		rulesOK = true
+		return
+	}
+	if _, err := fbDo(http.MethodPut, "/.settings/rules", "", []byte(rulesJSON)); err != nil {
+		log.Printf("rules: %v", err)
+		return
+	}
+	rulesOK = true
+	log.Printf("Firebase rules updated (dish carousel)")
 }
 
 // ---- monthly usage (shown on the page, to keep an eye on the free plan) --------------------

@@ -36,6 +36,7 @@ func trayReady(port int) {
 	ip := systray.AddMenuItem("Petpooja server IP\u2026", "IP address of the main Petpooja billing PC")
 	pause := systray.AddMenuItem("Pause", "Stop reading Petpooja and updating customers' phones")
 	poster := systray.AddMenuItem("Print QR poster", "")
+	dishes := systray.AddMenuItem("Dish carousel\u2026", "Photos customers swipe through while they wait (up to 10)")
 	systray.AddSeparator()
 	restart := systray.AddMenuItem("Restart Babai Hub", "")
 
@@ -61,6 +62,8 @@ func trayReady(port int) {
 				openBrowser(page)
 			case <-poster.ClickedCh:
 				openBrowser(page + "poster")
+			case <-dishes.ClickedCh:
+				openBrowser(page + "#dishes")
 			case <-pause.ClickedCh:
 				setPaused(!getConfig().Paused)
 				refresh()
