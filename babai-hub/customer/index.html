@@ -132,6 +132,7 @@ body{margin:0;min-height:100vh;color:#fff;font-family:var(--num);font-size:16px;
 .gover b{font-size:1.4rem;color:var(--l)}
 .gover span{color:var(--t);font-size:.9rem;max-width:280px}
 .gover .btn{width:auto;padding:12px 34px;margin-top:6px}
+.nd{display:block;font-size:1.25rem;font-weight:900;color:var(--l);margin-bottom:6px}
 .ghint{margin:8px 0 0;text-align:center;color:var(--muted);font-size:.8rem}
 .err{color:var(--orange);font-size:.88rem;margin:8px 0 0;text-align:center}
 
@@ -263,8 +264,8 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     <div id="mReady" hidden><div class="readyline">DOSA READY!</div><div class="readysub" id="mReadySub">Please collect at the counter</div></div>
     <div id="mOther" hidden><div class="sub kind" id="mOtherText"></div></div>
     <div class="items" id="mItems" hidden>
-      <h3>YOUR DOSA</h3><div id="dosaList"></div>
-      <div id="otherWrap" hidden><h3 style="margin-top:12px;color:var(--t)">ALSO IN YOUR ORDER</h3><div class="others" id="otherList"></div></div>
+      <h3 id="dosaHead">YOUR DOSA</h3><div id="dosaList"></div>
+      <div id="otherWrap" hidden><h3 id="otherHead" style="margin-top:12px;color:var(--t)">ALSO IN YOUR ORDER</h3><div class="others" id="otherList"></div></div>
     </div>
   </section>
   <!-- while you wait: our dishes + a light game (shown while the dosa is being made) -->
@@ -355,7 +356,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   var FROM_QR=!!qs.get('o');
   var outlet=FROM_QR?qs.get('o').toLowerCase().replace(/[^a-z0-9]/g,''):'';
   if(FROM_QR)store.set('babai_outlet',outlet);
-  var needOutlet=false,pendingTok='';   // bill read but outlet unknown: ask with buttons
+  var needOutlet=false,pendingTok='',trackStart=0,gameOffered=false;   // bill read but outlet unknown: ask with buttons
   var outlets={};   // code -> name, from /babai/outlets
   var geo={},dist={},located=false;   // code -> {lat,lng}; code -> metres from the customer
   function setOutlet(code){
@@ -424,7 +425,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     token=t;store.set('babai_token',t+'|'+Date.now());
     unlockAudio();keepAwake();
     if(DEMO)demoT0=Date.now();
-    tracking=true;everSeen=false;wasReady=false;alerted=false;firstPos=null;
+    tracking=true;everSeen=false;wasReady=false;alerted=false;firstPos=null;trackStart=Date.now();gameOffered=false;
     $('entry').hidden=true;$('mine').hidden=false;$('actions').hidden=false;$('mTok').textContent=token;
     mine=null;
     render();poll();
@@ -592,6 +593,9 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     var q=function(n){return n%1===0?n:n.toFixed(1)};
     $('dosaList').innerHTML=dosas.map(function(x,i){return '<div class="dish'+(x.s?' done':'')+'" style="animation-delay:'+(i*80)+'ms"><span class="q">'+q(x.q||1)+'\u00D7</span><span class="nm">'+esc(x.n)+'</span><span class="st'+(x.s?'':' on')+'">'+(x.s?'READY \u2713':'ON TAWA')+'</span></div>'}).join('');
     $('otherWrap').hidden=!others.length;
+    $('dosaHead').hidden=!dosas.length;
+    $('otherHead').textContent=dosas.length?'ALSO IN YOUR ORDER':'YOUR ORDER';
+    $('otherHead').style.marginTop=dosas.length?'12px':'0';
     $('otherList').innerHTML=others.map(function(x,i){return '<span class="other'+(x.s?' done':'')+'" style="animation-delay:'+(i*60)+'ms"><b>'+q(x.q||1)+'\u00D7</b> '+esc(x.n)+(x.s?' \u2713':'')+'</span>'}).join('');
   }
 
@@ -602,7 +606,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     $('mPrep').hidden=true;$('mReady').hidden=true;$('mOther').hidden=true;$('mEtaBox').hidden=true;
     $('mLbl').textContent='YOUR TOKEN'+(outlets[outlet]?' \u00B7 '+outlets[outlet].toUpperCase():'');
     if(tk&&tk.l)$('mTok').textContent=tk.l;
-    showFun(!!tk&&tk.s==='p'||(!tk&&!everSeen&&!wasReady));
+    showFun(!!tk&&(tk.s==='p'||tk.s==='n')||(!tk&&!everSeen&&!wasReady));
     if(tk&&tk.s==='r'){
       everSeen=true;wasReady=true;box.classList.add('ready');$('mReady').hidden=false;$('mLbl').textContent='YOUR TOKEN \u00B7 FOOD READY';
       $('mReadySub').textContent='Please collect at the counter \u00B7 '+agoLabel(tk.a);
@@ -624,9 +628,19 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
       return;
     }
     $('mOther').hidden=false;
+    if(tk&&tk.s==='n'){
+      // a dine-in order without a dosa: say so kindly and open the game
+      $('mOtherText').innerHTML='<b class="nd">No dosa on this order \uD83D\uDE42</b>Live tracking is for dosa orders \u2014 add a crispy dosa next time and watch it right here! Meanwhile, enjoy a quick game below.';
+      if(!gameOffered){gameOffered=true;tab(true)}
+      return;
+    }
     if(wasReady){box.classList.add('done');$('mOtherText').textContent='Collected. Enjoy your dosa! See you again at Babai Tiffins.';return}
     if(everSeen){box.classList.add('done');$('mOtherText').textContent='Not on the kitchen screen any more. Please check with the counter.';return}
-    $('mOtherText').textContent='Waiting for the kitchen \u2014 your token shows here as soon as your dosa order reaches the tawa.';
+    if(Date.now()-trackStart>180000){
+      $('mOtherText').textContent='We can\u2019t find token '+token+(outlets[outlet]?' at '+outlets[outlet]:'')+'. Please check the number on your bill \u2014 tap Change token to fix it.';
+      return;
+    }
+    $('mOtherText').textContent='Waiting for the kitchen \u2014 your token shows here as soon as your order reaches the kitchen.';
   }
 
  // the "kind words" rotate every 6 s even between data updates

@@ -152,6 +152,7 @@ func TestPetpoojaToPhone(t *testing.T) {
 		row(1001, 41, 3, "1", t0, "Ghee Idli", "Idli", 2, 9),
 		row(1002, 42, 3, "1", t0.Add(time.Minute), "Masala Dosa", "DOSA Items", 1, 1),
 		row(1003, 50, 1, "1", t0, "Masala Dosa", "Dosa", 1, 1),
+		row(1004, 60, 3, "1", t0, "Ghee Idli", "Idli", 2, 1),
 	)
 	if err := pollOnce(cfg.Server); err != nil {
 		t.Fatal(err)
@@ -184,6 +185,9 @@ func TestPetpoojaToPhone(t *testing.T) {
 	}
 	if _, ok := phoneToken(t, fb, "50"); ok {
 		t.Fatal("delivery order shown as a dine-in token")
+	}
+	if t60, ok := phoneToken(t, fb, "60"); !ok || t60.S != "n" || len(t60.I) != 1 || t60.I[0].N != "Ghee Idli" {
+		t.Fatalf("no-dosa token: %+v %v", t60, ok)
 	}
 	if strings.Contains(fb.get("/babai/o/vtr/live.json"), "9999999999") || strings.Contains(fb.get("/babai/o/vtr/live.json"), "Ravi") {
 		t.Fatal("customer details sent to the cloud")

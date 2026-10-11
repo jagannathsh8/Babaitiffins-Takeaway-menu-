@@ -683,6 +683,35 @@ func phoneItems(items []KItem) []PhoneItem {
 	return out
 }
 
+// noDosaTokens: dine-in tokens on the board without any dosa (s "n" on the phone: "no dosa on
+// this order", their items and the game). Leftovers older than 3 hours are skipped.
+func noDosaTokens(kots []Kot, now int64) map[string][]KItem {
+	out := map[string][]KItem{}
+	for _, k := range kots {
+		if k.OrderType != 3 || k.Status == "0" || k.Status == "10" || (k.Created > 0 && now-k.Created > 3*3600_000) {
+			continue
+		}
+		var items []KItem
+		dosa := false
+		for _, it := range k.Items {
+			if it.S == -9 {
+				continue
+			}
+			if isDosa(it.C) {
+				dosa = true
+				break
+			}
+			items = append(items, it)
+		}
+		if dosa || len(items) == 0 {
+			continue
+		}
+		l := tokenLabel(k)
+		out[l] = append(out[l], items...)
+	}
+	return out
+}
+
 func phoneTokens(b *tokenBoard, r statsResult, now int64) map[string]PhoneToken {
 	out := map[string]PhoneToken{}
 	for _, t := range b.ready {
@@ -733,7 +762,13 @@ func onBoard(kots []Kot, now time.Time) {
 	board.update(tb, now.UnixMilli())
 	stats.update(ds, now, ppRowsAtCap())
 	res := stats.compute(now)
-	tokensRaw, _ = json.Marshal(phoneTokens(board, res, now.UnixMilli()))
+	toks := phoneTokens(board, res, now.UnixMilli())
+	for label, items := range noDosaTokens(kots, now.UnixMilli()) {
+		if _, ok := toks[tokenKey(label)]; !ok { // a token with a dosa KOT too is tracked as a dosa token
+			toks[tokenKey(label)] = PhoneToken{S: "n", I: phoneItems(items), Lbl: label}
+		}
+	}
+	tokensRaw, _ = json.Marshal(toks)
 	metaRaw, _ = json.Marshal(PhoneMeta{W: res.etaLabel, N: res.running, F: res.facts, V: 1})
 	liveRaw, _ = json.Marshal(kots)
 	readyCount, prepCount = len(board.ready), len(board.preparing)
