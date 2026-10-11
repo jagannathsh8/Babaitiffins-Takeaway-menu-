@@ -168,6 +168,7 @@ func snapshotStatus() map[string]any {
 	st["page"] = c.Page
 	st["qr"] = qrURL()
 	st["autostart"] = autostartEnabled()
+	st["paused"] = c.Paused
 	st["dataDir"] = dataDir
 	return st
 }

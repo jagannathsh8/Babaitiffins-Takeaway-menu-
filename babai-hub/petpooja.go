@@ -99,7 +99,8 @@ var (
 func petpoojaLoop() {
 	for {
 		start := time.Now()
-		if host := getConfig().Server; host != "" {
+		if c := getConfig(); c.Server != "" && !c.Paused {
+			host := c.Server
 			if err := pollOnce(host); err != nil {
 				notePP(err)
 			}

@@ -111,6 +111,21 @@ func handlePetpooja(w http.ResponseWriter, r *http.Request) {
 	reply(w, true, fmt.Sprintf("Connected to Petpooja: %d KOTs in the kitchen right now (%d item lines).", n, rows))
 }
 
+func handlePause(w http.ResponseWriter, r *http.Request) {
+	if !fromOwnPage(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	var in struct{ Paused bool }
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&in)
+	setPaused(in.Paused)
+	if in.Paused {
+		reply(w, true, "Paused: Petpooja is not read and customers' phones show 'updates paused'.")
+	} else {
+		reply(w, true, "Running again.")
+	}
+}
+
 func handleTest(w http.ResponseWriter, r *http.Request) {
 	if !fromOwnPage(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)
@@ -262,7 +277,8 @@ a{color:var(--accent)}
 </section>
 
 <section><h2>This PC</h2>
-<div class="row"><label style="margin:0"><input type="checkbox" id="auto"> Start Babai Hub when Windows starts</label></div>
+<p>Babai Hub starts by itself whenever this PC starts, and lives in the tray next to the clock (right-click the Babai icon for Petpooja IP, Pause / Resume, poster). To remove it: Windows Settings → Apps → Babai Hub → Uninstall.</p>
+<div class="row"><button type="button" class="ghost" id="pauseBtn">Pause</button></div>
 <div class="msg" id="amsg" role="status"></div>
 <p class="hint">Cloud use this month (<span id="month"></span>): <span id="use"></span>. Firebase's free plan allows 10 GB downloaded a month and 1 GB stored.</p>
 <p class="hint">Finished KOTs are also saved on this PC in <code id="dir"></code>\days</p>
@@ -285,7 +301,7 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return
 function post(u,b){return fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Babai-Hub":"1"},body:JSON.stringify(b)}).then(function(r){return r.json()})}
 function show(el,r){el.textContent=r.msg;el.className="msg "+(r.ok?"ok":"bad")}
 function refresh(){fetch("/status.json").then(function(r){return r.json()}).then(function(s){
- if(!loaded){$("server").value=s.server||"";$("db").value=(s.db||"").replace(/^https:\/\//,"");$("page").value=s.page||"";$("auto").checked=!!s.autostart;loaded=true}
+ if(!loaded){$("server").value=s.server||"";$("db").value=(s.db||"").replace(/^https:\/\//,"");$("page").value=s.page||"";loaded=true}
  $("sReady").textContent=s.ready;$("sPrep").textContent=s.preparing;$("sOpen").textContent=s.openKots;$("sDone").textContent=s.finishedToday;
  $("sPP").textContent=s.server?ago(s.ppOkAgo):"not set up";$("sCloud").textContent=s.configured?ago(s.cloudOkAgo):"not set up";
  var probs=[];if(s.ppErrAgo>=0)probs.push("Petpooja ("+ago(s.ppErrAgo)+"): "+s.ppErr);if(s.cloudErrAgo>=0)probs.push("Cloud ("+ago(s.cloudErrAgo)+"): "+s.cloudErr);
@@ -294,6 +310,8 @@ function refresh(){fetch("/status.json").then(function(r){return r.json()}).then
  $("dir").textContent=s.dataDir;
  var ppOk=s.server&&s.ppOkAgo>=0&&s.ppOkAgo<30,cloud=s.configured&&s.cloudOkAgo>=0&&s.cloudErrAgo<0;
  $("pill").className="pill "+(ppOk&&cloud?"ok":((s.server||s.configured)?"bad":""));
+ $("pauseBtn").textContent=s.paused?"Resume":"Pause";
+ if(s.paused){$("pill").className="pill bad";$("pillText").textContent="Paused";}else
  $("pillText").textContent=!s.server?"Enter the Petpooja IP (Step 1)":!ppOk?"Can't read Petpooja":!s.configured?"Set up Firebase (Step 2)":cloud?"Live: Petpooja → cloud":"Cloud problem";
  if(s.qr&&s.qr!==qrDone&&window.QRCode){$("qrbox").innerHTML="";new QRCode($("qrbox"),{text:s.qr,width:180,height:180,correctLevel:QRCode.CorrectLevel.M});qrDone=s.qr}
  $("qrwrap").hidden=!s.qr;$("qrnone").hidden=!!s.qr;
@@ -306,7 +324,7 @@ $("fp").addEventListener("submit",function(e){e.preventDefault();$("pmsg").textC
 $("f").addEventListener("submit",function(e){e.preventDefault();$("fmsg").textContent="Testing…";$("fmsg").className="msg";
  post("/settings",{DB:$("db").value,Secret:$("secret").value,Page:$("page").value}).then(function(r){show($("fmsg"),r);$("secret").value="";refresh()})});
 $("test").addEventListener("click",function(){$("fmsg").textContent="Testing…";post("/test",{}).then(function(r){show($("fmsg"),r);refresh()})});
-$("auto").addEventListener("change",function(){post("/autostart",{On:$("auto").checked}).then(function(r){show($("amsg"),r)})});
+$("pauseBtn").addEventListener("click",function(){post("/pause",{Paused:$("pauseBtn").textContent==="Pause"}).then(function(r){show($("amsg"),r);refresh()})});
 refresh();setInterval(refresh,3000);
 </script></body></html>`
 

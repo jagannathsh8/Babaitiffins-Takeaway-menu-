@@ -27,18 +27,26 @@ Already done: https://babaidosa.netlify.app. In step 4 you upload the final page
 
 ## 3. Babai Hub on the PC
 
-1. Copy `babai-hub.exe` to the PC, for example into `C:\BabaiHub\`.
-2. Double-click it. If Windows says "Windows protected your PC": **More info → Run anyway**.
+1. Copy `babai-hub.exe` to the PC (for example the Desktop) and double-click it.
+   If Windows says "Windows protected your PC": **More info → Run anyway**.
    If Windows asks about the firewall, click **Allow**.
-3. The hub page opens in the browser (later: http://localhost:8790 on that PC).
+2. It installs itself (no admin needed): it now starts by itself every time the PC starts, sits
+   in the **tray** next to the clock (Babai logo; click the ^ arrow if hidden), and appears in
+   **Settings → Apps** and the Start menu. You can delete the copy you double-clicked.
+3. The hub page opens in the browser (later: right-click the tray icon → **Open Babai Hub**).
 4. **Step 1 – Petpooja billing station:** type the billing PC's IP (the same one typed on the KDS
-   TV, for example `192.168.1.5`) → **Save & test**. You should see
-   "Connected to Petpooja: N KOTs in the kitchen right now". The KOTs appear under
+   TV, for example `192.168.1.5`) → **Save & test** (or tray → **Petpooja server IP…**). You should
+   see "Connected to Petpooja: N KOTs in the kitchen right now". The KOTs appear under
    **What Petpooja sent** at the bottom.
-5. **Step 2 – Firebase:** paste the database address and the secret. The customer page address is
-   already `https://babaidosa.netlify.app/`. → **Save & test** → "Saved and connected to Firebase".
-6. Tick **Start Babai Hub when Windows starts**.
-7. The top of the page should now say **Live: Petpooja → cloud**.
+5. **Step 2 – Firebase:** paste the database address
+   `babai-dosa-default-rtdb.asia-southeast1.firebasedatabase.app` and the secret.
+   → **Save & test** → "Saved and connected to Firebase".
+6. The top of the page and the tray tooltip should now say **Live**.
+
+**Tray menu (right-click the Babai icon):** status · Open Babai Hub · Petpooja server IP… ·
+Pause / Resume · Print QR poster · Restart Babai Hub.
+**Updating:** double-click a newer `babai-hub.exe`; it replaces the installed one and keeps the
+settings. **Removing:** Settings → Apps → Babai Hub → Uninstall.
 
 ## 4. Customer page with token entry (once)
 

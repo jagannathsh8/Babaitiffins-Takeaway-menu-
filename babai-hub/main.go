@@ -35,6 +35,7 @@ const (
 type Config struct {
 	Server       string `json:"server"`       // Petpooja billing station IP (port 3000 by default)
 	AutoClearMin int    `json:"autoClearMin"` // ready tokens leave after this many minutes (TV default 10)
+	Paused       bool   `json:"paused"`       // tray: Pause / Resume
 	DB           string `json:"db"`           // https://xxx.firebasedatabase.app
 	Secret       string `json:"secret"`       // Firebase database secret
 	Page         string `json:"page"`         // customer page address
@@ -58,7 +59,18 @@ func main() {
 	if port == 0 {
 		port = defaultPort
 	}
+	if hasArg("--uninstall") {
+		uninstall(port)
+		return
+	}
+	if ensureInstalled(port) {
+		return // the installed copy is starting
+	}
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	for i := 0; err != nil && i < 20 && hasArg("--restart"); i++ {
+		time.Sleep(500 * time.Millisecond) // the old copy is still closing
+		ln, err = net.Listen("tcp", fmt.Sprintf(":%d", port))
+	}
 	if err != nil {
 		// Already running (or the port is taken): just show the page of the running hub.
 		log.Printf("port %d busy: %v", port, err)
@@ -80,6 +92,15 @@ func main() {
 	mux.HandleFunc("/autostart", localOnly(handleAutostart))
 	mux.HandleFunc("/poster", localOnly(handlePoster))
 	mux.HandleFunc("/customer-page", localOnly(handleCustomerPage))
+	mux.HandleFunc("/pause", localOnly(handlePause))
+	mux.HandleFunc("/quit", localOnly(func(w http.ResponseWriter, r *http.Request) {
+		if !fromOwnPage(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		io.WriteString(w, `{"ok":true}`)
+		go func() { time.Sleep(300 * time.Millisecond); os.Exit(0) }() // a newer copy is taking over
+	}))
 
 	if !configured() || getConfig().Server == "" {
 		go func() {
@@ -88,7 +109,30 @@ func main() {
 		}()
 	}
 	srv := &http.Server{Handler: mux, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second}
-	log.Fatal(srv.Serve(ln))
+	go func() { log.Fatal(srv.Serve(ln)) }()
+	runUI(port) // tray icon on Windows; blocks
+}
+
+func hasArg(a string) bool {
+	for _, x := range os.Args[1:] {
+		if x == a {
+			return true
+		}
+	}
+	return false
+}
+
+// setPaused stops / restarts reading Petpooja and updating the cloud (tray: Pause / Resume).
+func setPaused(p bool) {
+	c := getConfig()
+	c.Paused = p
+	_ = saveConfig(c)
+	if p {
+		log.Printf("paused")
+	} else {
+		log.Printf("resumed")
+		wakePoll()
+	}
 }
 
 // ---- config -------------------------------------------------------------------------------

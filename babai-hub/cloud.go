@@ -135,7 +135,7 @@ func cloudLoop() {
 
 // cloudStep sends whatever is due (called every second).
 func cloudStep(now time.Time) {
-	if !configured() {
+	if !configured() || getConfig().Paused {
 		return
 	}
 	mu.Lock()
