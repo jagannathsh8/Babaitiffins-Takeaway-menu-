@@ -33,14 +33,16 @@ const (
 
 // Config is saved in config.json in the data folder.
 type Config struct {
-	Server       string `json:"server"`       // Petpooja billing station IP (port 3000 by default)
-	Outlet       string `json:"outlet"`       // outlet name exactly as on the bill, e.g. "VTR", "Sarjapur"
-	AutoClearMin int    `json:"autoClearMin"` // ready tokens leave after this many minutes (TV default 10)
-	Paused       bool   `json:"paused"`       // tray: Pause / Resume
-	DB           string `json:"db"`           // https://xxx.firebasedatabase.app
-	Secret       string `json:"secret"`       // Firebase database secret
-	Page         string `json:"page"`         // customer page address
-	Port         int    `json:"port"`
+	Server       string  `json:"server"` // Petpooja billing station IP (port 3000 by default)
+	Outlet       string  `json:"outlet"` // outlet name exactly as on the bill, e.g. "VTR", "Sarjapur"
+	Lat          float64 `json:"lat"`    // outlet location (customers' page picks the nearest outlet)
+	Lng          float64 `json:"lng"`
+	AutoClearMin int     `json:"autoClearMin"` // ready tokens leave after this many minutes (TV default 10)
+	Paused       bool    `json:"paused"`       // tray: Pause / Resume
+	DB           string  `json:"db"`           // https://xxx.firebasedatabase.app
+	Secret       string  `json:"secret"`       // Firebase database secret
+	Page         string  `json:"page"`         // customer page address
+	Port         int     `json:"port"`
 }
 
 var (

@@ -82,6 +82,15 @@ body{margin:0;min-height:100vh;color:#fff;font-family:var(--num);font-size:16px;
 .ochip{font:700 .95rem var(--num);color:var(--l);background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.14);border-radius:999px;padding:8px 16px;cursor:pointer}
 .ochip[aria-checked="true"]{background:var(--p);color:#1b1203;border-color:var(--p)}
 .ochip:focus-visible{outline:3px solid var(--l);outline-offset:2px}
+.bigscan{font-size:1.25rem;padding:18px;margin-top:4px}
+.scanhint{margin:8px 0 0;text-align:center;color:var(--muted);font-size:.85rem}
+.manual{display:flex;gap:8px;margin-top:10px}
+.manual input{flex:1;min-width:0;margin:0;font:800 1.3rem/1 var(--num);letter-spacing:.06em;padding:10px 14px;border-radius:14px}
+.go{flex:none;font:700 1rem var(--num);color:var(--l);background:rgba(255,255,255,.08);border:2px solid rgba(245,178,27,.55);border-radius:14px;padding:0 18px;cursor:pointer}
+.go:focus-visible{outline:3px solid var(--l);outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.near{margin:0 0 8px;font-size:.9rem;color:var(--green)}
+.ochip small{font-weight:500;opacity:.75;margin-left:6px;font-size:.78rem}
 .or{display:flex;align-items:center;gap:10px;margin:14px 0 0;color:var(--muted);font-size:.8rem;letter-spacing:.2em;text-transform:uppercase}
 .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
 .scanbtn{display:block;width:100%;margin-top:12px;font:700 1.05rem var(--num);color:var(--l);background:rgba(255,255,255,.06);
@@ -190,17 +199,20 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     <form id="form" novalidate>
       <div class="outlet" id="outletBox" hidden>
         <div class="olbl">YOUR BABAI TIFFINS OUTLET</div>
+        <p class="near" id="near" hidden></p>
         <div class="ochips" id="outletChips" role="radiogroup" aria-label="Outlet"></div>
       </div>
-      <label for="tok">Your token number</label>
-      <input id="tok" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="42">
-      <p>It's printed on your bill / token slip. You can also scan the QR code at the counter.</p>
-      <p class="err" id="formErr" hidden></p>
-      <button class="btn" type="submit">Track my dosa</button>
-      <div class="or"><span>or</span></div>
-      <button class="scanbtn" type="button" id="scanBill">📷 Scan my bill</button>
+      <button class="btn bigscan" type="button" id="scanBill">📷 Scan my bill</button>
+      <p class="scanhint">Point the camera at your bill — we read the token for you.</p>
       <input type="file" id="billPhoto" accept="image/*" capture="environment" hidden>
       <p class="scanmsg" id="scanMsg" role="status" hidden></p>
+      <div class="or"><span>or enter your token</span></div>
+      <div class="manual">
+        <label for="tok" class="sr">Token number</label>
+        <input id="tok" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="Token no.">
+        <button class="go" type="submit">Track</button>
+      </div>
+      <p class="err" id="formErr" hidden></p>
     </form>
   </section>
 
@@ -288,12 +300,14 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   var outlet=(qs.get('o')||store.get('babai_outlet')||'').toLowerCase().replace(/[^a-z0-9]/g,'');
   if(qs.get('o'))store.set('babai_outlet',outlet);
   var outlets={};   // code -> name, from /babai/outlets
+  var geo={},dist={},located=false;   // code -> {lat,lng}; code -> metres from the customer
   function setOutlet(code){if(!code||code===outlet)return;outlet=code;store.set('babai_outlet',code);paintOutlets();meta=null;data=null;poll()}
   function paintOutlets(){
     var codes=Object.keys(outlets).sort(function(a,b){return outlets[a].localeCompare(outlets[b])});
     $('outletBox').hidden=codes.length<2&&!!outlet;
     if(codes.length===1&&!outlet){outlet=codes[0]}
-    $('outletChips').innerHTML=codes.map(function(c){return '<button type="button" class="ochip" role="radio" aria-checked="'+(c===outlet)+'" data-o="'+esc(c)+'">'+esc(outlets[c])+'</button>'}).join('');
+    if(located)codes.sort(function(a,b){return (dist[a]==null?1e12:dist[a])-(dist[b]==null?1e12:dist[b])});
+    $('outletChips').innerHTML=codes.map(function(c){return '<button type="button" class="ochip" role="radio" aria-checked="'+(c===outlet)+'" data-o="'+esc(c)+'">'+esc(outlets[c])+(dist[c]!=null?'<small>'+km(dist[c])+'</small>':'')+'</button>'}).join('');
   }
   document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('.ochip');if(b)setOutlet(b.getAttribute('data-o'))});
   var saved=(store.get('babai_token')||'').split('|');
@@ -342,7 +356,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   function startTracking(raw){
     var t=norm(raw);
     if(!t){showEntry('Type the token number from your bill.');return}
-    if(!outlet&&!DEMO){showEntry('Choose your outlet first (it\u2019s on the top of your bill).');return}
+    if(!outlet&&!DEMO){showEntry('Choose your outlet above first (it\u2019s on the top of your bill).');return}
     token=t;store.set('babai_token',t+'|'+Date.now());
     unlockAudio();keepAwake();
     if(DEMO)demoT0=Date.now();
@@ -420,10 +434,10 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
         var txt=res.data.text||'',tk=findToken(txt),oc=findOutlet(txt);
         if(oc)setOutlet(oc);
         $('scanBill').disabled=false;
-        if(tk&&!outlet){$('tok').value=tk;scanMsg('Found token '+tk+'. Now tap your outlet above, then Track my dosa.')}
+        if(tk&&!outlet){$('tok').value=tk;scanMsg('Found token '+tk+'. Now tap your outlet above, then Track.')}
         else if(tk){$('tok').value=tk;scanMsg('Found token '+tk+(outlets[outlet]?' \u00B7 '+outlets[outlet]:''));setTimeout(function(){startTracking(tk)},600)}
-        else scanMsg('Couldn\u2019t read the token. Hold the bill flat and close, or type the number above.');
-      }).catch(function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t read the bill here. Please type the token number above.')});
+        else scanMsg('Couldn\u2019t read the token. Hold the bill flat and close, or type the token number below.');
+      }).catch(function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t read the bill here. Please type the token number below.')});
     };
     img.onerror=function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t open that photo. Please type the token number.')};
     img.src=url;
@@ -438,7 +452,26 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   var timer=null;
   // Reads only what this customer needs: the small /babai/meta and their own /babai/t/<token>.
   function get(path){return fetch('https://'+host+'/babai/'+path+'.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})}
-  function loadOutlets(){return get('outlets').then(function(o){outlets={};for(var k in (o||{}))if(o[k]&&o[k].n)outlets[k]=o[k].n;paintOutlets()}).catch(function(){})}
+  function loadOutlets(){return get('outlets').then(function(o){outlets={};geo={};
+    for(var k in (o||{}))if(o[k]&&o[k].n){outlets[k]=o[k].n;if(o[k].lat!=null&&o[k].lng!=null)geo[k]={lat:+o[k].lat,lng:+o[k].lng}}
+    paintOutlets();locate()}).catch(function(){})}
+  // Nearest outlet: with the customer's permission, the phone's location picks the outlet they are in.
+  function km(m){return m<1000?Math.round(m/10)*10+' m':(m/1000).toFixed(m<10000?1:0)+' km'}
+  function metres(a,b){var R=6371000,r=Math.PI/180,dl=(b.lat-a.lat)*r,dg=(b.lng-a.lng)*r,
+    x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dg/2)*Math.sin(dg/2);return 2*R*Math.asin(Math.sqrt(x))}
+  var locating=false;
+  function locate(){
+    if(located||locating||qs.get('o')||!navigator.geolocation||!Object.keys(geo).length)return;
+    locating=true;
+    navigator.geolocation.getCurrentPosition(function(p){
+      located=true;var me={lat:p.coords.latitude,lng:p.coords.longitude},best=null;
+      Object.keys(geo).forEach(function(c){dist[c]=metres(me,geo[c]);if(best===null||dist[c]<dist[best])best=c});
+      if(best!==null&&dist[best]<=3000){
+        $('near').hidden=false;$('near').textContent='\uD83D\uDCCD You\u2019re at Babai Tiffins '+outlets[best]+' ('+km(dist[best])+' away). Not right? Tap your outlet below.';
+        if(best!==outlet){outlet='';setOutlet(best)}else paintOutlets();
+      }else paintOutlets();
+    },function(){locating=false},{enableHighAccuracy:false,timeout:10000,maximumAge:600000});
+  }
   function poll(){
     clearTimeout(timer);
     var next=function(){timer=setTimeout(poll,document.hidden?15000:5000)};

@@ -37,7 +37,9 @@ Already done: https://babaidosa.netlify.app. In step 4 you upload the final page
    **Settings → Apps** and the Start menu. You can delete the copy you double-clicked.
 3. The hub page opens in the browser (later: right-click the tray icon → **Open Babai Hub**).
 4. **Step 1 – Outlet and Petpooja:** type the **outlet name exactly as on the bill** (VTR, Sarjapur,
-   HSR, JPN…), then the billing PC's IP (the same one typed on the KDS
+   HSR, JPN…), the **outlet location** (in Google Maps long-press the shop and copy the two numbers,
+   or paste a Maps link, or tap **Use this PC's location**; customers' phones then pick the nearest
+   outlet by themselves), then the billing PC's IP (the same one typed on the KDS
    TV, for example `192.168.1.5`) → **Save & test** (or tray → **Petpooja server IP…**). You should
    see "Connected to Petpooja: N KOTs in the kitchen right now". The KOTs appear under
    **What Petpooja sent** at the bottom.

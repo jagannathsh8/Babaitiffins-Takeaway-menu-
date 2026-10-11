@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -307,12 +308,17 @@ func testCloud() error {
 func registerOutlet() {
 	c := getConfig()
 	code := outletCode(c.Outlet)
-	if code == "" || registeredOutlet == code+"|"+c.Outlet {
+	key := fmt.Sprintf("%s|%s|%.6f|%.6f", code, c.Outlet, c.Lat, c.Lng)
+	if code == "" || registeredOutlet == key {
 		return
 	}
-	body, _ := json.Marshal(map[string]string{"n": strings.TrimSpace(c.Outlet)})
+	o := map[string]any{"n": strings.TrimSpace(c.Outlet)}
+	if c.Lat != 0 || c.Lng != 0 {
+		o["lat"], o["lng"] = math.Round(c.Lat*1e5)/1e5, math.Round(c.Lng*1e5)/1e5
+	}
+	body, _ := json.Marshal(o)
 	if err := fb(http.MethodPut, "/babai/outlets/"+code, "", body); err == nil {
-		registeredOutlet = code + "|" + c.Outlet
+		registeredOutlet = key
 	}
 }
 

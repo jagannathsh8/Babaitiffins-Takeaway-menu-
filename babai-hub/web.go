@@ -84,7 +84,7 @@ func handlePetpooja(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	var in struct{ Server, Outlet string }
+	var in struct{ Server, Outlet, Location string }
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&in); err != nil {
 		reply(w, false, "Couldn't read the form.")
 		return
@@ -99,6 +99,15 @@ func handlePetpooja(w http.ResponseWriter, r *http.Request) {
 		c.Outlet = name
 		resetStreams()
 	}
+	lat, lng, err := resolveLocation(in.Location)
+	if err != nil {
+		reply(w, false, "Outlet location: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(in.Location) == "" {
+		lat, lng = 0, 0
+	}
+	c.Lat, c.Lng = lat, lng
 	if err := saveConfig(c); err != nil {
 		reply(w, false, "Couldn't save: "+err.Error())
 		return
@@ -265,6 +274,10 @@ a{color:var(--accent)}
 <label for="outlet">Outlet name (exactly as on the bill, e.g. VTR, Sarjapur, HSR, JPN)</label>
 <input type="text" id="outlet" placeholder="VTR" maxlength="30">
 <p class="hint">One hub per outlet. Customers see this name, and their bill photo is matched to it.</p>
+<label for="loc">Outlet location (so customers' phones pick the nearest outlet)</label>
+<input type="text" id="loc" placeholder="12.9356, 77.7425  or a Google Maps link">
+<div class="row" style="margin-top:6px"><button type="button" class="ghost" id="here">Use this PC's location</button></div>
+<p class="hint">Google Maps: long-press the shop → copy the numbers shown at the top, or Share → Copy link.</p>
 <label for="server">IP address of the main Petpooja billing PC</label>
 <input type="text" id="server" placeholder="192.168.1.5">
 <p class="hint">The same address you typed on the KDS TV. Port 3000 is used unless you add one (192.168.1.5:3000).</p>
@@ -316,7 +329,7 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return
 function post(u,b){return fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Babai-Hub":"1"},body:JSON.stringify(b)}).then(function(r){return r.json()})}
 function show(el,r){el.textContent=r.msg;el.className="msg "+(r.ok?"ok":"bad")}
 function refresh(){fetch("/status.json").then(function(r){return r.json()}).then(function(s){
- if(!loaded){$("server").value=s.server||"";$("outlet").value=s.outlet||"";$("db").value=(s.db||"").replace(/^https:\/\//,"");$("page").value=s.page||"";loaded=true}
+ if(!loaded){$("server").value=s.server||"";$("outlet").value=s.outlet||"";$("loc").value=(s.lat||s.lng)?(s.lat+", "+s.lng):"";$("db").value=(s.db||"").replace(/^https:\/\//,"");$("page").value=s.page||"";loaded=true}
  $("sReady").textContent=s.ready;$("sPrep").textContent=s.preparing;$("sOpen").textContent=s.openKots;$("sDone").textContent=s.finishedToday;
  $("sPP").textContent=s.server?ago(s.ppOkAgo):"not set up";$("sCloud").textContent=s.configured?ago(s.cloudOkAgo):"not set up";
  var probs=[];if(s.ppErrAgo>=0)probs.push("Petpooja ("+ago(s.ppErrAgo)+"): "+s.ppErr);if(s.cloudErrAgo>=0)probs.push("Cloud ("+ago(s.cloudErrAgo)+"): "+s.cloudErr);
@@ -334,8 +347,13 @@ function refresh(){fetch("/status.json").then(function(r){return r.json()}).then
  $("kots").innerHTML=(s.ppKots||[]).map(function(k){return "<tr><td class=n>"+esc(k.tk||"–")+"</td><td>"+esc(k.tb)+"</td><td>"+esc(OT[k.ot]||k.ot)+(k.ch?" · "+esc(k.ch):"")+"</td><td>"+esc(ST[k.st]||"Preparing")+"</td><td>"+esc(k.items)+"</td></tr>"}).join("");
  $("raw").textContent=s.ppSample||"";
 }).catch(function(){$("pillText").textContent="Hub not responding"})}
+$("here").addEventListener("click",function(){if(!navigator.geolocation){show($("pmsg"),{ok:false,msg:"This browser can't give the location; type it instead."});return}
+ $("pmsg").textContent="Finding this PC's location…";$("pmsg").className="msg";
+ navigator.geolocation.getCurrentPosition(function(p){$("loc").value=p.coords.latitude.toFixed(5)+", "+p.coords.longitude.toFixed(5);
+  show($("pmsg"),{ok:true,msg:"Found (accuracy about "+Math.round(p.coords.accuracy)+" m). Check it, then Save & test."})},
+  function(){show($("pmsg"),{ok:false,msg:"Windows didn't give the location (Settings → Privacy → Location). Type it instead."})},{enableHighAccuracy:true,timeout:15000})});
 $("fp").addEventListener("submit",function(e){e.preventDefault();$("pmsg").textContent="Connecting…";$("pmsg").className="msg";
- post("/petpooja",{Server:$("server").value,Outlet:$("outlet").value}).then(function(r){show($("pmsg"),r);refresh()})});
+ post("/petpooja",{Server:$("server").value,Outlet:$("outlet").value,Location:$("loc").value}).then(function(r){show($("pmsg"),r);refresh()})});
 $("f").addEventListener("submit",function(e){e.preventDefault();$("fmsg").textContent="Testing…";$("fmsg").className="msg";
  post("/settings",{DB:$("db").value,Secret:$("secret").value,Page:$("page").value}).then(function(r){show($("fmsg"),r);$("secret").value="";refresh()})});
 $("test").addEventListener("click",function(){$("fmsg").textContent="Testing…";post("/test",{}).then(function(r){show($("fmsg"),r);refresh()})});

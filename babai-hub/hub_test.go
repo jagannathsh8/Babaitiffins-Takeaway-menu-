@@ -383,3 +383,19 @@ func TestCustomerPage(t *testing.T) {
 		t.Fatalf("page: %d %s", w.Code, w.Header())
 	}
 }
+
+func TestLocation(t *testing.T) {
+	for in, want := range map[string][2]float64{
+		"12.9356, 77.7425": {12.9356, 77.7425},
+		"https://www.google.com/maps/place/Babai+Tiffins/@12.9358123,77.7421456,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d12.9356789!4d77.7425123": {12.9356789, 77.7425123},
+		"https://maps.google.com/?q=12.93567,77.74251": {12.93567, 77.74251},
+	} {
+		lat, lng, err := resolveLocation(in)
+		if err != nil || lat != want[0] || lng != want[1] {
+			t.Fatalf("%s -> %v %v %v", in, lat, lng, err)
+		}
+	}
+	if _, _, err := resolveLocation("near the bus stop"); err == nil {
+		t.Fatal("nonsense accepted")
+	}
+}
