@@ -102,6 +102,8 @@ body{margin:0;min-height:100vh;color:#fff;font-family:var(--num);font-size:16px;
   border:2px solid rgba(245,178,27,.55);border-radius:999px;padding:12px;cursor:pointer}
 .scanbtn:focus-visible{outline:3px solid var(--l);outline-offset:3px}
 .scanbtn[disabled]{opacity:.6}
+.funnote{margin:0 0 10px;padding:10px 12px;border-radius:12px;background:rgba(245,178,27,.12);border:1px solid rgba(245,178,27,.35);color:var(--t);font-size:.88rem;text-align:center}
+.linkbtn{display:block;margin:6px auto 0;padding:6px;background:none;border:0;color:var(--muted);text-decoration:underline;font:inherit;font-size:.86rem;cursor:pointer}
 .scanmsg{margin:10px 0 0;text-align:center;color:var(--t);font-size:.92rem}
 .scanmsg.busy::before{content:"";display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border-radius:50%;
   border:2px solid var(--p);border-right-color:transparent;animation:spin .8s linear infinite}
@@ -238,6 +240,8 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
       <button class="btn bigscan" type="button" id="scanBill">📷 Scan my bill</button>
       <p class="scanhint">Point the camera at your bill — we read the token for you.</p>
       <input type="file" id="billPhoto" accept="image/*" capture="environment" hidden>
+      <button type="button" class="linkbtn" id="pickBill">or choose a bill photo from your gallery</button>
+      <input type="file" id="billPick" accept="image/*" hidden>
       <p class="scanmsg" id="scanMsg" role="status" hidden></p>
       <div id="manualWrap" hidden>
       <div class="or"><span>or enter your token</span></div>
@@ -270,6 +274,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   </section>
   <!-- while you wait: our dishes + a light game (shown while the dosa is being made) -->
   <section class="panel fun" id="fun" hidden>
+    <p class="funnote" id="funNote" hidden>Live token tracking isn’t on right now. Enjoy a game while your food is made — we’ll call your token at the counter.</p>
     <div class="tabs" role="tablist">
       <button type="button" role="tab" class="tab" id="tabDish" aria-selected="true">🍽 Try next time</button>
       <button type="button" role="tab" class="tab" id="tabGame" aria-selected="false">🎮 Catch the Dosa</button>
@@ -413,7 +418,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   $('fact').textContent=TRIVIA[0];factI=1;setInterval(showFact,FACT_S*1000);
 
   // ---- entry ----------------------------------------------------------------------------------
-  function showEntry(msg){tracking=false;$('entry').hidden=false;$('mine').hidden=true;$('actions').hidden=true;showFun(false);
+  function showEntry(msg){tracking=false;$('entry').hidden=false;$('mine').hidden=true;$('actions').hidden=true;showFun(liveOff);
     $('tok').value=token||'';$('formErr').hidden=!msg;$('formErr').textContent=msg||''}
   $('form').addEventListener('submit',function(e){
     e.preventDefault();startTracking($('tok').value);
@@ -444,14 +449,16 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   function getWorker(){
     if(ocrWorker)return ocrWorker;
     ocrWorker=loadScript(OCR.js).then(function(){return Tesseract.createWorker('eng',1,{workerPath:OCR.worker,corePath:OCR.core,langPath:OCR.lang,
-        logger:function(m){if(scanning&&m.status==='recognizing text')scanMsg('Reading your bill\u2026 '+scanStep+(scanStep?' ':'')+Math.round(m.progress*100)+'%',true)}})});
+        logger:function(m){if(!scanning)return;var pc=Math.round((m.progress||0)*100)+'%';
+          if(m.status==='recognizing text')scanMsg('Reading your bill\u2026 '+scanStep+(scanStep?' ':'')+pc,true);
+          else if(/load/.test(m.status||''))scanMsg('Getting the bill reader ready\u2026 '+pc,true)}})});
     ocrWorker.catch(function(){ocrWorker=null});
     return ocrWorker;
   }
   // Clean the photo: grey, then each pixel against its neighbourhood (removes shadows and the
   // table under the bill), black text on white.
-  function cleanPhoto(img){
-    var maxW=1600,sc=Math.min(1,maxW/Math.max(img.naturalWidth,img.naturalHeight)*1.0);
+  function cleanPhoto(img,maxW){
+    maxW=maxW||1600;var sc=Math.min(1,maxW/Math.max(img.naturalWidth,img.naturalHeight)*1.0);
     var W=Math.round(img.naturalWidth*sc),H=Math.round(img.naturalHeight*sc);
     var cv=document.createElement('canvas');cv.width=W;cv.height=H;var g=cv.getContext('2d');
     g.drawImage(img,0,0,W,H);var id=g.getImageData(0,0,W,H),d=id.data,n=W*H,gray=new Float32Array(n),I=new Float64Array((W+1)*(H+1));
@@ -483,47 +490,63 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     }
     return null;
   }
-  // Turns a canvas a quarter (bills are often photographed sideways).
-  function turn(cv,deg){var o=document.createElement('canvas');o.width=cv.height;o.height=cv.width;var g=o.getContext('2d');
-    g.translate(o.width/2,o.height/2);g.rotate(deg*Math.PI/180);g.drawImage(cv,-cv.width/2,-cv.height/2);return o}
-  // Upright first; if no token is found, the photo turned both ways, then sparse-text mode.
-  var scanning=false,scanStep='',TRIES=[[0,'3'],[90,'3'],[270,'3'],[0,'11']];
-  function readBill(w,cv,i){
+  // Turns a canvas by any angle (bills are photographed sideways, upside down or tilted).
+  function turn(cv,deg){var a=deg*Math.PI/180,c=Math.abs(Math.cos(a)),n=Math.abs(Math.sin(a));
+    var o=document.createElement('canvas');o.width=Math.round(cv.width*c+cv.height*n);o.height=Math.round(cv.width*n+cv.height*c);
+    var g=o.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,o.width,o.height);
+    g.translate(o.width/2,o.height/2);g.rotate(a);g.drawImage(cv,-cv.width/2,-cv.height/2);return o}
+  // Tries until a token is found: upright, sideways both ways, upside down, sparse-text mode,
+  // the full photo resolution (bill far away in a big photo), then slightly tilted both ways.
+  var scanning=false,scanStep='',TRIES=[[0,'3'],[90,'3'],[270,'3'],[180,'3'],[0,'11'],[0,'3',1],[-12,'3'],[12,'3']];
+  function readBill(w,img,cv,i){
     if(i>=TRIES.length)return Promise.resolve(null);
-    var t=TRIES[i];scanStep=i?'(try '+(i+1)+' of '+TRIES.length+')':'';
-    return w.setParameters({tessedit_pageseg_mode:t[1]}).then(function(){return w.recognize(t[0]?turn(cv,t[0]):cv)}).then(function(res){
+    var t=TRIES[i],src=cv;
+    if(t[2]){var big=Math.max(img.naturalWidth,img.naturalHeight);if(big<2100)return readBill(w,img,cv,i+1);src=cleanPhoto(img,2600)}
+    scanStep=i?'(try '+(i+1)+' of '+TRIES.length+')':'';
+    return w.setParameters({tessedit_pageseg_mode:t[1]}).then(function(){return w.recognize(t[0]?turn(src,t[0]):src)}).then(function(res){
       var txt=res.data.text||'',tk=findToken(txt);
-      return tk?{tk:tk,txt:txt}:readBill(w,cv,i+1)});
+      return tk?{tk:tk,txt:txt}:readBill(w,img,cv,i+1)});
   }
   function findToken(text){
-    var t=text.replace(/[|]/g,'1');
-    var m=t.match(/t[o0]k[e3]n\s*n[o0]?\W{0,4}(\d{1,6})/i)||t.match(/t[o0]k[e3]n[^\d\n]{0,14}(\d{1,6})/i);
-    return m?m[1]:null;
+    var t=text.replace(/[|]/g,'1'),D='[0-9OoIlSB]';
+    var m=t.match(new RegExp('t[o0]k[e3]n\\s*n[o0]?\\W{0,4}('+D+'{1,6})(?![A-Za-z])','i'))||t.match(new RegExp('t[o0]k[e3]n[^\\d\\n]{0,14}?('+D+'{1,6})(?![A-Za-z])','i'));
+    if(!m)return null;
+    var v=m[1].replace(/[Oo]/g,'0').replace(/[Il]/g,'1').replace(/S/g,'5').replace(/B/g,'8');
+    return /^\d+$/.test(v)&&/\d/.test(m[1])?String(parseInt(v,10)):null;   // must hold a real digit; no leading zeros
   }
   $('scanBill').addEventListener('click',function(){unlockAudio();getWorker();$('billPhoto').value='';$('billPhoto').click()});
-  $('billPhoto').addEventListener('change',function(){
-    var f=this.files&&this.files[0];if(!f)return;
-    $('scanBill').disabled=true;scanMsg('Reading your bill\u2026',true);
+  $('pickBill').addEventListener('click',function(){unlockAudio();getWorker();$('billPick').value='';$('billPick').click()});
+  function scanDone(){scanning=false;scanStep='';$('scanBill').disabled=false;$('pickBill').disabled=false}
+  function onBillFile(){
+    var f=this.files&&this.files[0];if(!f||scanning)return;
+    $('scanBill').disabled=true;$('pickBill').disabled=true;scanMsg('Reading your bill\u2026',true);
     var url=URL.createObjectURL(f),img=new Image();
     img.onload=function(){
-      var cv=cleanPhoto(img);URL.revokeObjectURL(url);
+      var cv;
+      try{cv=cleanPhoto(img)}catch(e){URL.revokeObjectURL(url);scanDone();scanMsg('That photo is too big for this phone. Please take it a little closer and try again.');return}
       scanning=true;
-      getWorker().catch(function(){throw 'load'}).then(function(w){return readBill(w,cv,0)}).then(function(r){
-        scanning=false;scanStep='';
+      var slow=new Promise(function(ok,no){setTimeout(function(){no('slow')},150000)});
+      Promise.race([getWorker().catch(function(){throw 'load'}).then(function(w){return readBill(w,img,cv,0)}),slow]).then(function(r){
+        URL.revokeObjectURL(url);scanDone();
         var txt=r?r.txt:'',tk=r?r.tk:null,oc=findOutlet(txt),ks=Object.keys(outlets);
         if(!oc&&!outlet&&tk&&ks.length===1)oc=ks[0];     // only one outlet uses live tracking
         if(oc)setOutlet(oc);
-        $('scanBill').disabled=false;
-        if(tk&&!outlet&&!ks.length)scanMsg('Found token '+tk+', but live tracking isn\u2019t switched on at this outlet yet. Please ask at the counter.');
+        if(tk&&!outlet&&!ks.length){scanMsg('Found token '+tk+'. Live tracking isn\u2019t on right now \u2014 we\u2019ll call it at the counter. Play a game below while you wait!');liveOffline(true)}
         else if(tk&&!outlet){$('tok').value=tk;pendingTok=tk;needOutlet=true;paintOutlets();scanMsg('Found token '+tk+'. Tap your outlet above.')}
         else if(tk){$('tok').value=tk;scanMsg('Found token '+tk+(outlets[outlet]?' \u00B7 '+outlets[outlet]:''));setTimeout(function(){startTracking(tk)},600)}
-        else scanMsg('Couldn\u2019t read the token. Hold the bill flat, close and in good light, and try again.');
-      }).catch(function(e){scanning=false;scanStep='';$('scanBill').disabled=false;
-        scanMsg(e==='load'?'Couldn\u2019t load the bill reader. Check the internet and try again.':'Couldn\u2019t read the bill. Please try again.')});
+        else scanMsg('Couldn\u2019t find the token. Take the photo straight on, close, in good light, with \u201CToken No.\u201D clearly visible.');
+      }).catch(function(e){
+        URL.revokeObjectURL(url);scanDone();
+        if(e!=='load'){var w=ocrWorker;ocrWorker=null;if(w)w.then(function(x){x.terminate()}).catch(function(){})}  // start fresh next time
+        scanMsg(e==='load'?'Couldn\u2019t load the bill reader. Check the internet and try again.'
+          :e==='slow'?'Reading took too long on this phone. Please try again with a closer photo.'
+          :'Couldn\u2019t read the bill. Please try again.')});
     };
-    img.onerror=function(){$('scanBill').disabled=false;scanMsg('Couldn\u2019t open that photo. Please try again.')};
+    img.onerror=function(){URL.revokeObjectURL(url);scanDone();scanMsg('Couldn\u2019t open that photo. Please take a new photo and try again.')};
     img.src=url;
-  });
+  }
+  $('billPhoto').addEventListener('change',onBillFile);
+  $('billPick').addEventListener('change',onBillFile);
   $('change').addEventListener('click',function(){showEntry()});
   $('sound').addEventListener('click',function(){soundOn=!soundOn;store.set('babai_sound',soundOn?'1':'0');if(soundOn){unlockAudio();chime()}paintSound()});
   function paintSound(){$('sound').textContent=soundOn?'🔔 Alert on':'🔕 Alert off';$('sound').setAttribute('aria-pressed',soundOn)}
@@ -536,7 +559,17 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   function get(path){return fetch('https://'+host+'/babai/'+path+'.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})}
   function loadOutlets(){return get('outlets').then(function(o){outlets={};geo={};
     for(var k in (o||{}))if(o[k]&&o[k].n){outlets[k]=o[k].n;if(o[k].lat!=null&&o[k].lng!=null)geo[k]={lat:+o[k].lat,lng:+o[k].lng}}
-    paintOutlets();locate()}).catch(function(){})}
+    paintOutlets();locate();liveOffline(!Object.keys(outlets).length)}).catch(function(){liveOffline(true)})}
+  // No live data (Babai Hub not running / not set up, or no connection): the game and dishes still
+  // work, with a short note; the outlets are checked again every 30 s and tracking comes back by itself.
+  var liveOff=false,liveRetry=null,gameOpened=false;
+  function liveOffline(on){
+    liveOff=on;$('funNote').hidden=!on;
+    if(!tracking){$('live').classList.toggle('stale',on);$('liveText').textContent=on?'OFFLINE':'LIVE'}
+    clearTimeout(liveRetry);if(on)liveRetry=setTimeout(loadOutlets,30000);
+    if(!tracking&&on)showFun(true);   // back online: never pull the game away mid-play
+    if(on&&!gameOpened){gameOpened=true;tab(true)}
+  }
   // Nearest outlet: with the customer's permission, the phone's location picks the outlet they are in.
   function km(m){return m<1000?Math.round(m/10)*10+' m':(m/1000).toFixed(m<10000?1:0)+' km'}
   function metres(a,b){var R=6371000,r=Math.PI/180,dl=(b.lat-a.lat)*r,dg=(b.lng-a.lng)*r,
@@ -687,7 +720,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   function autoDish(on){clearInterval(dishTimer);if(on)dishTimer=setInterval(function(){var el=$('dishes'),n=el.children.length;if(!n||$('dishPane').hidden||document.hidden)return;dishI=(dishI+1)%n;el.scrollTo({left:dishI*el.clientWidth,behavior:'smooth'});paintDots()},5000)}
   function showFun(on){
     var f=$('fun');if(f.hidden===!on)return;f.hidden=!on;
-    if(on){buildDishes();autoDish(true)}else{autoDish(false);gameStop()}
+    if(on){buildDishes();autoDish(true);if(!$('gamePane').hidden)setTimeout(gameSize,0)}else{autoDish(false);gameStop()}
   }
   function tab(game){$('tabDish').setAttribute('aria-selected',!game);$('tabGame').setAttribute('aria-selected',game);
     $('dishPane').hidden=game;$('gamePane').hidden=!game;if(game)gameSize();else gameStop()}
