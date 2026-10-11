@@ -178,6 +178,24 @@ public final class DosaLive {
         return panel.mode == Panel.ORDER_READY && panel.board != null ? panel.board.handleKey(e) : panel.view.handleKey(e);
     }
 
+    /** Number keys on the rider board go to its order search (null when it is not showing). */
+    private static RiderBoardView openRider() {
+        Panel p = panel;
+        return p != null && p.mode == Panel.RIDER && p.riderView != null
+                && p.riderView.getVisibility() == View.VISIBLE ? p.riderView : null;
+    }
+
+    static boolean riderTypeKey(android.view.KeyEvent e) {
+        RiderBoardView rv = openRider();
+        return rv != null && rv.typeKey(e);
+    }
+
+    /** A barcode scan came in as fast key presses: the rider search ignores them. */
+    static void riderScanned() {
+        RiderBoardView rv = openRider();
+        if (rv != null) rv.undoScan();
+    }
+
     static void onUserTouch() {
         lastUserAt = System.currentTimeMillis();
         if (uiHandler == null) return;

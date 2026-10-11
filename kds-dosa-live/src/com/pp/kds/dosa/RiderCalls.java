@@ -211,6 +211,56 @@ final class RiderCalls {
         return sb.toString();
     }
 
+    /** One search result on the rider board: the order and whether it is ready (and since when). */
+    static final class Hit {
+        final Order order;
+        final boolean ready;
+        final long readyAt;
+
+        Hit(Order order, boolean ready, long readyAt) {
+            this.order = order;
+            this.ready = ready;
+            this.readyAt = readyAt;
+        }
+    }
+
+    /**
+     * Orders on the board whose ID matches what was typed: the last 4 digits starting with it
+     * ("31" finds ...3136) or the full order ID ending with it ("103136"). Exact last-4 matches
+     * first, then ready before preparing.
+     */
+    static List<Hit> find(String query, List<Waiting> ready, List<Order> preparing) {
+        final String q = digitsOf(query);
+        List<Hit> out = new ArrayList<Hit>();
+        if (q.isEmpty()) return out;
+        for (Waiting w : ready) if (matches(w.order, q)) out.add(new Hit(w.order, true, w.readyAt));
+        for (Order o : preparing) if (matches(o, q)) out.add(new Hit(o, false, 0));
+        Collections.sort(out, new Comparator<Hit>() {
+            @Override public int compare(Hit a, Hit b) {
+                int c = Boolean.compare(!a.order.last4.equals(q), !b.order.last4.equals(q));
+                return c != 0 ? c : Boolean.compare(!a.ready, !b.ready);
+            }
+        });
+        return out;
+    }
+
+    private static boolean matches(Order o, String q) {
+        if (o == null) return false;
+        if (o.last4.startsWith(q)) return true;
+        String d = digitsOf(o.orderId);
+        return q.length() > 4 && d.endsWith(q);
+    }
+
+    private static String digitsOf(String s) {
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= '0' && c <= '9') sb.append(c);
+        }
+        return sb.toString();
+    }
+
     /** Last 4 digits of the platform order ID ("1791447658581597964" -> "7964"). */
     static String last4(String orderId) {
         if (orderId == null) return "";

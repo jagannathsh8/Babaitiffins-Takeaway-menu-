@@ -29,6 +29,9 @@ import java.util.Map;
  *         and the big last 4 digits of the platform order ID; cards auto-size to fit all.
  *  Right: PREPARING - online / delivery orders still in the kitchen, oldest first.
  *  Call : big pop-up while the voice calls new ready orders.
+ *  Find : the search button (or any number key) opens a keypad: type the last 4 digits of the
+ *         order ID to see brand, full order ID, slot and READY / PREPARING. It stays open, and
+ *         keeps updating, until it is closed.
  *
  * Plain dark background (no photos) for clarity and speed on TV boxes.
  */
@@ -92,7 +95,22 @@ final class RiderBoardView extends View {
     private long callAt;
     private long controlsAt = SystemClock.uptimeMillis();
     private final RectF hitVoice = new RectF(), hitClose = new RectF();
-    private int focus = -1; // remote: 0 brightness, 1 duration, 2 voice, 3 close
+    private int focus = -1; // remote: 0 search, 1 brightness, 2 duration, 3 voice, 4 close
+    private final RectF hitSearch = new RectF();
+    private float headCy, headH, clockLeft;
+
+    // search: keypad + results, open until closed
+    private static final String[] KEYS = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "CLEAR", "0", "\u232B"};
+    private static final int MAX_DIGITS = 8;
+    private boolean searchOn;
+    private final StringBuilder query = new StringBuilder();
+    private int sFocus = -1; // remote: 0..11 keypad, 12 close
+    private final RectF[] hitKeys = new RectF[KEYS.length];
+    private final RectF hitSearchClose = new RectF();
+    private long lastTypeAt, keyFlashAt;
+    private int keyFlash = -1;
+    private boolean onBeforeBurst;
+    private String queryBeforeBurst = "";
     private RadialGradient bg;
     private float bgKey;
     private String clockStr = "";
@@ -113,6 +131,7 @@ final class RiderBoardView extends View {
         }
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeCap(Paint.Cap.ROUND);
+        for (int i = 0; i < hitKeys.length; i++) hitKeys[i] = new RectF();
         setClickable(true);
     }
 
@@ -154,11 +173,13 @@ final class RiderBoardView extends View {
         if (ev.getAction() == MotionEvent.ACTION_UP) {
             float x = ev.getX(), y = ev.getY();
             boolean visible = controlsAlpha() > 0.3f;
-            if (visible && hitClose.contains(x, y)) activate(3);
-            else if (visible && hitVoice.contains(x, y)) activate(2);
-            else if (visible && hitDur.contains(x, y)) activate(1);
-            else if (visible && hitBright.contains(x, y)) activate(0);
-            else if (call != null) call = null;
+            if (call != null && SystemClock.uptimeMillis() - callAt < CALL_MS) call = null;
+            else if (searchOn) searchTouch(x, y);
+            else if (hitSearch.contains(x, y)) activate(0);
+            else if (visible && hitClose.contains(x, y)) activate(4);
+            else if (visible && hitVoice.contains(x, y)) activate(3);
+            else if (visible && hitDur.contains(x, y)) activate(2);
+            else if (visible && hitBright.contains(x, y)) activate(1);
             controlsAt = SystemClock.uptimeMillis();
             invalidate();
         }
@@ -167,14 +188,16 @@ final class RiderBoardView extends View {
 
     private void activate(int i) {
         if (i == 0) {
+            openSearch();
+        } else if (i == 1) {
             brightMode = (brightMode + 1) % 4;
             if (listener != null) listener.onBrightness(brightMode);
-        } else if (i == 1) {
+        } else if (i == 2) {
             int j = 0;
             while (j < DURATIONS.length && DURATIONS[j] != duration) j++;
             duration = DURATIONS[(j + 1) % DURATIONS.length];
             if (listener != null) listener.onDuration(duration);
-        } else if (i == 2) {
+        } else if (i == 3) {
             voiceOn = !voiceOn;
             if (listener != null) listener.onVoice(voiceOn);
         } else if (listener != null) {
@@ -182,8 +205,9 @@ final class RiderBoardView extends View {
         }
     }
 
-    /** TV remote: LEFT/RIGHT between VOICE and close, OK presses, BACK closes. */
+    /** TV remote: LEFT/RIGHT between SEARCH ... close, OK presses, BACK closes. */
     boolean handleKey(KeyEvent e) {
+        if (searchOn) return searchKey(e);
         int k = e.getKeyCode();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         switch (k) {
@@ -195,8 +219,8 @@ final class RiderBoardView extends View {
             case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_DPAD_DOWN:
                 if (down) {
-                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 2;
-                    else focus = Math.max(0, Math.min(3, focus
+                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 3;
+                    else focus = Math.max(0, Math.min(4, focus
                             + (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1)));
                     controlsAt = SystemClock.uptimeMillis();
                     invalidate();
@@ -207,7 +231,7 @@ final class RiderBoardView extends View {
             case KeyEvent.KEYCODE_NUMPAD_ENTER:
             case KeyEvent.KEYCODE_BUTTON_A:
                 if (!down) {
-                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 2;
+                    if (focus < 0 || controlsAlpha() < 0.3f) focus = 3;
                     else activate(focus);
                     controlsAt = SystemClock.uptimeMillis();
                     invalidate();
@@ -215,6 +239,129 @@ final class RiderBoardView extends View {
                 return true;
             default:
                 if (down) controlsAt = SystemClock.uptimeMillis();
+                return true;
+        }
+    }
+
+    // ---- search ----------------------------------------------------------------------------
+
+    void openSearch() {
+        searchOn = true;
+        sFocus = -1;
+        invalidate();
+    }
+
+    private void closeSearch() {
+        searchOn = false;
+        query.setLength(0);
+        sFocus = -1;
+        controlsAt = SystemClock.uptimeMillis();
+        invalidate();
+    }
+
+    private static int digitOf(int k) {
+        if (k >= KeyEvent.KEYCODE_0 && k <= KeyEvent.KEYCODE_9) return k - KeyEvent.KEYCODE_0;
+        if (k >= KeyEvent.KEYCODE_NUMPAD_0 && k <= KeyEvent.KEYCODE_NUMPAD_9) return k - KeyEvent.KEYCODE_NUMPAD_0;
+        return -1;
+    }
+
+    /**
+     * Number keys / Delete from a keyboard, number pad or remote (they reach the board before the
+     * KDS). A number opens the search. A barcode scan arrives the same way, very fast: see
+     * {@link #undoScan()}.
+     */
+    boolean typeKey(KeyEvent e) {
+        int k = e.getKeyCode();
+        boolean del = k == KeyEvent.KEYCODE_DEL || k == KeyEvent.KEYCODE_FORWARD_DEL;
+        int dg = digitOf(k);
+        if (dg < 0 && !(del && searchOn)) return false;
+        if (e.getAction() == KeyEvent.ACTION_DOWN) {
+            long now = SystemClock.uptimeMillis();
+            if (now - lastTypeAt > 80) {
+                onBeforeBurst = searchOn;
+                queryBeforeBurst = query.toString();
+            }
+            lastTypeAt = now;
+            if (!searchOn) openSearch();
+            press(dg >= 0 ? (dg == 0 ? 10 : dg - 1) : 11);
+        }
+        return true;
+    }
+
+    /** A scan was read from the same keys: put the search back as it was before the burst. */
+    void undoScan() {
+        query.setLength(0);
+        query.append(queryBeforeBurst);
+        if (!onBeforeBurst) searchOn = false;
+        invalidate();
+    }
+
+    private void press(int key) {
+        keyFlash = key;
+        keyFlashAt = SystemClock.uptimeMillis();
+        if (key == 12) {
+            closeSearch();
+            return;
+        }
+        String kv = KEYS[key];
+        if (key == 9) query.setLength(0);
+        else if (key == 11) {
+            if (query.length() > 0) query.setLength(query.length() - 1);
+        } else if (query.length() < MAX_DIGITS) query.append(kv);
+        invalidate();
+    }
+
+    private void searchTouch(float x, float y) {
+        if (hitSearchClose.contains(x, y)) {
+            press(12);
+            return;
+        }
+        for (int i = 0; i < hitKeys.length; i++) {
+            if (hitKeys[i].contains(x, y)) {
+                sFocus = -1;
+                press(i);
+                return;
+            }
+        }
+    }
+
+    /** Remote on the search screen: arrows move over the keypad (up from the top row = close). */
+    private boolean searchKey(KeyEvent e) {
+        int k = e.getKeyCode();
+        boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
+        switch (k) {
+            case KeyEvent.KEYCODE_BACK:
+                if (!down) closeSearch();
+                return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (down) {
+                    if (sFocus < 0) sFocus = 4;
+                    else if (sFocus == 12) sFocus = k == KeyEvent.KEYCODE_DPAD_DOWN ? 2 : 12;
+                    else {
+                        int r = sFocus / 3, col = sFocus % 3;
+                        if (k == KeyEvent.KEYCODE_DPAD_LEFT) col = Math.max(0, col - 1);
+                        else if (k == KeyEvent.KEYCODE_DPAD_RIGHT) col = Math.min(2, col + 1);
+                        else if (k == KeyEvent.KEYCODE_DPAD_DOWN) r = Math.min(3, r + 1);
+                        else r = r - 1;
+                        sFocus = r < 0 ? 12 : r * 3 + col;
+                    }
+                    invalidate();
+                }
+                return true;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+            case KeyEvent.KEYCODE_BUTTON_A:
+                if (!down) {
+                    if (sFocus < 0) sFocus = 4;
+                    else press(sFocus);
+                    invalidate();
+                }
+                return true;
+            default:
                 return true;
         }
     }
@@ -272,6 +419,7 @@ final class RiderBoardView extends View {
         }
         if (f < 1f) drawFooter(c, pad, h - 52 * s, w - 2 * pad, 1f - f);
         drawControls(c, w);
+        if (searchOn) drawSearch(c, w, h, now, land);
         drawCall(c, w, h, now, t);
 
         if (lite) postInvalidateDelayed(Math.max(1L, 33L - (SystemClock.uptimeMillis() - frameStart)));
@@ -312,6 +460,9 @@ final class RiderBoardView extends View {
         float clockBase = cy + lerp(4, 16, f) * s * k;
         c.drawText(clockStr, x + w, clockBase, text);
         float clockW = text.measureText(clockStr);
+        headCy = cy;
+        headH = h;
+        clockLeft = x + w - clockW;
         float pulse = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 1.6);
         text.setTypeface(condensed);
         text.setLetterSpacing(0.3f);
@@ -498,6 +649,20 @@ final class RiderBoardView extends View {
         hitClose.setEmpty();
         hitDur.setEmpty();
         hitBright.setEmpty();
+        hitSearch.setEmpty();
+        // Search: a small round button left of the clock while the controls are hidden (also in
+        // full screen); a SEARCH pill at the start of the controls row while they show.
+        if (a < 1f && !searchOn) {
+            float r = Math.min(24 * s, headH * 0.4f), bx = clockLeft - 40 * s - r;
+            int ia = (int) (255 * (1f - a));
+            fill.setColor(alpha(0xFFF5B21B, (int) (0.9f * ia)));
+            c.drawCircle(bx, headCy, r, fill);
+            drawGlass(c, bx, headCy, r * 0.42f, alpha(0xFF1B1203, ia));
+            if (a <= 0.3f) {
+                hitSearch.set(bx - r, headCy - r, bx + r, headCy + r);
+                hitSearch.inset(-12 * s, -12 * s);
+            }
+        }
         if (a <= 0f) return;
         float h = 44 * s, y = 74 * s - h / 2f;
         text.setTypeface(bold);
@@ -550,16 +715,283 @@ final class RiderBoardView extends View {
         c.drawRoundRect(rect, h / 2f, h / 2f, fill);
         text.setColor(alpha(Color.WHITE, (int) (255 * a)));
         c.drawText(bl, rect.centerX(), rect.centerY() + 6 * s, text);
+        // search pill, first in the row
+        String sl = "SEARCH ORDER";
+        float sw = text.measureText(sl) + 72 * s;
+        float sx = blx - blw - 12 * s;
+        rect.set(sx - sw, y, sx, y + h);
+        if (a > 0.3f) {
+            hitSearch.set(rect);
+            hitSearch.inset(-6 * s, -10 * s);
+        }
+        fill.setColor(alpha(0xFFF5B21B, (int) (240 * a)));
+        c.drawRoundRect(rect, h / 2f, h / 2f, fill);
+        drawGlass(c, rect.left + 26 * s, rect.centerY(), 8 * s, alpha(0xFF1B1203, (int) (255 * a)));
+        text.setColor(alpha(0xFF1B1203, (int) (255 * a)));
+        c.drawText(sl, rect.centerX() + 14 * s, rect.centerY() + 6 * s, text);
         text.setTextAlign(Paint.Align.LEFT);
         text.setLetterSpacing(0f);
         if (focus >= 0) {
-            RectF fr = focus == 0 ? hitBright : focus == 1 ? hitDur : focus == 2 ? hitVoice : hitClose;
+            RectF fr = focus == 0 ? hitSearch : focus == 1 ? hitBright : focus == 2 ? hitDur : focus == 3 ? hitVoice : hitClose;
             rect.set(fr);
-            rect.inset(focus == 3 ? 6 * s : 2 * s, 6 * s);
+            rect.inset(focus == 4 ? 6 * s : 2 * s, 6 * s);
             stroke.setColor(alpha(Color.WHITE, (int) (255 * a)));
             stroke.setStrokeWidth(3 * s);
             c.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, stroke);
         }
+    }
+
+    /** Magnifying-glass icon (drawn, so it looks the same on every TV box). */
+    private void drawGlass(Canvas c, float cx, float cy, float r, int color) {
+        stroke.setColor(color);
+        stroke.setStrokeWidth(Math.max(2f, r * 0.38f));
+        c.drawCircle(cx - r * 0.2f, cy - r * 0.2f, r, stroke);
+        c.drawLine(cx + r * 0.52f, cy + r * 0.52f, cx + r * 1.25f, cy + r * 1.25f, stroke);
+    }
+
+    /** Search screen: keypad + typed digits on one side, matching orders (live) on the other. */
+    private void drawSearch(Canvas c, float w, float h, long now, boolean land) {
+        fill.setColor(0xEE05080D);
+        c.drawRect(0, 0, w, h, fill);
+        float cw = Math.min(w - 32 * s, 1800 * s), ch = land ? Math.min(h - 32 * s, 1040 * s) : h - 32 * s;
+        float x = (w - cw) / 2f, y = (h - ch) / 2f;
+        panel(c, x, y, cw, ch, 28 * s, 0xFF101722, 0x88F5B21B);
+        float pad = 28 * s;
+
+        // title + close
+        drawGlass(c, x + pad + 14 * s, y + pad + 22 * s, 13 * s, GOLD);
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTypeface(bold);
+        text.setLetterSpacing(0.12f);
+        text.setTextSize(36 * s);
+        text.setColor(Color.WHITE);
+        c.drawText("FIND ORDER", x + pad + 46 * s, y + pad + 36 * s, text);
+        text.setLetterSpacing(0f);
+        float cr = 30 * s, ccx = x + cw - pad - cr, ccy = y + pad + 22 * s;
+        hitSearchClose.set(ccx - cr - 12 * s, ccy - cr - 12 * s, ccx + cr + 12 * s, ccy + cr + 12 * s);
+        boolean flashClose = keyFlash == 12 && now - keyFlashAt < 150;
+        fill.setColor(flashClose ? 0x66FFFFFF : 0x33FFFFFF);
+        c.drawCircle(ccx, ccy, cr, fill);
+        stroke.setColor(Color.WHITE);
+        stroke.setStrokeWidth(3 * s);
+        float k = cr * 0.4f;
+        c.drawLine(ccx - k, ccy - k, ccx + k, ccy + k, stroke);
+        c.drawLine(ccx - k, ccy + k, ccx + k, ccy - k, stroke);
+        if (sFocus == 12) {
+            stroke.setStrokeWidth(4 * s);
+            stroke.setColor(GOLD);
+            c.drawCircle(ccx, ccy, cr + 6 * s, stroke);
+        }
+
+        float top = y + pad + 70 * s, bottom = y + ch - pad;
+        float kx, ky, kw, kh, rx, ry, rw, rh;
+        if (land) {
+            kw = Math.min(cw * 0.36f, 560 * s);
+            kx = x + pad;
+            ky = top;
+            kh = bottom - top;
+            rx = kx + kw + 32 * s;
+            ry = top;
+            rw = x + cw - pad - rx;
+            rh = kh;
+        } else {
+            kw = cw - 2 * pad;
+            kx = x + pad;
+            ky = top;
+            kh = (bottom - top) * 0.5f;
+            rx = kx;
+            ry = ky + kh + 24 * s;
+            rw = kw;
+            rh = bottom - ry;
+        }
+
+        // typed digits
+        float boxH = Math.min(120 * s, kh * 0.2f);
+        rect.set(kx, ky, kx + kw, ky + boxH);
+        fill.setColor(0xFF060A10);
+        c.drawRoundRect(rect, 18 * s, 18 * s, fill);
+        stroke.setColor(GOLD);
+        stroke.setStrokeWidth(2.5f * s);
+        c.drawRoundRect(rect, 18 * s, 18 * s, stroke);
+        boolean blink = (now / 530) % 2 == 0;
+        text.setTextAlign(Paint.Align.CENTER);
+        if (query.length() == 0) {
+            text.setTypeface(medium);
+            text.setTextSize(fit("Last 4 digits of the order ID", boxH * 0.3f, kw - 40 * s));
+            text.setColor(0x88FFFFFF);
+            c.drawText("Last 4 digits of the order ID", rect.centerX(), rect.centerY() + text.getTextSize() * 0.36f, text);
+        } else {
+            text.setTypeface(bold);
+            text.setLetterSpacing(0.25f);
+            String q = query.toString() + (blink ? "_" : " ");
+            text.setTextSize(fit(q, boxH * 0.62f, kw - 40 * s));
+            text.setColor(Color.WHITE);
+            c.drawText(q, rect.centerX(), rect.centerY() + text.getTextSize() * 0.36f, text);
+            text.setLetterSpacing(0f);
+        }
+
+        // keypad 3 x 4
+        float kgap = 14 * s, kTop = ky + boxH + 20 * s;
+        float keyW = (kw - 2 * kgap) / 3f, keyH = Math.min(keyW * 0.7f, (ky + kh - kTop - 3 * kgap) / 4f);
+        for (int i = 0; i < KEYS.length; i++) {
+            int r = i / 3, col = i % 3;
+            RectF kr = hitKeys[i];
+            kr.set(kx + col * (keyW + kgap), kTop + r * (keyH + kgap), kx + col * (keyW + kgap) + keyW,
+                    kTop + r * (keyH + kgap) + keyH);
+            boolean flash = keyFlash == i && now - keyFlashAt < 150;
+            boolean special = i == 9 || i == 11;
+            fill.setColor(flash ? 0xFFF5B21B : special ? 0xFF2A3442 : 0xFF1F2A38);
+            c.drawRoundRect(kr, 16 * s, 16 * s, fill);
+            if (sFocus == i) {
+                stroke.setColor(GOLD);
+                stroke.setStrokeWidth(4 * s);
+                c.drawRoundRect(kr, 16 * s, 16 * s, stroke);
+            }
+            text.setTypeface(special ? condensed : bold);
+            text.setLetterSpacing(special && i == 9 ? 0.15f : 0f);
+            text.setTextSize(fit(KEYS[i], keyH * (special ? 0.32f : 0.5f), keyW - 20 * s));
+            text.setColor(flash ? 0xFF1B1203 : special ? 0xFFFFE082 : Color.WHITE);
+            c.drawText(KEYS[i], kr.centerX(), kr.centerY() + text.getTextSize() * 0.36f, text);
+        }
+        text.setLetterSpacing(0f);
+
+        drawResults(c, rx, ry, rw, rh, System.currentTimeMillis());
+        text.setTextAlign(Paint.Align.LEFT);
+    }
+
+    private void drawResults(Canvas c, float x, float y, float w, float h, long wall) {
+        String q = query.toString();
+        text.setTextAlign(Paint.Align.CENTER);
+        if (q.isEmpty()) {
+            text.setTypeface(medium);
+            text.setColor(0xAAFFFFFF);
+            String l1 = "Type the last 4 digits of the order ID";
+            String l2 = "to see brand, order ID, slot and READY / PREPARING";
+            text.setTextSize(fit(l1, 32 * s, w - 40 * s));
+            c.drawText(l1, x + w / 2f, y + h / 2f - 10 * s, text);
+            text.setTextSize(fit(l2, 22 * s, w - 40 * s));
+            text.setColor(0x77FFFFFF);
+            c.drawText(l2, x + w / 2f, y + h / 2f + 30 * s, text);
+            return;
+        }
+        List<RiderCalls.Hit> hits = RiderCalls.find(q, ready, preparing);
+        if (hits.isEmpty()) {
+            text.setTypeface(bold);
+            text.setColor(0xFFFF8A65);
+            String l1 = "No order ending " + q + " on the board";
+            text.setTextSize(fit(l1, 38 * s, w - 40 * s));
+            c.drawText(l1, x + w / 2f, y + h / 2f - 12 * s, text);
+            text.setTypeface(medium);
+            text.setColor(0x99FFFFFF);
+            String l2 = q.length() < 4 ? "Keep typing the last 4 digits" : "Already picked up, or not sent to the kitchen yet";
+            text.setTextSize(fit(l2, 24 * s, w - 40 * s));
+            c.drawText(l2, x + w / 2f, y + h / 2f + 30 * s, text);
+            return;
+        }
+        // count line
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.15f);
+        text.setTextSize(20 * s);
+        text.setColor(0xCCF5B21B);
+        c.drawText(hits.size() == 1 ? "1 ORDER FOUND" : hits.size() + " ORDERS FOUND", x, y + 20 * s, text);
+        text.setLetterSpacing(0f);
+        float top = y + 36 * s;
+        float minRow = 110 * s, rowH = Math.min(230 * s, (y + h - top) / Math.max(1, hits.size()));
+        int fit = hits.size();
+        if (rowH < minRow) {
+            rowH = minRow;
+            fit = Math.max(1, (int) ((y + h - top - 40 * s) / rowH));
+        }
+        for (int i = 0; i < Math.min(fit, hits.size()); i++) {
+            drawHit(c, hits.get(i), x, top + i * rowH, w, rowH - 12 * s, wall);
+        }
+        if (fit < hits.size()) {
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTypeface(medium);
+            text.setTextSize(22 * s);
+            text.setColor(0xAAFFFFFF);
+            c.drawText("+" + (hits.size() - fit) + " more \u2022 type more digits", x + w / 2f, y + h - 8 * s, text);
+        }
+    }
+
+    /** One result: [BRAND | ORDER ID 3136 + full ID | SLOT 47 | READY / PREPARING]. */
+    private void drawHit(Canvas c, RiderCalls.Hit hit, float x, float y, float w, float h, long wall) {
+        RiderCalls.Order o = hit.order;
+        int pc = platformColor(o.platform);
+        rect.set(x, y, x + w, y + h);
+        fill.setColor(hit.ready ? 0xF2FFFFFF : 0x26FFFFFF);
+        c.drawRoundRect(rect, 22 * s, 22 * s, fill);
+        if (!hit.ready) {
+            stroke.setColor(0x66F5B21B);
+            stroke.setStrokeWidth(2 * s);
+            c.drawRoundRect(rect, 22 * s, 22 * s, stroke);
+        }
+        fill.setColor(pc);
+        rect.set(x, y, x + 12 * s, y + h);
+        c.drawRoundRect(rect, 6 * s, 6 * s, fill);
+
+        int fg = hit.ready ? 0xFF111111 : Color.WHITE;
+        int lab = hit.ready ? 0x99000000 : 0x99FFFFFF;
+        float lx = x + 30 * s, labY = y + h * 0.27f, valY = y + h * 0.66f;
+        float c1 = w * 0.28f, c2 = w * 0.30f, c3 = w * 0.14f, c4 = w - c1 - c2 - c3 - 30 * s;
+        float labS = Math.min(16 * s, h * 0.13f), valS = h * 0.42f;
+        // labels
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.18f);
+        text.setTextSize(labS);
+        text.setColor(lab);
+        text.setTextAlign(Paint.Align.LEFT);
+        c.drawText("BRAND", lx, labY, text);
+        text.setTextAlign(Paint.Align.CENTER);
+        c.drawText("ORDER ID", lx + c1 + c2 / 2f, labY, text);
+        c.drawText("SLOT", lx + c1 + c2 + c3 / 2f, labY, text);
+        text.setLetterSpacing(0f);
+        // brand
+        text.setTextAlign(Paint.Align.LEFT);
+        text.setTypeface(bold);
+        text.setColor(hit.ready ? pc : Color.WHITE);
+        text.setTextSize(fit(o.platform, valS * 0.62f, c1 - 16 * s));
+        c.drawText(o.platform, lx, valY, text);
+        // last 4 big + full ID small
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setColor(fg);
+        text.setTextSize(fit(o.last4, valS, c2 - 16 * s));
+        c.drawText(o.last4, lx + c1 + c2 / 2f, valY, text);
+        if (o.orderId.length() > 4) {
+            text.setTextSize(fit(o.orderId, Math.min(18 * s, h * 0.14f), c2 - 8 * s));
+            text.setColor(hit.ready ? 0xDD222222 : 0xDDFFFFFF);
+            c.drawText(o.orderId, lx + c1 + c2 / 2f, y + h * 0.88f, text);
+        }
+        // slot
+        boolean hasSlot = o.slot != null && !o.slot.isEmpty();
+        String slot = hasSlot ? o.slot : "\u2014";
+        text.setColor(hit.ready ? 0xFF1B5E20 : GOLD);
+        text.setTextSize(fit(slot, valS, c3 - 8 * s));
+        c.drawText(slot, lx + c1 + c2 + c3 / 2f, valY, text);
+        // status chip
+        float chx = lx + c1 + c2 + c3 + 10 * s, chw = c4 - 16 * s, chh = Math.min(h * 0.46f, 74 * s);
+        rect.set(chx, y + h * 0.42f - chh / 2f, chx + chw, y + h * 0.42f + chh / 2f);
+        fill.setColor(hit.ready ? 0xFF2E7D32 : 0xFFF5B21B);
+        c.drawRoundRect(rect, chh / 2f, chh / 2f, fill);
+        String st = hit.ready ? "\u2713 READY" : "PREPARING";
+        text.setTypeface(bold);
+        text.setLetterSpacing(0.08f);
+        text.setTextSize(fit(st, chh * 0.5f, chw - 24 * s));
+        text.setColor(hit.ready ? Color.WHITE : 0xFF1B1203);
+        c.drawText(st, rect.centerX(), rect.centerY() + text.getTextSize() * 0.36f, text);
+        text.setLetterSpacing(0f);
+        long since = hit.ready ? hit.readyAt : o.createdMs;
+        if (since > 0 && wall - since >= 0 && wall - since < 24 * 3600_000L) {
+            long min = (wall - since) / 60_000L;
+            String sub = hit.ready ? (min < 1 ? "ready just now" : "ready " + min + " min")
+                    : (min < 1 ? "ordered just now" : "ordered " + min + " min ago");
+            text.setTypeface(medium);
+            text.setTextSize(fit(sub, Math.min(18 * s, h * 0.14f), chw));
+            text.setColor(hit.ready ? 0xAA000000 : 0xAAFFFFFF);
+            c.drawText(sub, rect.centerX(), y + h * 0.88f, text);
+        }
+        text.setTextAlign(Paint.Align.LEFT);
     }
 
     private void drawCall(Canvas c, float w, float h, long now, float t) {

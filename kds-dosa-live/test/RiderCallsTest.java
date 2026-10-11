@@ -23,6 +23,26 @@ public final class RiderCallsTest {
     }
 
     public static void main(String[] a) {
+        {   // search on the rider board
+            RiderCalls.Order r1 = new RiderCalls.Order(1, "Swiggy", "3136", "250412237103136", "47", 0, true, false);
+            RiderCalls.Order p1 = new RiderCalls.Order(2, "Zomato", "3190", "88233190", "", 0, false, false);
+            RiderCalls.Order p2 = new RiderCalls.Order(3, "Ownly", "7964", "1791447658581597964", "20", 0, false, false);
+            RiderCalls.Waiting w = new RiderCalls.Waiting();
+            w.order = r1;
+            List<RiderCalls.Waiting> rl = new ArrayList<RiderCalls.Waiting>();
+            rl.add(w);
+            List<RiderCalls.Order> pl = new ArrayList<RiderCalls.Order>();
+            pl.add(p1);
+            pl.add(p2);
+            List<RiderCalls.Hit> h = RiderCalls.find("3136", rl, pl);
+            check("search last 4", h.size() == 1 && h.get(0).ready && h.get(0).order.slot.equals("47"), h.size());
+            h = RiderCalls.find("31", rl, pl);
+            check("search prefix: both, ready first", h.size() == 2 && h.get(0).ready, h.size());
+            h = RiderCalls.find("3190", rl, pl);
+            check("search preparing", h.size() == 1 && !h.get(0).ready && h.get(0).order.platform.equals("Zomato"), h.size());
+            check("search more digits", RiderCalls.find("597964", rl, pl).size() == 1, "");
+            check("search none", RiderCalls.find("5555", rl, pl).isEmpty() && RiderCalls.find("", rl, pl).isEmpty(), "");
+        }
         long T = 10_000_000_000L;
         check("last4", RiderCalls.last4("1791447658581597964").equals("7964"), RiderCalls.last4("1791447658581597964"));
         check("last4 short", RiderCalls.last4("A12").equals("12"), RiderCalls.last4("A12"));

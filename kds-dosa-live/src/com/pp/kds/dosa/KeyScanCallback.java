@@ -46,6 +46,7 @@ final class KeyScanCallback extends WindowCallbackWrapper {
                     buf.setLength(0);
                     if (scan) {
                         swallowUp = k;
+                        DosaLive.riderScanned();
                         int n = ScannerActivity.record(activity, code, "USB/BT scanner");
                         DosaLive.showScanBanner(activity, ScannerActivity.lastSummary(), n > 0);
                         return true;
@@ -61,6 +62,8 @@ final class KeyScanCallback extends WindowCallbackWrapper {
                     }
                 }
             }
+            // Rider board: number keys type into its order search.
+            if (DosaLive.riderTypeKey(e)) return true;
             // TV remote: arrows / OK / Back for the add-on screens and buttons.
             if (RemoteNav.isRemoteKey(e.getKeyCode()) && RemoteNav.dispatch(activity, e)) return true;
         } catch (Throwable ignored) {
