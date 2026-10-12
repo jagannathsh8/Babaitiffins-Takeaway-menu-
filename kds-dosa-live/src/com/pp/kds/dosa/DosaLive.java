@@ -77,25 +77,45 @@ public final class DosaLive {
     private static long lastUserAt = System.currentTimeMillis();
     private static final TokenBoard tokens = new TokenBoard();
     private static RiderCalls riders = new RiderCalls();
-    private static int riderSource = -1;          // 0 Petpooja via KDS, 1 Bridge Print, 2 test
 
-    /** Rider board + calls run from Bridge Print when it is reachable and gives order status. */
+    /**
+     * Rider board + calls: which orders and their status come from Petpooja (this KDS); Bridge Print
+     * only gives the pickup slot. Kept for the status line: Bridge Print reachable.
+     */
     static boolean bridgeMode() {
-        return BridgeSlots.connected() && BridgeSlots.hasStatus();
+        return BridgeSlots.connected();
     }
 
-    /** Switching data source: start fresh, so orders already waiting are not called as "new". */
-    private static void useBridgeSource(boolean bridge) {
-        useSource(bridge ? 1 : 0);
+    /** Petpooja orders seen last (re-checked every tick: 2-minute grace, 3-hour safety). */
+    private static List<RiderCalls.Order> lastRiderOrders = new ArrayList<RiderCalls.Order>();
+    private static long readySavedAt;
+
+    /** Ready times kept on the device, so a restart keeps "ready for 12 min". */
+    private static void loadReadyTimes(Context ctx) {
+        try {
+            String js = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getString("rider_ready_at", "");
+            if (js.isEmpty()) return;
+            org.json.JSONObject o = new org.json.JSONObject(js);
+            Map<String, Long> m = new HashMap<String, Long>();
+            java.util.Iterator<String> it = o.keys();
+            while (it.hasNext()) {
+                String k = it.next();
+                m.put(k, o.getLong(k));
+            }
+            riders.restoreReadyTimes(m);
+        } catch (Throwable ignored) {
+        }
     }
 
-    private static void useSource(int src) {
-        if (src == riderSource) return;
-        riderSource = src;
-        RiderCalls fresh = new RiderCalls();
-        fresh.setMaxMinutes(riderMaxMin);
-        fresh.skipStale = src == 0; // only for Petpooja-via-KDS; Bridge Print shows everything they list
-        riders = fresh;
+    private static void saveReadyTimes(long now) {
+        if (appCtx == null || !riders.readyTimesChanged() || now - readySavedAt < 15_000L) return;
+        readySavedAt = now;
+        try {
+            org.json.JSONObject o = new org.json.JSONObject();
+            for (Map.Entry<String, Long> e : riders.readyTimes().entrySet()) o.put(e.getKey(), (long) e.getValue());
+            appCtx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).edit().putString("rider_ready_at", o.toString()).apply();
+        } catch (Throwable ignored) {
+        }
     }
 
     private static int riderMaxMin;
@@ -253,8 +273,9 @@ public final class DosaLive {
         riderOn = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getBoolean("rider_calls", false);
         BridgeSlots.setAddress(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getString("bridge_addr", ""));
         BridgeSlots.autoFind(ctx.getApplicationContext()); // Bridge Print on the Petpooja PC, when not set
-        riderMaxMin = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("rider_max_min", 0);
-        riders.setMaxMinutes(riderMaxMin);
+        riderMaxMin = 0;            // ready orders stay until Petpooja shows them dispatched / cancelled
+        riders.setMaxMinutes(0);
+        loadReadyTimes(ctx);
         tokens.setAutoClearMinutes(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getInt("autoclear_min", 10));
         stats = new DosaStats();
         Map<String, String> saved = new HashMap<String, String>();
@@ -307,11 +328,9 @@ public final class DosaLive {
                         String dg = BridgeSlots.digits(o.orderId);
                         if (dg.length() >= 6) kinds.put(dg, o.gone ? 2 : o.ready ? 1 : 0);
                     }
-                    BridgeSlots.setKdsKinds(kinds); // helps Bridge Print orders show Food Ready
-                    if (!bridgeMode()) {
-                        useBridgeSource(false);
-                        riders.update(kdsOrders, now); // fallback: Petpooja via the KDS
-                    }
+                    BridgeSlots.setKdsKinds(kinds);
+                    lastRiderOrders = kdsOrders;
+                    riders.update(kdsOrders, now); // orders + status: Petpooja (this KDS)
                 } catch (Throwable ignored) {
                 }
                 try {
@@ -339,10 +358,8 @@ public final class DosaLive {
         }
         if (persistPending && now - lastPersistAt >= 30_000L) persist();
         try {
-            if (bridgeMode()) {
-                useBridgeSource(true);
-                riders.update(BridgeSlots.orders(), now); // same orders, status and slots as Bridge Print
-            }
+            riders.update(lastRiderOrders, now); // grace / safety checks also while the board is quiet
+            saveReadyTimes(now);
             if (panel != null) panel.bindRider();
         } catch (Throwable ignored) {
         }
@@ -516,7 +533,8 @@ public final class DosaLive {
             String status = kot.getKotStatus();
             boolean ready = card.getState().isDispatch() || "9".equals(status);
             // Picked up: dispatched / cancelled in Petpooja, or cleared on Bridge Print.
-            boolean gone = "10".equals(status) || "0".equals(status) || BridgeSlots.pickedUp(kot.getPOId());
+            // Gone only when Petpooja says so: dispatched (rider picked up) or cancelled.
+            boolean gone = "10".equals(status) || "0".equals(status);
             Long created = BoardVisualsKt.parseCreatedMillis(kot.getCreatedTime());
             out.add(new RiderCalls.Order(kot.getId(), platform.trim(), last4, kot.getPOId(), slot,
                     created == null ? 0L : created, ready, gone));
@@ -834,6 +852,21 @@ public final class DosaLive {
         addr.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         box.addView(addr);
 
+        // -- why orders left the rider screen (to check "missing" orders) --
+        box.addView(heading(a, "Orders that left the rider screen"));
+        TextView gone = new TextView(a);
+        StringBuilder gl = new StringBuilder();
+        java.text.DateFormat tf = android.text.format.DateFormat.getTimeFormat(a);
+        for (RiderCalls.Removal r : riders.removals()) {
+            if (gl.length() > 0) gl.append('\n');
+            gl.append(tf.format(new java.util.Date(r.at))).append("  ").append(r.platform).append(' ').append(r.last4)
+                    .append(" \u2014 ").append(r.reason);
+        }
+        gone.setText(gl.length() == 0 ? "None yet. Ready orders stay until Petpooja shows them dispatched or cancelled."
+                : "Ready orders stay until Petpooja shows them dispatched or cancelled. Last ones:\n" + gl);
+        gone.setTextIsSelectable(true);
+        box.addView(gone);
+
         // -- Camera (hands-free) --
         box.addView(heading(a, "\uD83D\uDCF7 Camera (hands-free)"));
         TextView camInfo = new TextView(a);
@@ -1123,8 +1156,7 @@ public final class DosaLive {
 
                     @Override public void onDuration(int minutes) {
                         ui.edit().putInt("rider_max_min", minutes).apply();
-                        riderMaxMin = minutes;
-                        riders.setMaxMinutes(minutes);
+                        // no time limit any more: ready orders stay until dispatched
                     }
                 });
                 ((ViewGroup) activity.findViewById(android.R.id.content)).addView(riderView,
@@ -1157,11 +1189,10 @@ public final class DosaLive {
                 if (!sl.isEmpty()) o.slot = sl;
             }
             String addr = BridgeSlots.address();
-            String src = addr == null || addr.isEmpty()
-                    ? "Orders: Petpooja \u2022 Bridge Print not set (long-press the rider button)"
-                    : bridgeMode() ? "Orders & slots: Bridge Print \u2022 " + BridgeSlots.status()
-                    : "Orders: Petpooja (Bridge Print: " + BridgeSlots.status() + ")";
-            riderView.setData(rl, pl, src, bridgeMode());
+            String src = "Orders: Petpooja \u2022 Slots: " + (addr == null || addr.isEmpty()
+                    ? "Bridge Print not set (long-press \uD83D\uDEF5 RIDER)" : "Bridge Print " + BridgeSlots.status());
+            riderView.setData(rl, pl, src, addr != null && !addr.isEmpty() && bridgeMode());
+            riderView.setRemovals(riders.removedCount(), riders.removals());
             RiderCam.setBoard(rl, pl);
         }
 

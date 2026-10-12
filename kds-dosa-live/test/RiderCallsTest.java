@@ -60,6 +60,7 @@ public final class RiderCallsTest {
         check("last4 short", RiderCalls.last4("A12").equals("12"), RiderCalls.last4("A12"));
 
         RiderCalls rc = new RiderCalls();
+        rc.skipStale = true;   // the old leftover rule (off on the TV now), still tested here
         rc.setMaxMinutes(15);
         List<RiderCalls.Order> board = new ArrayList<RiderCalls.Order>();
         board.add(o(1, "Swiggy", "250412237103136", "47", T - 5 * 60_000L, true, false));    // ready at start
@@ -69,6 +70,7 @@ public final class RiderCallsTest {
         check("start: no 'new' call", rc.due(T + 4_000).size() <= 1, ids(rc.due(T + 4_000)));
         // (first repeat cycle may include the already-ready Swiggy order)
         rc = new RiderCalls();
+        rc.skipStale = true;
         rc.setMaxMinutes(15);
         rc.update(board, T);
         List<RiderCalls.Waiting> first = rc.due(T + 1);
@@ -127,22 +129,47 @@ public final class RiderCallsTest {
         List<RiderCalls.Order> b3 = new ArrayList<RiderCalls.Order>();
         b3.add(o(5, "Zomato", "1182", "12", T, true, false));
         u.update(b3, T);
-        u.update(b3, T + 3 * 3600_000L);
+        u.update(b3, T + 170 * 60_000L);
         check("until picked up", u.waitingCount() == 1, u.waitingCount());
         b3.set(0, o(5, "Zomato", "1182", "12", T, true, true));
-        u.update(b3, T + 3 * 3600_000L + 1000);
+        u.update(b3, T + 170 * 60_000L + 1000);
         check("picked up removes", u.waitingCount() == 0, u.waitingCount());
+        check("removal reason", u.removals().get(0).reason.contains("dispatched"), u.removals().get(0).reason);
 
-        // Gone from the board (picked up / released) after the 5 s grace.
+        // Off the KDS board: kept through a refresh / blip, removed after 2 minutes.
         RiderCalls g = new RiderCalls();
         List<RiderCalls.Order> b2 = new ArrayList<RiderCalls.Order>();
         b2.add(o(9, "Swiggy", "5343", "40", T, true, false));
         g.update(b2, T);
         b2.clear();
         g.update(b2, T + 1_000);
-        check("blip kept", g.waitingCount() == 1, g.waitingCount());
-        g.update(b2, T + 7_000);
-        check("gone removed", g.waitingCount() == 0, g.waitingCount());
+        g.update(b2, T + 90_000);
+        check("blip kept (90 s)", g.waitingCount() == 1, g.waitingCount());
+        g.update(b2, T + 122_000);
+        check("gone after 2 min", g.waitingCount() == 0 && g.removals().get(0).reason.contains("KDS board"), g.waitingCount());
+
+        // Old orders are never hidden for their age (busy mornings: placed > 45 min ago, ready now).
+        RiderCalls old = new RiderCalls();
+        List<RiderCalls.Order> bo = new ArrayList<RiderCalls.Order>();
+        bo.add(o(11, "Swiggy", "7001", "3", T - 90 * 60_000L, true, false));
+        old.update(bo, T);
+        check("old order shown", old.waitingCount() == 1, old.waitingCount());
+
+        // Safety: ready 3 hours without dispatch -> cleared.
+        old.update(bo, T + RiderCalls.SAFETY_MS);
+        check("3 h safety", old.waitingCount() == 0 && old.removals().get(0).reason.contains("3 hours"), old.waitingCount());
+
+        // Ready times survive a restart.
+        RiderCalls a1 = new RiderCalls();
+        List<RiderCalls.Order> br = new ArrayList<RiderCalls.Order>();
+        br.add(new RiderCalls.Order(21, "Zomato", "1182", "8723451182", "12", T, true, false));
+        a1.update(br, T);
+        java.util.Map<String, Long> saved = a1.readyTimes();
+        RiderCalls a2 = new RiderCalls();
+        a2.restoreReadyTimes(saved);
+        a2.update(br, T + 7 * 60_000L);
+        check("ready time kept after restart", a2.readyList().get(0).readyAt == T, a2.readyList().get(0).readyAt - T);
+        check("restored order is not called as new", a2.due(T + 7 * 60_000L + 4_000).isEmpty() || !a2.lastWasNew, "");
 
         System.out.println(failures == 0 ? "ALL PASS" : failures + " FAILED");
         if (failures > 0) System.exit(1);

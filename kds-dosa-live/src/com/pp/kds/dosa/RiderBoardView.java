@@ -174,6 +174,7 @@ final class RiderBoardView extends View {
             if (!firstSeen.containsKey(w.order.id)) firstSeen.put(w.order.id, now);
         }
         firstSeen.keySet().retainAll(live);
+        buildGroups();
         refreshLookup();
         invalidate();
     }
@@ -301,8 +302,14 @@ final class RiderBoardView extends View {
             case KeyEvent.KEYCODE_DPAD_DOWN:
                 if (down) {
                     if (focus < 0 || controlsAlpha() < 0.3f) focus = 3;
-                    else focus = Math.max(0, Math.min(4, focus
-                            + (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1)));
+                    else {
+                        int[] order = {0, 1, 3, 4};   // search, brightness, voice, close
+                        int at = 0;
+                        while (at < order.length - 1 && order[at] != focus) at++;
+                        at = Math.max(0, Math.min(order.length - 1,
+                                at + (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1)));
+                        focus = order[at];
+                    }
                     controlsAt = SystemClock.uptimeMillis();
                     invalidate();
                 }
@@ -455,6 +462,156 @@ final class RiderBoardView extends View {
 
     // ---- drawing ---------------------------------------------------------------------------
 
+    // ---- board: sunlight design ------------------------------------------------------------
+    //
+    // Light screen (riders come in from the sun; light backgrounds show less glare), one section
+    // per brand (most orders first) with a solid brand strip, and inside it READY cards first
+    // (white, green "READY" bar, black slot box with yellow digits) then PREPARING cards (grey,
+    // amber bar), each in number order (last 4 digits). Every card: brand badge, last 4, slot,
+    // full order ID, and its timers. The top bar shows the totals and each brand's counts.
+
+    private static final int SUN_BG = 0xFFE9ECF1, SUN_INK = 0xFF0B0F17, SUN_MUTE = 0xFF5A6372, SUN_LINE = 0xFFCDD3DC,
+            SUN_GREEN = 0xFF0A8F4A, SUN_AMBER = 0xFFB86E00, PREP_BG = 0xFFDFE3E9, PREP_BAND = 0xFFFFE2A8,
+            PREP_TEXT = 0xFF8A5200, PREP_INK = 0xFF4A5363, SLOT_BG = 0xFF111418, SLOT_FG = 0xFFFFD400;
+
+    /** One card: a ready (Waiting) or a preparing order. */
+    private static final class Item {
+        final RiderCalls.Order o;
+        final boolean ready;
+        final long readyAt;
+
+        Item(RiderCalls.Order o, boolean ready, long readyAt) {
+            this.o = o;
+            this.ready = ready;
+            this.readyAt = readyAt;
+        }
+    }
+
+    private static final class Group {
+        final String brand;
+        final int color;
+        final List<Item> items = new ArrayList<Item>();
+        int nReady, nPrep;
+
+        Group(String brand, int color) {
+            this.brand = brand;
+            this.color = color;
+        }
+    }
+
+    private List<Group> groups = new ArrayList<Group>();
+    private int removedCount;
+    private List<RiderCalls.Removal> removals = new ArrayList<RiderCalls.Removal>();
+    private Typeface cond, condX;
+    private final Paint icon = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint.FontMetrics fm = new Paint.FontMetrics();
+
+    void setRemovals(int count, List<RiderCalls.Removal> list) {
+        removedCount = count;
+        removals = list;
+    }
+
+    /** Brand sections (most orders first); inside: ready then preparing, each by last 4 digits. */
+    private void buildGroups() {
+        Map<String, Group> m = new HashMap<String, Group>();
+        for (RiderCalls.Waiting w : ready) {
+            Group g = group(m, w.order.platform);
+            g.items.add(new Item(w.order, true, w.readyAt));
+            g.nReady++;
+        }
+        for (RiderCalls.Order o : preparing) {
+            Group g = group(m, o.platform);
+            g.items.add(new Item(o, false, 0));
+            g.nPrep++;
+        }
+        List<Group> out = new ArrayList<Group>(m.values());
+        java.util.Collections.sort(out, new java.util.Comparator<Group>() {
+            @Override public int compare(Group a, Group b) {
+                int c = Integer.compare(b.items.size(), a.items.size());
+                if (c != 0) return c;
+                c = Integer.compare(RiderCalls.brandRank(a.brand), RiderCalls.brandRank(b.brand));
+                return c != 0 ? c : a.brand.compareToIgnoreCase(b.brand);
+            }
+        });
+        for (Group g : out) {
+            java.util.Collections.sort(g.items, new java.util.Comparator<Item>() {
+                @Override public int compare(Item a, Item b) {
+                    if (a.ready != b.ready) return a.ready ? -1 : 1;
+                    return a.o.last4.compareTo(b.o.last4);
+                }
+            });
+        }
+        groups = out;
+    }
+
+    private static Group group(Map<String, Group> m, String brand) {
+        String b = brand == null || brand.trim().isEmpty() ? "Online" : brand.trim();
+        Group g = m.get(b);
+        if (g == null) {
+            g = new Group(b, platformColor(b));
+            m.put(b, g);
+        }
+        return g;
+    }
+
+    private void fonts() {
+        if (cond != null) return;
+        try {
+            cond = Typeface.createFromAsset(getContext().getAssets(), "rider_cond_bold.ttf");
+            condX = Typeface.createFromAsset(getContext().getAssets(), "rider_cond_xbold.ttf");
+        } catch (Throwable t) {
+            cond = condensed;
+            condX = condensed;
+        }
+    }
+
+    /** Text centred vertically on cy. ls: letter spacing in px. */
+    private void mid(Canvas c, String str, float x, float cy, Typeface tf, float size, int color, Paint.Align al, float ls) {
+        text.setTypeface(tf);
+        text.setTextSize(size);
+        text.setColor(color);
+        text.setTextAlign(al);
+        text.setLetterSpacing(size > 0 ? ls / size : 0f);
+        text.getFontMetrics(fm);
+        c.drawText(str, x, cy - (fm.ascent + fm.descent) / 2f, text);
+        text.setLetterSpacing(0f);
+    }
+
+    private float width(String str, Typeface tf, float size, float ls) {
+        text.setTypeface(tf);
+        text.setTextSize(size);
+        text.setLetterSpacing(size > 0 ? ls / size : 0f);
+        float wd = text.measureText(str);
+        text.setLetterSpacing(0f);
+        return wd;
+    }
+
+    /** "✓ 6m" style: the symbol from the system font (it has the glyph), the time in the TV font. Returns width. */
+    private float iconText(Canvas c, String sym, String str, float x, float cy, float size, int color, boolean right) {
+        icon.setTypeface(Typeface.DEFAULT_BOLD);
+        icon.setTextSize(size * 0.92f);
+        icon.setColor(color);
+        icon.setTextAlign(Paint.Align.LEFT);
+        float iw = icon.measureText(sym) + size * 0.22f, tw = width(str, condX, size, 0);
+        float x0 = right ? x - iw - tw : x;
+        icon.getFontMetrics(fm);
+        c.drawText(sym, x0, cy - (fm.ascent + fm.descent) / 2f, icon);
+        mid(c, str, x0 + iw, cy, condX, size, color, Paint.Align.LEFT, 0);
+        return iw + tw;
+    }
+
+    private static String mins(long ms, boolean nowWord) {
+        if (ms < 60_000L && nowWord) return "NOW";
+        long m = Math.max(0, ms / 60_000L);
+        return m < 60 ? m + "m" : (m / 60) + "h" + (m % 60 < 10 ? "0" : "") + (m % 60);
+    }
+
+    private void rounded(Canvas c, float l, float t, float r, float b, float rad, int color) {
+        rect.set(l, t, r, b);
+        fill.setColor(color);
+        c.drawRoundRect(rect, rad, rad, fill);
+    }
+
     @Override
     protected void onDraw(Canvas c) {
         long frameStart = SystemClock.uptimeMillis();
@@ -464,41 +621,18 @@ final class RiderBoardView extends View {
         float t = ((now - start) % (6 * 3600_000L)) / 1000f;
         boolean land = w >= h;
         s = land ? Math.min(w / 1920f, h / 1080f) : Math.min(w / 1080f, h / 1920f);
-
-        if (bg == null || bgKey != w * 7 + h) {
-            bgKey = w * 7 + h;
-            bg = new RadialGradient(w * 0.3f, h * 0.35f, Math.max(w, h),
-                    new int[]{0xFF1E2A3A, 0xFF111823, 0xFF080B10}, new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP);
-        }
-        fill.setShader(bg);
-        c.drawRect(0, 0, w, h, fill);
-        fill.setShader(null);
-
-        // Full screen: 10 s after the last touch / remote key the header slims down, the footer
-        // and margins go and the system bars hide, so the order lists get nearly the whole screen.
+        fonts();
+        // System bars hide 10 s after the last touch / remote key (the layout stays the same).
         boolean wantFull = now - controlsAt >= FULL_AFTER_MS;
-        long dt = lastFrame == 0 ? 0 : Math.min(200L, now - lastFrame);
-        lastFrame = now;
-        full += ((wantFull ? 1f : 0f) - full) * Math.min(1f, dt / 180f);
-        if (Math.abs(full - (wantFull ? 1f : 0f)) < 0.01f) full = wantFull ? 1f : 0f;
         if (wantFull != immersive) setImmersive(wantFull);
-        float f = full;
-        float pad = lerp(40, 14, f) * s;
-        float headY = lerp(26, 6, f) * s, headH = lerp(96, 50, f) * s;
-        drawHeader(c, pad, headY, w - 2 * pad, headH, t, f);
-        float top = headY + headH + lerp(18, 4, f) * s, bottom = h - lerp(70, 10, f) * s;
-        if (land) {
-            // Food Ready gets more room as it fills up (it must show every order).
-            float share = Math.max(0.58f, Math.min(0.74f, 0.5f + ready.size() / 120f));
-            float gap = 24 * s, leftW = (w - 2 * pad - gap) * share;
-            drawReady(c, pad, top, leftW, bottom - top, now, t);
-            drawPreparing(c, pad + leftW + gap, top, w - 2 * pad - leftW - gap, bottom - top);
-        } else {
-            float rh = (bottom - top) * 0.62f;
-            drawReady(c, pad, top, w - 2 * pad, rh, now, t);
-            drawPreparing(c, pad, top + rh + 20 * s, w - 2 * pad, bottom - top - rh - 20 * s);
-        }
-        if (f < 1f) drawFooter(c, pad, h - 52 * s, w - 2 * pad, 1f - f);
+
+        fill.setShader(null);
+        fill.setColor(SUN_BG);
+        c.drawRect(0, 0, w, h, fill);
+        long wall = System.currentTimeMillis();
+        drawSunHeader(c, w);
+        drawSunBoard(c, w, h, wall);
+        drawLegend(c, w, h);
         drawControls(c, w);
         if (searchOn) drawSearch(c, w, h, now, land);
         if (lookup != null && now - lookup.seenAt > LOOKUP_IDLE_MS) closeLookup(false);
@@ -509,236 +643,262 @@ final class RiderBoardView extends View {
         else postInvalidateOnAnimation();
     }
 
-    private void drawHeader(Canvas c, float x, float y, float w, float h, float t, float f) {
-        float cy = y + h / 2f, k = h / (96 * s); // everything scales with the header height
-        int sub = (int) (255 * (1f - f));
-        if (logo != null) {
-            dst.set(x, y + h * 0.05f, x + h * 0.9f, y + h * 0.95f);
-            bmp.setAlpha(255);
-            c.drawBitmap(logo, null, dst, bmp);
-        }
-        float tx = x + h + 14 * s * k;
-        text.setTextAlign(Paint.Align.LEFT);
-        text.setTypeface(bold);
-        text.setLetterSpacing(0.12f);
-        text.setTextSize(46 * s * k);
-        text.setColor(Color.WHITE);
-        c.drawText("\uD83D\uDEF5 RIDER PICKUP", tx, cy + lerp(6, 16, f) * s * k, text);
-        text.setTypeface(condensed);
-        text.setLetterSpacing(0.3f);
-        text.setTextSize(17 * s);
-        text.setColor(alpha(GOLD, sub));
-        if (sub > 0) c.drawText("BABAI TIFFINS \u2022 FIND YOUR ORDER NUMBER, GO TO THE SLOT", tx, cy + 34 * s, text);
-        text.setLetterSpacing(0f);
-
+    private void drawSunHeader(Canvas c, float w) {
+        float hh = 84 * s;
+        fill.setColor(Color.WHITE);
+        c.drawRect(0, 0, w, hh, fill);
+        fill.setColor(SUN_LINE);
+        c.drawRect(0, hh, w, hh + 2 * s, fill);
+        headCy = 42 * s;
+        headH = hh;
+        // logo + title
+        rounded(c, 24 * s, 18 * s, 72 * s, 66 * s, 12 * s, SUN_GREEN);
+        icon.setTypeface(Typeface.DEFAULT);
+        icon.setTextSize(24 * s);
+        icon.setTextAlign(Paint.Align.CENTER);
+        icon.getFontMetrics(fm);
+        c.drawText("🛵", 48 * s, 42 * s - (fm.ascent + fm.descent) / 2f, icon);
+        mid(c, "RIDER PICKUP", 86 * s, 36 * s, condX, 36 * s, SUN_INK, Paint.Align.LEFT, 3 * s);
+        mid(c, "FIND YOUR NUMBER  ·  GO TO THE SLOT", 86 * s, 64 * s, bold, 13 * s, SUN_MUTE, Paint.Align.LEFT, 2 * s);
+        // clock (right)
         long nowMs = System.currentTimeMillis();
         if (nowMs - clockAt >= 1000) {
             clockAt = nowMs;
             clockStr = clock.format(new Date(nowMs));
         }
-        text.setTextAlign(Paint.Align.RIGHT);
-        text.setTypeface(bold);
-        text.setTextSize(44 * s * k);
-        text.setColor(Color.WHITE);
-        float clockBase = cy + lerp(4, 16, f) * s * k;
-        c.drawText(clockStr, x + w, clockBase, text);
-        float clockW = text.measureText(clockStr);
-        headCy = cy;
-        headH = h;
-        clockLeft = x + w - clockW;
-        float pulse = 0.5f + 0.5f * (float) Math.sin(t * 2 * Math.PI / 1.6);
-        text.setTypeface(condensed);
-        text.setLetterSpacing(0.3f);
-        text.setTextSize(16 * s);
-        text.setColor(alpha(GREEN, sub));
-        if (sub > 0) c.drawText("LIVE", x + w, cy + 32 * s, text);
-        // live dot: under the clock normally, left of the clock in full screen
-        fill.setColor(GREEN);
-        fill.setAlpha((int) (120 + 135 * pulse));
-        float dx0 = x + w - text.measureText("LIVE") - 14 * s, dy0 = cy + 26 * s;
-        float dx1 = x + w - clockW - 18 * s, dy1 = clockBase - 13 * s * k;
-        c.drawCircle(lerp(dx0, dx1, f), lerp(dy0, dy1, f), 6 * s, fill);
-        fill.setAlpha(255);
-        text.setLetterSpacing(0f);
-        text.setTextAlign(Paint.Align.LEFT);
+        String main = clockStr, suf = "";
+        int sp = clockStr.lastIndexOf(' ');
+        if (sp > 0 && clockStr.length() - sp <= 4) {
+            main = clockStr.substring(0, sp);
+            suf = clockStr.substring(sp + 1);
+        }
+        float sw = suf.isEmpty() ? 0 : width(suf, condX, 18 * s, 1 * s) + 6 * s;
+        float cr = w - 24 * s;
+        if (sw > 0) mid(c, suf, cr, 48 * s, condX, 18 * s, SUN_MUTE, Paint.Align.RIGHT, 1 * s);
+        mid(c, main, cr - sw, 42 * s, condX, 44 * s, SUN_INK, Paint.Align.RIGHT, 0);
+        clockLeft = cr - sw - width(main, condX, 44 * s, 0);
+        // totals box
+        int nr = ready.size(), np = preparing.size();
+        float x = Math.max(86 * s + width("RIDER PICKUP", condX, 36 * s, 3 * s) + 40 * s, w * 0.255f);
+        float tx = x + 14 * s;
+        String[] lab = {"TOTAL", "READY", "PREPARING"};
+        String[] val = {String.valueOf(nr + np), String.valueOf(nr), String.valueOf(np)};
+        int[] col = {SUN_INK, SUN_GREEN, SUN_AMBER};
+        float bx = x, bxEnd = tx;
+        for (int i = 0; i < 3; i++) bxEnd += Math.max(width(lab[i], condX, 13 * s, 2 * s), width(val[i], condX, 30 * s, 0)) + 22 * s;
+        rect.set(bx, 14 * s, bxEnd - 8 * s, 70 * s);
+        fill.setColor(0xFFF1F3F6);
+        c.drawRoundRect(rect, 12 * s, 12 * s, fill);
+        stroke.setColor(SUN_LINE);
+        stroke.setStrokeWidth(1.2f * s);
+        c.drawRoundRect(rect, 12 * s, 12 * s, stroke);
+        for (int i = 0; i < 3; i++) {
+            if (i > 0) {
+                fill.setColor(SUN_LINE);
+                c.drawRect(tx - 11 * s, 24 * s, tx - 9.5f * s, 60 * s, fill);
+            }
+            mid(c, lab[i], tx, 30 * s, condX, 13 * s, i == 0 ? SUN_MUTE : col[i], Paint.Align.LEFT, 2 * s);
+            mid(c, val[i], tx, 54 * s, condX, 30 * s, col[i], Paint.Align.LEFT, 0);
+            tx += Math.max(width(lab[i], condX, 13 * s, 2 * s), width(val[i], condX, 30 * s, 0)) + 22 * s;
+        }
+        // each brand: badge, ready count, prep count
+        x = bxEnd + 22 * s;
+        for (Group g : groups) {
+            String r = String.valueOf(g.nReady), pr = g.nPrep + " PREP";
+            float need = 52 * s + width(r, condX, 38 * s, 0) + 5 * s + width(pr, condX, 13 * s, 1.5f * s) + 30 * s;
+            if (x + need > clockLeft - 96 * s) break;   // room for the search button
+            rounded(c, x, 22 * s, x + 40 * s, 62 * s, 9 * s, g.color);
+            mid(c, badge(g.brand), x + 20 * s, 42 * s, condX, 30 * s, Color.WHITE, Paint.Align.CENTER, 0);
+            mid(c, r, x + 52 * s, 42 * s, condX, 38 * s, SUN_GREEN, Paint.Align.LEFT, 0);
+            float wx = x + 52 * s + width(r, condX, 38 * s, 0) + 5 * s;
+            mid(c, "READY", wx, 35 * s, condX, 13 * s, SUN_GREEN, Paint.Align.LEFT, 1.5f * s);
+            mid(c, pr, wx, 53 * s, condX, 13 * s, SUN_AMBER, Paint.Align.LEFT, 1.5f * s);
+            x += need;
+        }
     }
 
-    private void drawReady(Canvas c, float x, float y, float w, float h, long now, float t) {
-        List<RiderCalls.Order> l = new ArrayList<RiderCalls.Order>();
-        for (RiderCalls.Waiting rw : ready) l.add(rw.order);
-        title(c, x, y + 30 * s, w, "\u2713 FOOD READY \u2014 PICK UP", GREEN, l.isEmpty() ? null : l.size() + " ready");
-        drawTable(c, x, y + 46 * s, w, h - 46 * s, l, true, t, "No orders waiting for pickup");
+    private static String badge(String brand) {
+        String b = brand == null ? "" : brand.trim();
+        return b.isEmpty() ? "?" : b.substring(0, 1).toUpperCase(Locale.US);
     }
 
-    private void drawPreparing(Canvas c, float x, float y, float w, float h) {
-        title(c, x, y + 30 * s, w, "\uD83D\uDD25 PREPARING", GOLD, preparing.isEmpty() ? null : preparing.size() + " orders");
-        drawTable(c, x, y + 46 * s, w, h - 46 * s, preparing, false, (SystemClock.uptimeMillis() - start) / 1000f,
-                "No orders being prepared");
-    }
-
-    /**
-     * Every order as one line "Swiggy - 9090 - 20" under BRAND / ORDER ID / SLOT headings, in as
-     * many columns as needed so all orders fit; pages only when there are very many.
-     */
-    private void drawTable(Canvas c, float x, float y, float w, float h, List<RiderCalls.Order> items, boolean isReady,
-                           float t, String empty) {
-        panel(c, x, y, w, h, 20 * s, isReady ? 0x5514301F : 0x66141C27, isReady ? 0x6669F0AE : 0x33FFFFFF);
-        float pad = 14 * s, ix = x + pad, iw = w - 2 * pad, top = y + pad, bottom = y + h - pad;
-        int n = items.size();
-        if (n == 0) {
-            text.setTextAlign(Paint.Align.CENTER);
-            text.setTypeface(medium);
-            text.setTextSize(26 * s);
-            text.setColor(0xAAFFFFFF);
-            c.drawText(empty, x + w / 2f, y + h / 2f, text);
-            text.setTextAlign(Paint.Align.LEFT);
+    private void drawSunBoard(Canvas c, float w, float h, long wall) {
+        float left = 20 * s, right = w - 20 * s, top = 96 * s, bottom = h - 40 * s, gap = 8 * s, stripH = 34 * s,
+                secGap = 10 * s;
+        if (groups.isEmpty()) {
+            mid(c, "No online orders right now", w / 2f, (top + bottom) / 2f, condX, 40 * s, SUN_MUTE, Paint.Align.CENTER, 2 * s);
             return;
         }
-        float headH = 30 * s, gap = 14 * s;
-        // Food Ready: always every order on one screen (more columns, smaller lines; never pages).
-        // Preparing: lines stay readable and the list pages when it doesn't fit.
-        float minColW = (isReady ? (n > 24 ? 230 : 300) : 280) * s, maxRow = (isReady ? 84 : 58) * s;
-        float minRow = (isReady ? 1 : 32) * s;
-        int maxCols = Math.max(1, (int) ((iw + gap) / (minColW + gap)));
-        int cols = 1;
-        float rowH = 0;
-        for (int k = 1; k <= maxCols; k++) {
-            int rows = (n + k - 1) / k;
-            float rh = Math.min(maxRow, (bottom - top - headH) / rows);
-            if (rh > rowH + 0.5f) {
-                rowH = rh;
-                cols = k;
-            }
-            if (rh >= maxRow) break; // biggest rows already reached: fewer columns read easier
-        }
-        int perPage = n, pages = 1;
-        if (!isReady && rowH < minRow) {
-            rowH = minRow;
-            cols = maxCols;
-            int rows = Math.max(1, (int) ((bottom - top - headH) / rowH));
-            perPage = rows * cols;
-            pages = (n + perPage - 1) / perPage;
-        }
-        int page = pages > 1 ? (int) (t / 8f) % pages : 0;
-        int rowsPerCol = (Math.min(perPage, n) + cols - 1) / cols;
-        float colW = (iw - (cols - 1) * gap) / cols;
-        // Full order ID (small, bold) under each line when the rows are tall enough.
-        boolean fullRows = rowH >= 44 * s;
-        float fs = Math.min(isReady ? 40 * s : 26 * s, rowH * (fullRows ? 0.50f : 0.62f));
-        // Measured layout, no separators: [brand ......  8888  88]. The number and slot keep at
-        // most ~62% of the line; the brand gets the rest, so nothing overlaps at any column width.
-        float left = 16 * s, right = 8 * s, sp = 10 * s, inner = colW - left - right;
-        text.setTypeface(bold);
-        text.setTextSize(100f);
-        float w4 = text.measureText("8888") / 100f, w2 = text.measureText("88") / 100f;
-        fs = Math.min(fs, (inner * 0.62f - sp) / (w4 + w2));
-        float slotW = w2 * fs, numW = w4 * fs;
-        float slotRight = colW - right;                    // offsets from the column's left edge
-        // Order ID in the middle of the card (pushed left only if the slot needs the room).
-        float numCenter = Math.min(colW * 0.56f, slotRight - slotW - sp - numW / 2f);
-        float brandMax = numCenter - numW / 2f - sp - left;
-        // headings, fitted to the same positions
-        text.setTypeface(condensed);
-        text.setLetterSpacing(0.18f);
-        float hs = Math.min(15 * s, headH * 0.55f);
-        text.setTextSize(100f);
-        float hOrder = text.measureText("ORDER ID") / 100f, hSlot = text.measureText("SLOT") / 100f,
-                hBrand = text.measureText("BRAND") / 100f;
-        hs = Math.min(hs, (slotRight - numCenter - 6 * s) / (hOrder / 2f + hSlot));
-        hs = Math.min(hs, (numCenter - left - 6 * s) / (hOrder / 2f + hBrand));
-        text.setTextSize(hs);
-        text.setColor(isReady ? 0xCC69F0AE : 0xCCF5B21B);
-        for (int col = 0; col < cols; col++) {
-            float cx = ix + col * (colW + gap);
-            text.setTextAlign(Paint.Align.LEFT);
-            c.drawText("BRAND", cx + left, top + headH * 0.62f, text);
-            text.setTextAlign(Paint.Align.CENTER);
-            c.drawText("ORDER ID", cx + numCenter, top + headH * 0.62f, text);
-            text.setTextAlign(Paint.Align.RIGHT);
-            c.drawText("SLOT", cx + slotRight, top + headH * 0.62f, text);
-        }
-        text.setLetterSpacing(0f);
-        int from = page * perPage, to = Math.min(n, from + perPage);
-        for (int i = from; i < to; i++) {
-            int j = i - from, col = j / rowsPerCol, row = j % rowsPerCol;
-            float cx = ix + col * (colW + gap), ry = top + headH + row * rowH;
-            RiderCalls.Order o = items.get(i);
-            int pc = platformColor(o.platform);
-            rect.set(cx, ry + rowH * 0.08f, cx + colW, ry + rowH * 0.92f);
-            fill.setColor(isReady ? 0xF2FFFFFF : 0x1FFFFFFF);
-            c.drawRoundRect(rect, rowH * 0.18f, rowH * 0.18f, fill);
-            fill.setColor(pc);
-            rect.set(cx, ry + rowH * 0.08f, cx + 8 * s, ry + rowH * 0.92f);
-            c.drawRoundRect(rect, 4 * s, 4 * s, fill);
-            boolean full = fullRows && o.orderId != null && o.orderId.length() > 4;
-            float base = full ? ry + rowH * 0.56f : ry + rowH * 0.5f + fs * 0.36f;
-            int fg = isReady ? 0xFF111111 : Color.WHITE;
-            // brand
-            text.setTextAlign(Paint.Align.LEFT);
-            text.setTypeface(bold);
-            text.setColor(isReady ? pc : fg);
-            text.setTextSize(fit(o.platform, fs * 0.8f, brandMax));
-            c.drawText(o.platform, cx + left, base, text);
-            // last 4 of the order ID
-            text.setTextAlign(Paint.Align.CENTER);
-            text.setColor(fg);
-            text.setTextSize(fit(o.last4, fs, numW));
-            c.drawText(o.last4, cx + numCenter, base, text);
-            // slot
-            text.setTextAlign(Paint.Align.RIGHT);
-            boolean hasSlot = o.slot != null && !o.slot.isEmpty();
-            String slot = hasSlot ? o.slot : "\u2014";
-            text.setColor(isReady ? 0xFF1B5E20 : GOLD);
-            text.setTextSize(fit(slot, fs, slotW + sp * 0.6f));
-            c.drawText(slot, cx + slotRight, base, text);
-            // full order ID: small but bold, centred under the last 4
-            if (full) {
-                text.setTextAlign(Paint.Align.CENTER);
-                text.setTypeface(bold);
-                text.setColor(isReady ? 0xDD222222 : 0xDDFFFFFF);
-                float idMax = 2f * Math.min(numCenter - left, slotRight - numCenter);
-                text.setTextSize(fit(o.orderId, Math.min(16 * s, rowH * 0.2f), idMax));
-                c.drawText(o.orderId, cx + numCenter, ry + rowH * 0.85f, text);
+        // the column count that gives the biggest cards (about 2.7 : 1), every brand on new rows
+        int bestCols = 4;
+        float bestCw = 0, bestRh = 0, bestSc = -1;
+        for (int cols = 4; cols <= 14; cols++) {
+            int rows = 0;
+            for (Group g : groups) rows += (g.items.size() + cols - 1) / cols;
+            float cw = (right - left - (cols - 1) * gap) / cols;
+            float rh = (bottom - top - groups.size() * (stripH + secGap) - (rows - groups.size()) * gap) / rows;
+            float sc = Math.min(rh, cw / 2.7f);
+            if (sc > bestSc) {
+                bestSc = sc;
+                bestCols = cols;
+                bestCw = cw;
+                bestRh = rh;
             }
         }
-        if (pages > 1) {
-            text.setTextAlign(Paint.Align.RIGHT);
-            text.setTypeface(condensed);
-            text.setTextSize(16 * s);
-            text.setColor(0xAAFFFFFF);
-            c.drawText("page " + (page + 1) + " / " + pages, x + w - pad, y - 4 * s, text);
+        int cols = bestCols;
+        float cw = bestCw, ch = Math.min(bestRh, cw / 2.3f), y = top;
+        for (Group g : groups) {
+            rounded(c, left, y, right, y + stripH - 6 * s, 8 * s, g.color);
+            float sy = y + (stripH - 6 * s) / 2f;
+            mid(c, g.brand.toUpperCase(Locale.US), left + 14 * s, sy, condX, 22 * s, Color.WHITE, Paint.Align.LEFT, 4 * s);
+            mid(c, g.nReady + " READY   ·   " + g.nPrep + " PREPARING", right - 14 * s, sy, condX, 18 * s, Color.WHITE,
+                    Paint.Align.RIGHT, 2 * s);
+            y += stripH;
+            for (int i = 0; i < g.items.size(); i++) {
+                Item it = g.items.get(i);
+                float cx = left + (i % cols) * (cw + gap), cy = y + (i / cols) * (ch + gap);
+                if (it.ready) readyCard(c, it, g, cx, cy, cw, ch, wall);
+                else prepCard(c, it, g, cx, cy, cw, ch, wall);
+            }
+            y += ((g.items.size() + cols - 1) / cols) * (ch + gap) - gap + secGap;
         }
-        text.setTextAlign(Paint.Align.LEFT);
     }
 
-    private void drawFooter(Canvas c, float x, float y, float w, float a) {
-        int ia = (int) (255 * a);
-        fill.setColor(alpha(bridgeOk ? GREEN : 0xFFFF8A65, ia));
-        c.drawCircle(x + 8 * s, y + 16 * s, 6 * s, fill);
-        text.setTextAlign(Paint.Align.LEFT);
-        text.setTypeface(medium);
-        text.setTextSize(17 * s);
-        text.setColor(alpha(Color.WHITE, (int) (0xAA * a)));
-        c.drawText(bridgeStatus, x + 22 * s, y + 22 * s, text);
-        text.setTextAlign(Paint.Align.RIGHT);
-        text.setColor(alpha(Color.WHITE, (int) (0x88 * a)));
-        c.drawText(voiceOn ? "\uD83D\uDD0A Calls on" : "\uD83D\uDD07 Calls off", x + w, y + 22 * s, text);
-        text.setTextAlign(Paint.Align.LEFT);
+    private void cardBadge(Canvas c, Group g, float x, float cy, float size) {
+        rounded(c, x, cy - size / 2f, x + size, cy + size / 2f, size * 0.22f, g.color);
+        mid(c, badge(g.brand), x + size / 2f, cy, condX, size * 0.8f, Color.WHITE, Paint.Align.CENTER, 0);
+    }
+
+    private void readyCard(Canvas c, Item it, Group g, float x, float y, float w, float h, long wall) {
+        RiderCalls.Order o = it.o;
+        rect.set(x, y, x + w, y + h);
+        fill.setColor(Color.WHITE);
+        c.drawRoundRect(rect, 9 * s, 9 * s, fill);
+        // green status bar (rounded top)
+        float bh = Math.max(16 * s, h * 0.23f);
+        c.save();
+        c.clipRect(x, y, x + w, y + bh);
+        fill.setColor(SUN_GREEN);
+        c.drawRoundRect(rect, 9 * s, 9 * s, fill);
+        c.restore();
+        stroke.setColor(SUN_LINE);
+        stroke.setStrokeWidth(1.2f * s);
+        c.drawRoundRect(rect, 9 * s, 9 * s, stroke);
+        float fz = Math.min(bh * 0.68f, 16 * s), by = y + bh / 2f;
+        mid(c, "READY", x + 9 * s, by, condX, fz, Color.WHITE, Paint.Align.LEFT, 2 * s);
+        iconText(c, "✓", mins(wall - it.readyAt, true), x + w - 9 * s, by, fz, Color.WHITE, true);
+        float body = h - bh, line1 = y + bh + body * 0.43f, big = Math.min(body * 0.6f, 52 * s);
+        cardBadge(c, g, x + 8 * s, line1, big * 0.78f);
+        float sw = Math.min(w * 0.32f, big * 1.8f), sh = big * 1.04f, sx = x + w - sw - 7 * s;
+        rounded(c, sx, line1 - sh / 2f, sx + sw, line1 + sh / 2f, 7 * s, SLOT_BG);
+        String slot = o.slot == null || o.slot.isEmpty() ? "—" : o.slot;
+        mid(c, slot, sx + sw / 2f, line1, condX, Math.min(big * 0.92f, fitSize(slot, condX, big * 0.92f, sw - 8 * s)),
+                SLOT_FG, Paint.Align.CENTER, 0);
+        float nx = x + 8 * s + big * 0.78f + 8 * s;
+        mid(c, o.last4, nx, line1, condX, fitSize(o.last4, condX, big, sx - nx - 6 * s), SUN_INK, Paint.Align.LEFT, 0.5f * s);
+        bottomLine(c, o, x, y, w, h, body, wall, SUN_MUTE, 0xFF3C4452);
+    }
+
+    private void prepCard(Canvas c, Item it, Group g, float x, float y, float w, float h, long wall) {
+        RiderCalls.Order o = it.o;
+        rect.set(x, y, x + w, y + h);
+        fill.setColor(PREP_BG);
+        c.drawRoundRect(rect, 9 * s, 9 * s, fill);
+        float bh = Math.max(16 * s, h * 0.23f);
+        c.save();
+        c.clipRect(x, y, x + w, y + bh);
+        fill.setColor(PREP_BAND);
+        c.drawRoundRect(rect, 9 * s, 9 * s, fill);
+        c.restore();
+        float fz = Math.min(bh * 0.68f, 16 * s), by = y + bh / 2f;
+        mid(c, "PREPARING", x + 9 * s, by, condX, fz, PREP_TEXT, Paint.Align.LEFT, 2 * s);
+        iconText(c, "🔥", o.createdMs > 0 ? mins(wall - o.createdMs, false) : "—", x + w - 9 * s, by, fz, PREP_TEXT, true);
+        float body = h - bh, line1 = y + bh + body * 0.43f, big = Math.min(body * 0.56f, 46 * s);
+        cardBadge(c, g, x + 8 * s, line1, big * 0.74f);
+        float sw = Math.min(w * 0.32f, big * 1.8f), sh = big, sx = x + w - sw - 7 * s;
+        rounded(c, sx, line1 - sh / 2f, sx + sw, line1 + sh / 2f, 7 * s, 0xB3FFFFFF);
+        rect.set(sx, line1 - sh / 2f, sx + sw, line1 + sh / 2f);
+        stroke.setColor(0xFFAEB6C2);
+        stroke.setStrokeWidth(1.5f * s);
+        c.drawRoundRect(rect, 7 * s, 7 * s, stroke);
+        boolean hasSlot = o.slot != null && !o.slot.isEmpty();
+        String slot = hasSlot ? o.slot : "—";
+        mid(c, slot, sx + sw / 2f, line1, condX, Math.min(big * 0.86f, fitSize(slot, condX, big * 0.86f, sw - 8 * s)),
+                hasSlot ? PREP_INK : 0xFF9AA3B0, Paint.Align.CENTER, 0);
+        float nx = x + 8 * s + big * 0.74f + 8 * s;
+        mid(c, o.last4, nx, line1, condX, fitSize(o.last4, condX, big, sx - nx - 6 * s), PREP_INK, Paint.Align.LEFT, 0.5f * s);
+        bottomLine(c, o, x, y, w, h, body, wall, 0xFF6B7383, 0xFF6B7383);
+    }
+
+    /** Full order ID (shortened only when the card is narrow) and ⏱ time since the order came in. */
+    private void bottomLine(Canvas c, RiderCalls.Order o, float x, float y, float w, float h, float body, long wall,
+                            int timeColor, int idColor) {
+        float l2 = y + h - body * 0.15f, fz2 = Math.max(9 * s, Math.min(body * 0.2f, 14 * s));
+        float tw = o.createdMs > 0 ? iconText(c, "⏱", mins(wall - o.createdMs, false), x + w - 8 * s, l2, fz2 * 1.08f,
+                timeColor, true) : 0;
+        String id = o.orderId == null || o.orderId.isEmpty() ? o.last4 : o.orderId;
+        float room = w - 26 * s - tw;
+        if (width(id, bold, fz2 * 0.92f, 0) > room) {
+            id = "…" + id.substring(Math.max(0, id.length() - 10));
+            if (width(id, bold, fz2 * 0.92f, 0) > room) id = "…" + o.orderId.substring(Math.max(0, o.orderId.length() - 7));
+        }
+        mid(c, id, x + 9 * s, l2, bold, fz2 * 0.92f, idColor, Paint.Align.LEFT, 0);
+    }
+
+    private float fitSize(String str, Typeface tf, float size, float maxW) {
+        float wd = width(str, tf, size, 0);
+        return wd > maxW && wd > 0 ? size * maxW / wd : size;
+    }
+
+    /** Bottom line: what the colours mean, slot source, and why orders left (for checking). */
+    private void drawLegend(Canvas c, float w, float h) {
+        float ly = h - 20 * s, lx = 20 * s;
+        rect.set(lx, ly - 11 * s, lx + 34 * s, ly + 11 * s);
+        fill.setColor(Color.WHITE);
+        c.drawRoundRect(rect, 5 * s, 5 * s, fill);
+        fill.setColor(SUN_GREEN);
+        c.drawRect(lx, ly - 11 * s, lx + 34 * s, ly - 5 * s, fill);
+        mid(c, "READY — collect from the slot", lx + 44 * s, ly, bold, 14 * s, SUN_INK, Paint.Align.LEFT, 0);
+        lx += 300 * s;
+        rect.set(lx, ly - 11 * s, lx + 34 * s, ly + 11 * s);
+        fill.setColor(PREP_BG);
+        c.drawRoundRect(rect, 5 * s, 5 * s, fill);
+        fill.setColor(0xFFFFB020);
+        c.drawRect(lx, ly - 11 * s, lx + 34 * s, ly - 5 * s, fill);
+        mid(c, "PREPARING — please wait", lx + 44 * s, ly, bold, 14 * s, SUN_INK, Paint.Align.LEFT, 0);
+        lx += 270 * s;
+        mid(c, "✓ since ready  ·  🔥 in kitchen  ·  ⏱ since order", lx, ly, medium, 13 * s, SUN_MUTE,
+                Paint.Align.LEFT, 0);
+        // right: slot source + removals
+        StringBuilder r = new StringBuilder(bridgeStatus == null ? "" : bridgeStatus);
+        if (removedCount > 0 && !removals.isEmpty()) {
+            RiderCalls.Removal last = removals.get(0);
+            r.append("   ·   Left the screen: ").append(removedCount).append(" (last ").append(badge(last.platform))
+                    .append(' ').append(last.last4).append(": ").append(last.reason).append(')');
+        }
+        float maxW = w - 20 * s - (lx + width("✓ since ready  ·  🔥 in kitchen  ·  ⏱ since order", medium,
+                13 * s, 0) + 30 * s);
+        String rs = r.toString();
+        float size = fitSize(rs, medium, 13 * s, Math.max(10 * s, maxW));
+        fill.setColor(bridgeOk ? SUN_GREEN : 0xFFE06A00);
+        float rw = width(rs, medium, size, 0);
+        c.drawCircle(w - 20 * s - rw - 12 * s, ly, 5 * s, fill);
+        mid(c, rs, w - 20 * s, ly, medium, size, SUN_MUTE, Paint.Align.RIGHT, 0);
     }
 
     private void drawControls(Canvas c, float w) {
         float a = controlsAlpha();
         hitVoice.setEmpty();
         hitClose.setEmpty();
-        hitDur.setEmpty();
+        hitDur.setEmpty();   // "show N min" is gone: ready orders stay until dispatched
         hitBright.setEmpty();
         hitSearch.setEmpty();
-        // Search: a small round button left of the clock while the controls are hidden (also in
-        // full screen); a SEARCH pill at the start of the controls row while they show.
+        // Search: a round button left of the clock while the controls are hidden; a SEARCH ORDER
+        // pill at the start of the controls row while they show.
         if (a < 1f && !searchOn) {
-            float r = Math.min(24 * s, headH * 0.4f), bx = clockLeft - 40 * s - r;
+            float r = Math.min(24 * s, headH * 0.32f), bx = clockLeft - 40 * s - r;
             int ia = (int) (255 * (1f - a));
-            fill.setColor(alpha(0xFFF5B21B, (int) (0.9f * ia)));
+            fill.setColor(alpha(0xFFF5B21B, ia));
             c.drawCircle(bx, headCy, r, fill);
             drawGlass(c, bx, headCy, r * 0.42f, alpha(0xFF1B1203, ia));
             if (a <= 0.3f) {
@@ -747,67 +907,57 @@ final class RiderBoardView extends View {
             }
         }
         if (a <= 0f) return;
-        float h = 44 * s, y = 74 * s - h / 2f;
-        text.setTypeface(bold);
-        text.setTextSize(44 * s);
-        float right = w - 40 * s - text.measureText(clockStr) - 28 * s;
+        float h = 44 * s, y = headCy - h / 2f, right = clockLeft - 24 * s;
+        String v = voiceOn ? "🔊  CALLS ON" : "🔇  CALLS OFF";
+        String bl = brightMode == 0 ? (hasSensor ? "☀  AUTO" : "☀  AUTO (MAX)")
+                : "☀  " + (brightMode == 1 ? 50 : brightMode == 2 ? 75 : 100) + "%";
+        String sl = "SEARCH ORDER";
+        text.setTypeface(condensed);
+        text.setLetterSpacing(0.1f);
+        text.setTextSize(18 * s);
+        float bw = text.measureText(v) + 36 * s, blw = text.measureText(bl) + 36 * s, sw = text.measureText(sl) + 72 * s;
+        float leftEdge = right - h - 12 * s - bw - 12 * s - blw - 12 * s - sw;
+        // white backing over the header counts while the controls show
+        fill.setColor(alpha(Color.WHITE, (int) (250 * a)));
+        c.drawRect(leftEdge - 16 * s, 0, right + 4 * s, headH, fill);
+        // close
         rect.set(right - h, y, right, y + h);
         hitClose.set(rect);
         hitClose.inset(-10 * s, -10 * s);
-        fill.setColor(alpha(Color.WHITE, (int) (0x33 * a)));
+        fill.setColor(alpha(0xFF263238, (int) (230 * a)));
         c.drawRoundRect(rect, h / 2f, h / 2f, fill);
-        stroke.setColor(alpha(Color.WHITE, (int) (220 * a)));
+        stroke.setColor(alpha(Color.WHITE, (int) (240 * a)));
         stroke.setStrokeWidth(2.5f * s);
         float k = h * 0.2f, cx = rect.centerX(), cy = rect.centerY();
         c.drawLine(cx - k, cy - k, cx + k, cy + k, stroke);
         c.drawLine(cx - k, cy + k, cx + k, cy - k, stroke);
-        String v = voiceOn ? "\uD83D\uDD0A  CALLS ON" : "\uD83D\uDD07  CALLS OFF";
-        text.setTypeface(condensed);
-        text.setLetterSpacing(0.1f);
-        text.setTextSize(18 * s);
-        float bw = text.measureText(v) + 36 * s;
+        // voice
         float bx = right - h - 12 * s;
         rect.set(bx - bw, y, bx, y + h);
         hitVoice.set(rect);
         hitVoice.inset(-6 * s, -10 * s);
-        fill.setColor(alpha(voiceOn ? 0xFF1E88E5 : 0xFF546E7A, (int) (235 * a)));
+        fill.setColor(alpha(voiceOn ? 0xFF1E88E5 : 0xFF546E7A, (int) (245 * a)));
         c.drawRoundRect(rect, h / 2f, h / 2f, fill);
         text.setTextAlign(Paint.Align.CENTER);
         text.setColor(alpha(Color.WHITE, (int) (255 * a)));
         c.drawText(v, rect.centerX(), rect.centerY() + 6 * s, text);
-        // duration pill, left of the voice pill
-        String dl = duration == 0 ? "\u23F1  SHOW UNTIL PICKED UP" : "\u23F1  SHOW " + duration + " MIN";
-        float dw = text.measureText(dl) + 36 * s;
-        float dx = bx - bw - 12 * s;
-        rect.set(dx - dw, y, dx, y + h);
-        hitDur.set(rect);
-        hitDur.inset(-6 * s, -10 * s);
-        fill.setColor(alpha(0xFF37474F, (int) (235 * a)));
-        c.drawRoundRect(rect, h / 2f, h / 2f, fill);
-        text.setColor(alpha(Color.WHITE, (int) (255 * a)));
-        c.drawText(dl, rect.centerX(), rect.centerY() + 6 * s, text);
-        // brightness pill, left of the duration pill
-        String bl = brightMode == 0 ? (hasSensor ? "\u2600  AUTO" : "\u2600  AUTO (MAX)")
-                : "\u2600  " + (brightMode == 1 ? 50 : brightMode == 2 ? 75 : 100) + "%";
-        float blw = text.measureText(bl) + 36 * s;
-        float blx = dx - dw - 12 * s;
+        // brightness
+        float blx = bx - bw - 12 * s;
         rect.set(blx - blw, y, blx, y + h);
         hitBright.set(rect);
         hitBright.inset(-6 * s, -10 * s);
-        fill.setColor(alpha(0xFF8D6E00, (int) (235 * a)));
+        fill.setColor(alpha(0xFF8D6E00, (int) (245 * a)));
         c.drawRoundRect(rect, h / 2f, h / 2f, fill);
         text.setColor(alpha(Color.WHITE, (int) (255 * a)));
         c.drawText(bl, rect.centerX(), rect.centerY() + 6 * s, text);
-        // search pill, first in the row
-        String sl = "SEARCH ORDER";
-        float sw = text.measureText(sl) + 72 * s;
+        // search
         float sx = blx - blw - 12 * s;
         rect.set(sx - sw, y, sx, y + h);
         if (a > 0.3f) {
             hitSearch.set(rect);
             hitSearch.inset(-6 * s, -10 * s);
         }
-        fill.setColor(alpha(0xFFF5B21B, (int) (240 * a)));
+        fill.setColor(alpha(0xFFF5B21B, (int) (250 * a)));
         c.drawRoundRect(rect, h / 2f, h / 2f, fill);
         drawGlass(c, rect.left + 26 * s, rect.centerY(), 8 * s, alpha(0xFF1B1203, (int) (255 * a)));
         text.setColor(alpha(0xFF1B1203, (int) (255 * a)));
@@ -815,10 +965,10 @@ final class RiderBoardView extends View {
         text.setTextAlign(Paint.Align.LEFT);
         text.setLetterSpacing(0f);
         if (focus >= 0) {
-            RectF fr = focus == 0 ? hitSearch : focus == 1 ? hitBright : focus == 2 ? hitDur : focus == 3 ? hitVoice : hitClose;
+            RectF fr = focus == 0 ? hitSearch : focus == 1 ? hitBright : focus == 3 ? hitVoice : hitClose;
             rect.set(fr);
             rect.inset(focus == 4 ? 6 * s : 2 * s, 6 * s);
-            stroke.setColor(alpha(Color.WHITE, (int) (255 * a)));
+            stroke.setColor(alpha(0xFF0B0F17, (int) (255 * a)));
             stroke.setStrokeWidth(3 * s);
             c.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, stroke);
         }

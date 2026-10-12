@@ -1,0 +1,3 @@
+rider_cond_bold.ttf / rider_cond_xbold.ttf: Barlow Condensed Bold / ExtraBold
+Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)
+Licensed under the SIL Open Font License, Version 1.1 (https://openfontlicense.org)

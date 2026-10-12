@@ -54,7 +54,7 @@ final class BridgeSlots {
                 @Override public void run() {
                     while (true) {
                         try {
-                            if (DosaLive.riderCallsOn() && address != null && !address.isEmpty()) pollOnce();
+                            if (address != null && !address.isEmpty()) pollOnce();   // slots, whether calls are on or off
                         } catch (Throwable ignored) {
                         }
                         try {

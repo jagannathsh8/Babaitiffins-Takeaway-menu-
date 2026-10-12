@@ -115,3 +115,22 @@ Long-press **🛵 RIDER** → *Rider screen settings* → **📷 Camera**. It's 
   * Camera and decoding run on their own threads. Watchdogs restart a camera that stops sending pictures or a reader that stops answering.
 * **Bridge Print:** if no address is set, the KDS looks for it on the Petpooja PC (`intra_ip` in the KDS settings, port 8787) every 2 minutes.
 * **Daily cache clear:** the app's cache folders are emptied once a day at the first start. Settings and KDS data are not touched.
+
+
+## Rider screen: how it works
+
+* **Orders and status come from Petpooja** (this KDS). An order shows as READY when its KOT is Food Ready. It leaves the screen only when Petpooja shows it dispatched (the rider picked it up) or cancelled.
+* **Bridge Print only gives the pickup slot.** Without it, the slot shows "—".
+* **No vanishing:**
+  * An order that drops off the KDS board for a moment stays for 2 minutes.
+  * There is no age rule and no time limit.
+  * Ready orders still there after 3 hours are cleared (never dispatched).
+* **Ready times are saved** (`rider_ready_at`), so a restart keeps the "ready for" timers.
+* **Removal log:** the last 20 removals are listed in the long-press settings, and the bottom line shows the latest one.
+* **Layout ("sunlight" design):**
+  * Light screen.
+  * A totals bar: TOTAL / READY / PREPARING, then each brand.
+  * One section per brand, the brand with the most orders first.
+  * Inside each section: READY cards (white, green bar, slot in a black box with yellow digits), then PREPARING cards (grey, amber bar), each in last-4-digit order.
+  * Timers on the cards: ✓ since ready, 🔥 in kitchen, ⏱ since order.
+* **Font:** Barlow Condensed (SIL OFL), stored in `assets/`.

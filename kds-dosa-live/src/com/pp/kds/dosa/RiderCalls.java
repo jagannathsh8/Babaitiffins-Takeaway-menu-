@@ -22,7 +22,8 @@ final class RiderCalls {
     static final long GATHER_MS = 3_000L;        // ready within 3 s of each other -> one call
     static final long REPEAT_MS = 30_000L;       // repeat cycle
     static final long MAX_MS = 15 * 60_000L;     // e.g. 15 min (when a limit is chosen)
-    static final long MISSING_MS = 5_000L;       // board blip protection
+    static final long MISSING_MS = 120_000L;     // off the KDS board this long (refresh / blip) before it counts as gone
+    static final long SAFETY_MS = 3 * 3600_000L;  // never dispatched in Petpooja: cleared after 3 h
     static final long STALE_MS = 45 * 60_000L;   // already ready + this old when first seen: skip
     static final int MAX_PER_CALL = 6;
 
@@ -58,8 +59,62 @@ final class RiderCalls {
     private final Map<Long, Waiting> waiting = new LinkedHashMap<Long, Waiting>();
     private final Set<Long> skipped = new HashSet<Long>();   // stale leftovers: never called
     private long lastCycle;
-    /** Hide orders already ready and very old when first seen (KDS source). Bridge Print clears its own. */
-    boolean skipStale = true;
+    /** Hide orders already ready and very old when first seen. Off: an order is never hidden for its age. */
+    boolean skipStale = false;
+
+    /** Why a ready order left the screen (for the footer / settings). */
+    static final class Removal {
+        final String platform, last4, reason;
+        final long at;
+
+        Removal(Order o, String reason, long at) {
+            this.platform = o == null ? "" : o.platform;
+            this.last4 = o == null ? "" : o.last4;
+            this.reason = reason;
+            this.at = at;
+        }
+    }
+
+    private final java.util.LinkedList<Removal> removals = new java.util.LinkedList<Removal>();
+    private int removedCount;
+    /** order key -> when it became ready (kept on the device so a restart keeps the timers). */
+    private final Map<String, Long> readyStore = new LinkedHashMap<String, Long>();
+    private boolean storeChanged;
+
+    static String key(Order o) {
+        return o.orderId != null && !o.orderId.isEmpty() ? o.orderId : String.valueOf(o.id);
+    }
+
+    private void removed(Waiting w, String reason, long now) {
+        if (w == null || w.order == null) return;
+        removals.addFirst(new Removal(w.order, reason, now));
+        while (removals.size() > 20) removals.removeLast();
+        removedCount++;
+        if (readyStore.remove(key(w.order)) != null) storeChanged = true;
+    }
+
+    List<Removal> removals() {
+        return new ArrayList<Removal>(removals);
+    }
+
+    int removedCount() {
+        return removedCount;
+    }
+
+    /** Ready times to save (and whether they changed since the last call). */
+    Map<String, Long> readyTimes() {
+        storeChanged = false;
+        return new LinkedHashMap<String, Long>(readyStore);
+    }
+
+    boolean readyTimesChanged() {
+        return storeChanged;
+    }
+
+    /** Ready times saved before a restart (orders keep their "ready for" time). */
+    void restoreReadyTimes(Map<String, Long> saved) {
+        if (saved != null) readyStore.putAll(saved);
+    }
     static final long SECONDS_PER_ORDER = 2_600L;
     private long nextGapMs = REPEAT_MS;
     /** Stop showing / calling an order this long after ready; 0 = until picked up. */
@@ -87,7 +142,8 @@ final class RiderCalls {
             seen.add(o.id);
             Waiting w = waiting.get(o.id);
             if (o.gone || !o.ready) {
-                waiting.remove(o.id);
+                Waiting was = waiting.remove(o.id);
+                if (was != null) removed(was, o.gone ? "dispatched / cancelled in Petpooja" : "back to preparing", now);
                 if (!o.ready) skipped.remove(o.id);
                 continue;
             }
@@ -98,26 +154,41 @@ final class RiderCalls {
                     continue;
                 }
                 w = new Waiting();
-                w.readyAt = now;
+                Long saved = readyStore.get(key(o));
+                boolean restored = saved != null && saved <= now && now - saved < SAFETY_MS;
+                w.readyAt = restored ? saved : now;
+                if (!restored) {
+                    readyStore.put(key(o), now);
+                    storeChanged = true;
+                }
                 // Orders already ready when the app starts are not "new": they join the repeat cycle.
-                w.lastSaid = initialised ? 0 : now;
+                w.lastSaid = initialised && !restored ? 0 : now;
                 waiting.put(o.id, w);
             }
             w.order = o;
             w.missingSince = 0;
         }
         List<Long> drop = new ArrayList<Long>();
+        Map<Long, String> why = new java.util.HashMap<Long, String>();
         for (Map.Entry<Long, Waiting> e : waiting.entrySet()) {
             Waiting w = e.getValue();
             if (maxMs > 0 && now - w.readyAt >= maxMs) {
                 drop.add(e.getKey());
                 skipped.add(e.getKey());
+                why.put(e.getKey(), "time limit " + (maxMs / 60_000L) + " min");
+            } else if (now - w.readyAt >= SAFETY_MS) {
+                drop.add(e.getKey());
+                skipped.add(e.getKey());
+                why.put(e.getKey(), "ready 3 hours, never dispatched");
             } else if (!seen.contains(e.getKey())) {
                 if (w.missingSince == 0) w.missingSince = now;
-                else if (now - w.missingSince >= MISSING_MS) drop.add(e.getKey());
+                else if (now - w.missingSince >= MISSING_MS) {
+                    drop.add(e.getKey());
+                    why.put(e.getKey(), "not on the KDS board for 2 min");
+                }
             }
         }
-        for (Long id : drop) waiting.remove(id);
+        for (Long id : drop) removed(waiting.remove(id), why.get(id), now);
         skipped.retainAll(seen);
         initialised = true;
     }
