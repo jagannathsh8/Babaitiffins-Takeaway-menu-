@@ -47,7 +47,7 @@ not counted as completed.
 
 * `classes4.dex`: one line added at the end of `MainActivity.onCreate` →
   `DosaLive.install(this)`, and the board limit in `KotRepositoryImpl.fetchBoardRows` raised from
-  300 to 6000 item lines. Everything else in that dex is identical.
+  300 to 1000 item lines. Everything else in that dex is identical.
 * `classes7.dex`: new, the `com.pp.kds.dosa` code in `src/`.
 * All other dex files, resources and the manifest are copied unchanged. The scanner
   (`com.pp.kds.scan.*`) is not modified; the add-on only reads the board and never presses
@@ -125,7 +125,7 @@ Long-press **🛵 RIDER** → *Rider screen settings* → **📷 Camera**. Until
 * **No vanishing:**
   * An order that drops off the KDS board for a moment stays for 2 minutes.
   * When 4+ ready orders (and 30%+ of them) drop off in the same refresh, it is a short answer from Petpooja, not riders: they stay 20 minutes.
-  * The KDS board itself keeps up to 6000 item lines from Petpooja. Petpooja's own limit was 300 lines (about 80-120 orders), and the oldest orders silently dropped off both the KDS board and the rider screen on busy days.
+  * The KDS board itself keeps up to 1000 item lines from Petpooja (about 250-350 orders; still a ceiling, because the KDS board builds every card at once). Petpooja's own limit was 300 lines (about 80-120 orders), and the oldest orders silently dropped off both the KDS board and the rider screen on busy days.
   * There is no age rule and no time limit.
   * Ready orders still there after 3 hours are cleared (never dispatched).
 * **Ready times are saved** (`rider_ready_at`), so a restart keeps the "ready for" timers.
