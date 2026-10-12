@@ -532,3 +532,41 @@ func TestDishCarousel(t *testing.T) {
 		t.Fatalf("after restart: %+v", p)
 	}
 }
+
+// A real row from the SJP billing PC: numbers where the KDS app's DTO has text (and the other way
+// round) must still give the KOT, not silently drop it.
+func TestRowsAnyFieldTypes(t *testing.T) {
+	raw := `{"error":"","data":[
+{"is_running":0,"created":"2026-10-12 07:06:53","is_informed":0,"kot_item_id":17239604227,"id":9677671302,"old_order_id":258623,"order_id":9620116129,"order_type":3,"table_no":"0","kot_unique_id":9,"extra_data":"{\"s_o_name\":\"Self Service\"}","status":1,"quantity":1,"name":"Filter Coffee","category_id":10148052,"p_o_id":null,"o_u_id":null,"kot_status":1,"category":"Beverages","tp_virtual_brand_name":""},
+{"created":"2026-10-12 07:08:10","kot_item_id":"17239604300","id":"9677671400","order_type":"3","table_no":5,"kot_unique_id":"569","status":"9","quantity":"2.000","name":"Ghee Podi Dosa","p_o_id":12345,"kot_status":"9","category":"Dosa"},
+{"created":"2026-10-12 07:08:10","id":null,"name":"no id"}]}`
+	var res struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(raw), &res); err != nil {
+		t.Fatal(err)
+	}
+	var rows []Row
+	for _, d := range res.Data {
+		var r Row
+		if json.Unmarshal(d, &r) == nil && r.ID.OK {
+			rows = append(rows, r)
+		}
+	}
+	kots := groupRows(rows)
+	if len(kots) != 2 {
+		t.Fatalf("want 2 KOTs, got %d", len(kots))
+	}
+	a, b := kots[0], kots[1]
+	if a.ID != 9677671302 || a.Token != 9 || a.OrderType != 3 || a.Status != "1" || a.Table != "0" || len(a.Items) != 1 {
+		t.Fatalf("first KOT wrong: %+v", a)
+	}
+	if b.Token != 569 || b.OrderType != 3 || b.Status != "9" || b.Table != "5" || b.POID != "12345" ||
+		b.Items[0].Q != 2 || b.Items[0].S != 9 || !isDosa(b.Items[0].C) {
+		t.Fatalf("second KOT wrong: %+v", b)
+	}
+	tb, _ := dineInDosa(kots)
+	if len(tb) != 1 || tb[0].label != "569" || !tb[0].ready {
+		t.Fatalf("dosa token 569 not found: %+v", tb)
+	}
+}

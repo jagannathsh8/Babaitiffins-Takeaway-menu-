@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"sort"
@@ -37,21 +38,66 @@ const (
 
 // Row is one item line from get_kot_data_for_kitchen_view (fields the KDS app reads).
 type Row struct {
-	ID          *int64   `json:"id"`
-	KotUniqueID *int64   `json:"kot_unique_id"` // token number
-	TableNo     string   `json:"table_no"`
-	OrderType   *int     `json:"order_type"` // 1 delivery, 2 pick-up, 3 dine-in
-	KotStatus   string   `json:"kot_status"` // "9" ready, "10" dispatched, "0" cancelled
-	Created     string   `json:"created"`
-	POID        string   `json:"p_o_id"`
-	OUID        string   `json:"o_u_id"`
-	Brand       string   `json:"tp_virtual_brand_name"`
-	Name        string   `json:"name"`
-	Category    string   `json:"category"`
-	Quantity    *float64 `json:"quantity"`
-	Status      *int     `json:"status"` // item: 9 ready, 10 dispatched, -9 cancelled
-	KotItemID   *int64   `json:"kot_item_id"`
+	ID          looseNum `json:"id"`
+	KotUniqueID looseNum `json:"kot_unique_id"` // token number
+	TableNo     looseStr `json:"table_no"`
+	OrderType   looseNum `json:"order_type"` // 1 delivery, 2 pick-up, 3 dine-in
+	KotStatus   looseStr `json:"kot_status"` // "9" ready, "10" dispatched, "0" cancelled
+	Created     looseStr `json:"created"`
+	POID        looseStr `json:"p_o_id"`
+	OUID        looseStr `json:"o_u_id"`
+	Brand       looseStr `json:"tp_virtual_brand_name"`
+	Name        looseStr `json:"name"`
+	Category    looseStr `json:"category"`
+	Quantity    looseNum `json:"quantity"`
+	Status      looseNum `json:"status"` // item: 9 ready, 10 dispatched, -9 cancelled
+	KotItemID   looseNum `json:"kot_item_id"`
 }
+
+// looseStr / looseNum read a field whatever way Petpooja writes it (the KDS app's reader is just
+// as lenient): text, a number, true/false or null. One odd field never loses the whole row.
+type looseStr string
+
+func (s *looseStr) UnmarshalJSON(b []byte) error {
+	t := strings.TrimSpace(string(b))
+	if t == "null" {
+		*s = ""
+		return nil
+	}
+	var v string
+	if json.Unmarshal(b, &v) == nil {
+		*s = looseStr(v)
+		return nil
+	}
+	*s = looseStr(t) // number, true/false, or an object/list as written
+	return nil
+}
+
+type looseNum struct {
+	V  float64
+	OK bool
+}
+
+func (n *looseNum) UnmarshalJSON(b []byte) error {
+	t := strings.Trim(strings.TrimSpace(string(b)), `"`)
+	switch strings.ToLower(t) {
+	case "true":
+		*n = looseNum{1, true}
+		return nil
+	case "false":
+		*n = looseNum{0, true}
+		return nil
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(t), 64)
+	if err != nil {
+		*n = looseNum{} // null, "" or not a number
+		return nil
+	}
+	*n = looseNum{f, true}
+	return nil
+}
+
+func (n looseNum) Int() int64 { return int64(math.Round(n.V)) }
 
 // Kot is one KOT with its items (rows grouped by id).
 type Kot struct {
@@ -298,7 +344,7 @@ func fetchKots(base, code string) ([]Row, []byte, error) {
 	rows := make([]Row, 0, len(res.Data))
 	for _, d := range res.Data {
 		var r Row
-		if json.Unmarshal(d, &r) == nil && r.ID != nil {
+		if json.Unmarshal(d, &r) == nil && r.ID.OK {
 			rows = append(rows, r)
 		}
 	}
@@ -338,36 +384,36 @@ func groupRows(rows []Row) []Kot {
 	byID := map[int64]*Kot{}
 	var order []int64
 	for _, r := range rows {
-		id := *r.ID
+		id := r.ID.Int()
 		k := byID[id]
 		if k == nil {
-			k = &Kot{ID: id, Table: strings.TrimSpace(r.TableNo), Status: r.KotStatus, POID: r.POID,
-				Created: parseCreated(r.Created), Channel: channel(r)}
-			if r.KotUniqueID != nil {
-				k.Token = *r.KotUniqueID
+			k = &Kot{ID: id, Table: strings.TrimSpace(string(r.TableNo)), Status: strings.TrimSpace(string(r.KotStatus)),
+				POID: string(r.POID), Created: parseCreated(string(r.Created)), Channel: channel(r)}
+			if r.KotUniqueID.OK {
+				k.Token = r.KotUniqueID.Int()
 			}
-			if r.OrderType != nil {
-				k.OrderType = *r.OrderType
+			if r.OrderType.OK {
+				k.OrderType = int(r.OrderType.Int())
 			}
 			byID[id] = k
 			order = append(order, id)
 		}
-		if r.KotStatus != "" {
-			k.Status = r.KotStatus
+		if st := strings.TrimSpace(string(r.KotStatus)); st != "" {
+			k.Status = st
 		}
 		q := 1.0
-		if r.Quantity != nil && *r.Quantity > 0 {
-			q = *r.Quantity
+		if r.Quantity.OK && r.Quantity.V > 0 {
+			q = r.Quantity.V
 		}
 		s := 0
-		if r.Status != nil {
-			s = *r.Status
+		if r.Status.OK {
+			s = int(r.Status.Int())
 		}
-		name := strings.TrimSpace(r.Name)
+		name := strings.TrimSpace(string(r.Name))
 		if name == "" {
 			continue
 		}
-		k.Items = append(k.Items, KItem{N: name, C: strings.TrimSpace(r.Category), Q: q, S: s})
+		k.Items = append(k.Items, KItem{N: name, C: strings.TrimSpace(string(r.Category)), Q: q, S: s})
 	}
 	out := make([]Kot, 0, len(order))
 	for _, id := range order {
@@ -378,10 +424,10 @@ func groupRows(rows []Row) []Kot {
 }
 
 func channel(r Row) string {
-	if b := strings.TrimSpace(r.Brand); b != "" {
+	if b := strings.TrimSpace(string(r.Brand)); b != "" {
 		return b
 	}
-	if strings.TrimSpace(r.OUID) != "" {
+	if strings.TrimSpace(string(r.OUID)) != "" {
 		return "Online"
 	}
 	return ""
