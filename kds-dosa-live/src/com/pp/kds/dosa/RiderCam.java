@@ -119,13 +119,24 @@ final class RiderCam {
 
     static void loadSettings(Context c) {
         SharedPreferences p = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        mode = p.getInt("cam_mode", MODE_OFF);
+        // Not chosen yet: on for the rider screen when this device has a camera (a TV without one
+        // stays off, so it is never asked for camera permission).
+        mode = p.contains("cam_mode") ? p.getInt("cam_mode", MODE_OFF) : (hasCamera(c) ? MODE_RIDER : MODE_OFF);
         which = p.getInt("cam_which", CAM_AUTO);
         flash = p.getInt("cam_flash", FLASH_OFF);
         preview = p.getBoolean("cam_preview", true);
         food = p.getBoolean("cam_food", true);
         rider = p.getBoolean("cam_rider", true);
         KotDecoder.setLearned(p.getString("cam_fmt", null));
+    }
+
+    private static boolean hasCamera(Context c) {
+        try {
+            CameraManager cm = (CameraManager) c.getSystemService(Context.CAMERA_SERVICE);
+            return cm != null && cm.getCameraIdList().length > 0;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     static void saveSettings(Context c, int m, int w, int f, boolean pv, boolean fd, boolean rd) {

@@ -8,6 +8,7 @@
 #
 # What changes in the APK:
 #   1. classes4.dex  - MainActivity.onCreate gets ONE extra line: DosaLive.install(this);
+#                      the board keeps up to 6000 item lines from Petpooja (was 300: oldest orders lost)
 #                      the old camera ScannerActivity is removed (replaced from src/)
 #   2. classes7.dex  - new, contains com.pp.kds.dosa.* and the new com.pp.kds.scan.ScannerActivity
 #   3. assets/ - mascot, food photos, prep_profile.json + prep_days.txt (make_prep_profile.py),
@@ -57,6 +58,22 @@ if "DosaLive" not in s:
     open(p, "w").write(s)
 PY
 grep -q "DosaLive;->install" "$SMALI"
+# Petpooja's KDS keeps only the LAST 300 item lines of the kitchen answer (KotRepositoryImpl
+# fetchBoardRows: data.subList(size - 300, size)). 300 lines is only ~80-120 orders, so on a busy
+# day the OLDEST orders silently vanished from the KDS board and the rider screen. Raise it to 6000.
+CAP="$WORK/dec/smali_classes4/com/pp/kds/data/repository/KotRepositoryImpl\$fetchBoardRows\$2.smali"
+python3 - "$CAP" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = "    const/16 v2, 0x12c\n\n    if-le v1, v2, :cond_3\n"
+new = "    const/16 v2, 0x1770\n\n    if-le v1, v2, :cond_3\n"
+if new not in s:
+    assert s.count(old) == 1, "unexpected fetchBoardRows shape (300-line cap not found)"
+    s = s.replace(old, new)
+    open(p, "w").write(s)
+PY
+grep -q "const/16 v2, 0x1770" "$CAP"
 # The camera scan screen is replaced by src/com/pp/kds/scan/ScannerActivity.java (same class name,
 # so the manifest and the KDS camera button stay as they are). ScannerBridge is kept unchanged.
 rm -f "$WORK"/dec/smali_classes4/com/pp/kds/scan/ScannerActivity*.smali

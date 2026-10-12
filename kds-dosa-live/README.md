@@ -46,7 +46,8 @@ not counted as completed.
 ## What changed in the APK
 
 * `classes4.dex`: one line added at the end of `MainActivity.onCreate` →
-  `DosaLive.install(this)`. Everything else in that dex is identical.
+  `DosaLive.install(this)`, and the board limit in `KotRepositoryImpl.fetchBoardRows` raised from
+  300 to 6000 item lines. Everything else in that dex is identical.
 * `classes7.dex`: new, the `com.pp.kds.dosa` code in `src/`.
 * All other dex files, resources and the manifest are copied unchanged. The scanner
   (`com.pp.kds.scan.*`) is not modified; the add-on only reads the board and never presses
@@ -97,7 +98,7 @@ Petpooja caps exports at 50,000 rows (~9 days here): export week by week and pas
 
 ## Rider screen: hands-free camera
 
-Long-press **🛵 RIDER** → *Rider screen settings* → **📷 Camera**. It's off by default, so TV boxes behave as before.
+Long-press **🛵 RIDER** → *Rider screen settings* → **📷 Camera**. Until it is changed there, it is on for the rider screen when the device has a camera, and off on devices without one (TV boxes behave as before, no camera permission is asked).
 
 * **Food Ready:** hold a KOT barcode in front of the camera and that KOT is marked Food Ready. This works the same as the USB/Bluetooth scanner.
 * **Rider phone:** while the rider screen is open, a rider's phone (Swiggy, Zomato, "Collect Food" app) held up to the camera opens a card. The card shows:
@@ -123,6 +124,8 @@ Long-press **🛵 RIDER** → *Rider screen settings* → **📷 Camera**. It's 
 * **Bridge Print only gives the pickup slot.** Without it, the slot shows "—".
 * **No vanishing:**
   * An order that drops off the KDS board for a moment stays for 2 minutes.
+  * When 4+ ready orders (and 30%+ of them) drop off in the same refresh, it is a short answer from Petpooja, not riders: they stay 20 minutes.
+  * The KDS board itself keeps up to 6000 item lines from Petpooja. Petpooja's own limit was 300 lines (about 80-120 orders), and the oldest orders silently dropped off both the KDS board and the rider screen on busy days.
   * There is no age rule and no time limit.
   * Ready orders still there after 3 hours are cleared (never dispatched).
 * **Ready times are saved** (`rider_ready_at`), so a restart keeps the "ready for" timers.

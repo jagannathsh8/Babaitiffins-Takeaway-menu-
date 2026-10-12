@@ -24,6 +24,10 @@ final class RiderCalls {
     static final long MAX_MS = 15 * 60_000L;     // e.g. 15 min (when a limit is chosen)
     static final long MISSING_MS = 120_000L;     // off the KDS board this long (refresh / blip) before it counts as gone
     static final long SAFETY_MS = 3 * 3600_000L;  // never dispatched in Petpooja: cleared after 3 h
+    // Many ready orders off the board in the same refresh = a short / broken answer from Petpooja,
+    // not riders: those orders stay this long (they come back with the next full answer).
+    static final long MASS_MISSING_MS = 20 * 60_000L;
+    static final int MASS_MISSING_MIN = 4;
     static final long STALE_MS = 45 * 60_000L;   // already ready + this old when first seen: skip
     static final int MAX_PER_CALL = 6;
 
@@ -54,6 +58,7 @@ final class RiderCalls {
     static final class Waiting {
         Order order;
         long readyAt, lastSaid, missingSince;
+        long graceMs = MISSING_MS;   // how long it may be off the board before it counts as picked up
     }
 
     private final Map<Long, Waiting> waiting = new LinkedHashMap<Long, Waiting>();
@@ -129,6 +134,7 @@ final class RiderCalls {
     boolean lastWasNew;
 
     private List<Order> preparingList = new ArrayList<Order>();
+    private final List<Waiting> justMissing = new ArrayList<Waiting>();
 
     void update(List<Order> board, long now) {
         List<Order> prep = new ArrayList<Order>();
@@ -181,13 +187,23 @@ final class RiderCalls {
                 skipped.add(e.getKey());
                 why.put(e.getKey(), "ready 3 hours, never dispatched");
             } else if (!seen.contains(e.getKey())) {
-                if (w.missingSince == 0) w.missingSince = now;
-                else if (now - w.missingSince >= MISSING_MS) {
+                if (w.missingSince == 0) {
+                    w.missingSince = now;
+                    w.graceMs = MISSING_MS;
+                    justMissing.add(w);
+                } else if (now - w.missingSince >= w.graceMs) {
                     drop.add(e.getKey());
-                    why.put(e.getKey(), "not on the KDS board for 2 min");
+                    why.put(e.getKey(), w.graceMs > MISSING_MS
+                            ? "off the KDS board " + (w.graceMs / 60_000L) + " min (many left at once)"
+                            : "not on the KDS board for 2 min");
                 }
             }
         }
+        // Riders take orders one by one; many vanishing together is the feed, not pickups.
+        if (justMissing.size() >= MASS_MISSING_MIN && justMissing.size() * 10 >= waiting.size() * 3) {
+            for (Waiting w : justMissing) w.graceMs = MASS_MISSING_MS;
+        }
+        justMissing.clear();
         for (Long id : drop) removed(waiting.remove(id), why.get(id), now);
         skipped.retainAll(seen);
         initialised = true;

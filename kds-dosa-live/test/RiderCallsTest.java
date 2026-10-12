@@ -148,6 +148,31 @@ public final class RiderCallsTest {
         g.update(b2, T + 122_000);
         check("gone after 2 min", g.waitingCount() == 0 && g.removals().get(0).reason.contains("KDS board"), g.waitingCount());
 
+        // 20 ready orders; Petpooja's answer suddenly holds only 6 of them (short / cut answer):
+        // the other 14 stay on the rider screen, and come back normally with the next full answer.
+        RiderCalls m = new RiderCalls();
+        List<RiderCalls.Order> full = new ArrayList<RiderCalls.Order>();
+        for (int i = 0; i < 20; i++) full.add(o(100 + i, "Swiggy", "77" + (10 + i), String.valueOf(i), T, true, false));
+        m.update(full, T);
+        List<RiderCalls.Order> cut = new ArrayList<RiderCalls.Order>(full.subList(14, 20));
+        m.update(cut, T + 2_000);
+        m.update(cut, T + 5 * 60_000L);
+        check("many vanish at once: all kept after 5 min", m.waitingCount() == 20, m.waitingCount());
+        m.update(full, T + 6 * 60_000L);
+        check("back with the full answer", m.waitingCount() == 20 && m.removedCount() == 0, m.waitingCount());
+        // ...and if they truly never come back, they go after 20 min, not 2.
+        m.update(cut, T + 7 * 60_000L);
+        m.update(cut, T + 7 * 60_000L + 19 * 60_000L);
+        check("held 19 min", m.waitingCount() == 20, m.waitingCount());
+        m.update(cut, T + 7 * 60_000L + 21 * 60_000L);
+        check("cleared after 20 min", m.waitingCount() == 6, m.waitingCount());
+        // One rider pickup among many still clears in 2 min.
+        RiderCalls one = new RiderCalls();
+        one.update(full, T);
+        one.update(new ArrayList<RiderCalls.Order>(full.subList(1, 20)), T + 1_000);
+        one.update(new ArrayList<RiderCalls.Order>(full.subList(1, 20)), T + 122_000);
+        check("single pickup: 2 min", one.waitingCount() == 19, one.waitingCount());
+
         // Old orders are never hidden for their age (busy mornings: placed > 45 min ago, ready now).
         RiderCalls old = new RiderCalls();
         List<RiderCalls.Order> bo = new ArrayList<RiderCalls.Order>();
