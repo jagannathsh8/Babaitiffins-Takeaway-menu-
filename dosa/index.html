@@ -218,7 +218,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     <div class="name"><b>BABAI TIFFINS</b><span>TASTE THE ANDHRA STYLE</span></div>
     <div class="clock"><b id="clock">–</b><span class="live" id="live"><i></i><span id="liveText">LIVE</span></span></div>
   </header>
-  <h1 class="title">ORDER READY</h1>
+  <h1 class="title" id="title">DOSA LIVE</h1>
 
   <div class="note" id="demoNote" hidden>Demo preview: token 42 moves up the queue and turns ready in about a minute.</div>
 
@@ -419,7 +419,7 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
   $('fact').textContent=TRIVIA[0];factI=1;setInterval(showFact,FACT_S*1000);
 
   // ---- entry ----------------------------------------------------------------------------------
-  function showEntry(msg){tracking=false;$('entry').hidden=false;$('mine').hidden=true;$('actions').hidden=true;showFun(liveOff);
+  function showEntry(msg){tracking=false;setTitle('DOSA LIVE');$('entry').hidden=false;$('mine').hidden=true;$('actions').hidden=true;showFun(liveOff);
     $('tok').value=token||'';$('formErr').hidden=!msg;$('formErr').textContent=msg||''}
   $('form').addEventListener('submit',function(e){
     e.preventDefault();startTracking($('tok').value);
@@ -650,8 +650,11 @@ footer{color:var(--muted);text-align:center;font-size:.78rem}
     $('otherList').innerHTML=others.map(function(x,i){return '<span class="other'+(x.s?' done':'')+'" style="animation-delay:'+(i*60)+'ms"><b>'+q(x.q||1)+'\u00D7</b> '+esc(x.n)+(x.s?' \u2713':'')+'</span>'}).join('');
   }
 
+  // big heading: what is happening to this customer's order right now
+  function setTitle(t){var h=$('title');if(h.textContent!==t)h.textContent=t}
   function renderMine(tk){
     var box=$('mine');
+    setTitle(tk&&tk.s==='r'?'ORDER READY':tk&&tk.s==='p'?'ON THE TAWA':tk&&tk.s==='n'?'YOUR ORDER':wasReady?'ENJOY!':'DOSA LIVE');
     renderItems(tk);
     box.classList.remove('ready','done');
     $('mPrep').hidden=true;$('mReady').hidden=true;$('mOther').hidden=true;$('mEtaBox').hidden=true;
