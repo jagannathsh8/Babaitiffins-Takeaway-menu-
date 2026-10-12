@@ -43,7 +43,7 @@ public final class DosaLive {
     private static final String PREFS = "dosa_live_stats";
     private static final long TICK_MS = 2_000L;          // board poll, mirrors KDS 2 s poll
     private static final long RECOMPUTE_MS = 15_000L;    // sliding throughput window refresh
-    private static final int BOARD_CAP = 1000;           // item lines kept by KotRepositoryImpl (raised from 300 by build.sh)
+    private static final int BOARD_CAP = 2000;           // item lines kept by KotRepositoryImpl (raised from 300 by build.sh)
     private static final String DOSA = "dosa";
 
     /**
