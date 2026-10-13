@@ -135,6 +135,8 @@ Long-press **🛵 RIDER** → *Rider screen settings* → **📷 Camera**. Until
   * Ready orders still there after 3 hours are cleared (never dispatched).
 * **Ready times are saved** (`rider_ready_at`), so a restart keeps the "ready for" timers.
 * **Removal log:** the last 20 removals are listed in the long-press settings, and the bottom line shows the latest one.
+* **Brand blocks:** every brand is one block in its own solid colour (Swiggy orange, Zomato red, Ownly purple ...) with its name and counts on top.
+* **Follows the device:** landscape on a TV, upright on a phone. Both fit everything on one screen with no scrolling; the number of columns is chosen for the biggest cards that fit.
 * **Layout ("sunlight" design):**
   * Light screen.
   * A totals bar: TOTAL / READY / PREPARING, then each brand.

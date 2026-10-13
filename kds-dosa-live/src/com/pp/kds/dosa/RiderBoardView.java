@@ -239,8 +239,31 @@ final class RiderBoardView extends View {
 
     // ---- input ---------------------------------------------------------------------------
 
+    private float downY, lastY;
+    private boolean dragging;
+
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
+        int act = ev.getActionMasked();
+        boolean overlay = searchOn || lookup != null || (call != null && SystemClock.uptimeMillis() - callAt < CALL_MS);
+        if (act == MotionEvent.ACTION_DOWN) {
+            downY = lastY = ev.getY();
+            dragging = false;
+        } else if (act == MotionEvent.ACTION_MOVE && !overlay && maxScroll > 0 && getWidth() < getHeight()) {
+            float y = ev.getY();
+            if (!dragging && Math.abs(y - downY) > 12 * d) dragging = true;
+            if (dragging) {
+                scrollY = Math.max(0, Math.min(maxScroll, scrollY - (y - lastY)));
+                controlsAt = SystemClock.uptimeMillis();
+                invalidate();
+            }
+            lastY = y;
+            return true;
+        }
+        if (act == MotionEvent.ACTION_UP && dragging) {
+            dragging = false;
+            return true;
+        }
         if (ev.getAction() == MotionEvent.ACTION_UP) {
             float x = ev.getX(), y = ev.getY();
             boolean visible = controlsAlpha() > 0.3f;
@@ -296,10 +319,20 @@ final class RiderBoardView extends View {
             case KeyEvent.KEYCODE_BACK:
                 if (!down && listener != null) listener.onClose();
                 return true;
-            case KeyEvent.KEYCODE_DPAD_LEFT:
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
             case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (maxScroll > 0 && getWidth() < getHeight() && (focus < 0 || controlsAlpha() < 0.3f)) {
+                    // upright screen: up / down scroll the orders
+                    if (down) {
+                        scrollY = Math.max(0, Math.min(maxScroll,
+                                scrollY + (k == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1) * (boardBottom - boardTop) * 0.6f));
+                        invalidate();
+                    }
+                    return true;
+                }
+                // fall through: move between the buttons
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
                 if (down) {
                     if (focus < 0 || controlsAlpha() < 0.3f) focus = 3;
                     else {
@@ -471,7 +504,7 @@ final class RiderBoardView extends View {
     // full order ID, and its timers. The top bar shows the totals and each brand's counts.
 
     private static final int SUN_BG = 0xFFE9ECF1, SUN_INK = 0xFF0B0F17, SUN_MUTE = 0xFF5A6372, SUN_LINE = 0xFFCDD3DC,
-            SUN_GREEN = 0xFF0A8F4A, SUN_AMBER = 0xFFB86E00, PREP_BG = 0xFFDFE3E9, PREP_BAND = 0xFFFFE2A8,
+            SUN_GREEN = 0xFF0A8F4A, SUN_AMBER = 0xFFB86E00, PREP_BG = 0xFFF4F5F7, PREP_BAND = 0xFFFFE2A8,
             PREP_TEXT = 0xFF8A5200, PREP_INK = 0xFF4A5363, SLOT_BG = 0xFF111418, SLOT_FG = 0xFFFFD400;
 
     /** One card: a ready (Waiting) or a preparing order. */
@@ -630,9 +663,15 @@ final class RiderBoardView extends View {
         fill.setColor(SUN_BG);
         c.drawRect(0, 0, w, h, fill);
         long wall = System.currentTimeMillis();
-        drawSunHeader(c, w);
-        drawSunBoard(c, w, h, wall);
-        drawLegend(c, w, h);
+        if (land) {
+            drawSunHeader(c, w);
+            drawSunBoard(c, w, h, wall);
+            drawLegend(c, w, h);
+        } else {
+            drawPortraitBoard(c, w, h, wall);
+            drawPortraitHeader(c, w);
+            drawPortraitLegend(c, w, h);
+        }
         drawControls(c, w);
         if (searchOn) drawSearch(c, w, h, now, land);
         if (lookup != null && now - lookup.seenAt > LOOKUP_IDLE_MS) closeLookup(false);
@@ -722,21 +761,25 @@ final class RiderBoardView extends View {
         return b.isEmpty() ? "?" : b.substring(0, 1).toUpperCase(Locale.US);
     }
 
+    /**
+     * TV (landscape): every brand is one block in its own colour (Swiggy orange, Zomato red ...),
+     * name and counts on top, its cards inside. Columns are chosen for the biggest cards that fit.
+     */
     private void drawSunBoard(Canvas c, float w, float h, long wall) {
-        float left = 20 * s, right = w - 20 * s, top = 96 * s, bottom = h - 40 * s, gap = 8 * s, stripH = 34 * s,
-                secGap = 10 * s;
+        float left = 16 * s, right = w - 16 * s, top = 94 * s, bottom = h - 40 * s, gap = 7 * s, stripH = 36 * s,
+                secGap = 8 * s, pad = 9 * s;
         if (groups.isEmpty()) {
             mid(c, "No online orders right now", w / 2f, (top + bottom) / 2f, condX, 40 * s, SUN_MUTE, Paint.Align.CENTER, 2 * s);
             return;
         }
-        // the column count that gives the biggest cards (about 2.7 : 1), every brand on new rows
+        float cl = left + pad, cr = right - pad;
         int bestCols = 4;
         float bestCw = 0, bestRh = 0, bestSc = -1;
         for (int cols = 4; cols <= 14; cols++) {
             int rows = 0;
             for (Group g : groups) rows += (g.items.size() + cols - 1) / cols;
-            float cw = (right - left - (cols - 1) * gap) / cols;
-            float rh = (bottom - top - groups.size() * (stripH + secGap) - (rows - groups.size()) * gap) / rows;
+            float cw = (cr - cl - (cols - 1) * gap) / cols;
+            float rh = (bottom - top - groups.size() * (stripH + secGap + pad) - (rows - groups.size()) * gap) / rows;
             float sc = Math.min(rh, cw / 2.7f);
             if (sc > bestSc) {
                 bestSc = sc;
@@ -748,20 +791,150 @@ final class RiderBoardView extends View {
         int cols = bestCols;
         float cw = bestCw, ch = Math.min(bestRh, cw / 2.3f), y = top;
         for (Group g : groups) {
-            rounded(c, left, y, right, y + stripH - 6 * s, 8 * s, g.color);
-            float sy = y + (stripH - 6 * s) / 2f;
-            mid(c, g.brand.toUpperCase(Locale.US), left + 14 * s, sy, condX, 22 * s, Color.WHITE, Paint.Align.LEFT, 4 * s);
-            mid(c, g.nReady + " READY   ·   " + g.nPrep + " PREPARING", right - 14 * s, sy, condX, 18 * s, Color.WHITE,
-                    Paint.Align.RIGHT, 2 * s);
-            y += stripH;
-            for (int i = 0; i < g.items.size(); i++) {
-                Item it = g.items.get(i);
-                float cx = left + (i % cols) * (cw + gap), cy = y + (i / cols) * (ch + gap);
-                if (it.ready) readyCard(c, it, g, cx, cy, cw, ch, wall);
-                else prepCard(c, it, g, cx, cy, cw, ch, wall);
-            }
-            y += ((g.items.size() + cols - 1) / cols) * (ch + gap) - gap + secGap;
+            y = drawZone(c, g, left, right, y, cols, cw, ch, gap, stripH, pad, 24 * s, 19 * s, wall, -1, -1) + secGap;
         }
+    }
+
+    /** One brand block; returns its bottom. Cards outside clipTop..clipBottom are skipped (phone scrolling). */
+    private float drawZone(Canvas c, Group g, float left, float right, float y, int cols, float cw, float ch, float gap,
+                           float stripH, float pad, float nameSize, float countSize, long wall, float clipTop, float clipBottom) {
+        int rows = (g.items.size() + cols - 1) / cols;
+        float zoneH = stripH + rows * (ch + gap) - gap + pad;
+        if (clipTop >= 0 && (y > clipBottom || y + zoneH < clipTop)) return y + zoneH;
+        rounded(c, left, y, right, y + zoneH, 12 * s, g.color);
+        float sy = y + stripH / 2f;
+        mid(c, g.brand.toUpperCase(Locale.US), left + 16 * s, sy, condX, nameSize, Color.WHITE, Paint.Align.LEFT, 5 * s);
+        mid(c, g.nReady + " READY   ·   " + g.nPrep + " PREPARING", right - 16 * s, sy, condX, countSize, Color.WHITE,
+                Paint.Align.RIGHT, 2 * s);
+        float y0 = y + stripH, cl = left + pad;
+        for (int i = 0; i < g.items.size(); i++) {
+            Item it = g.items.get(i);
+            float cx = cl + (i % cols) * (cw + gap), cy = y0 + (i / cols) * (ch + gap);
+            if (clipTop >= 0 && (cy > clipBottom || cy + ch < clipTop)) continue;
+            if (it.ready) readyCard(c, it, g, cx, cy, cw, ch, wall);
+            else prepCard(c, it, g, cx, cy, cw, ch, wall);
+        }
+        return y + zoneH;
+    }
+
+    // ---- phone (portrait): header in two rows, brands stacked, 3 cards a row, scrolls with a finger
+
+    private float scrollY, maxScroll, boardTop, boardBottom;
+
+    private void drawPortraitHeader(Canvas c, float w) {
+        float row1 = 96 * s, hh = 252 * s;
+        fill.setColor(Color.WHITE);
+        c.drawRect(0, 0, w, hh, fill);
+        fill.setColor(SUN_LINE);
+        c.drawRect(0, hh, w, hh + 2 * s, fill);
+        headCy = 50 * s;
+        headH = row1;
+        rounded(c, 24 * s, 20 * s, 84 * s, 80 * s, 14 * s, SUN_GREEN);
+        icon.setTypeface(Typeface.DEFAULT);
+        icon.setTextSize(30 * s);
+        icon.setTextAlign(Paint.Align.CENTER);
+        icon.getFontMetrics(fm);
+        c.drawText("🛵", 54 * s, 50 * s - (fm.ascent + fm.descent) / 2f, icon);
+        mid(c, "RIDER PICKUP", 100 * s, 42 * s, condX, 44 * s, SUN_INK, Paint.Align.LEFT, 3 * s);
+        mid(c, "FIND YOUR NUMBER · GO TO THE SLOT", 100 * s, 74 * s, bold, 16 * s, SUN_MUTE, Paint.Align.LEFT, 1.5f * s);
+        long nowMs = System.currentTimeMillis();
+        if (nowMs - clockAt >= 1000) {
+            clockAt = nowMs;
+            clockStr = clock.format(new Date(nowMs));
+        }
+        String main = clockStr, suf = "";
+        int sp = clockStr.lastIndexOf(' ');
+        if (sp > 0 && clockStr.length() - sp <= 4) {
+            main = clockStr.substring(0, sp);
+            suf = clockStr.substring(sp + 1);
+        }
+        float sw = suf.isEmpty() ? 0 : width(suf, condX, 20 * s, 1 * s) + 6 * s;
+        float cr = w - 24 * s;
+        if (sw > 0) mid(c, suf, cr, 56 * s, condX, 20 * s, SUN_MUTE, Paint.Align.RIGHT, 1 * s);
+        mid(c, main, cr - sw, 50 * s, condX, 48 * s, SUN_INK, Paint.Align.RIGHT, 0);
+        clockLeft = cr - sw - width(main, condX, 48 * s, 0);
+        // totals
+        float left = 14 * s, right = w - 14 * s, y0 = 108 * s, h0 = 128 * s;
+        rect.set(left, y0, right, y0 + h0);
+        fill.setColor(0xFFF1F3F6);
+        c.drawRoundRect(rect, 14 * s, 14 * s, fill);
+        int nr = ready.size(), np = preparing.size();
+        String[] lab = {"TOTAL", "READY", "PREPARING"};
+        String[] val = {String.valueOf(nr + np), String.valueOf(nr), String.valueOf(np)};
+        int[] col = {SUN_INK, SUN_GREEN, SUN_AMBER};
+        float cw0 = (right - left) / 3f;
+        for (int i = 0; i < 3; i++) {
+            float cx = left + cw0 * i + cw0 / 2f;
+            mid(c, lab[i], cx, y0 + 30 * s, condX, 18 * s, i == 0 ? SUN_MUTE : col[i], Paint.Align.CENTER, 2 * s);
+            mid(c, val[i], cx, y0 + 80 * s, condX, 56 * s, col[i], Paint.Align.CENTER, 0);
+            if (i > 0) {
+                fill.setColor(SUN_LINE);
+                c.drawRect(left + cw0 * i, y0 + 18 * s, left + cw0 * i + 2 * s, y0 + h0 - 18 * s, fill);
+            }
+        }
+    }
+
+    /** Upright screen: everything fits, no scrolling; columns chosen for the biggest cards that fit. */
+    private void drawPortraitBoard(Canvas c, float w, float h, long wall) {
+        float left = 14 * s, right = w - 14 * s, gap = 7 * s, pad = 8 * s, secGap = 10 * s;
+        boardTop = 254 * s;
+        boardBottom = h - 64 * s;
+        scrollY = maxScroll = 0;
+        if (groups.isEmpty()) {
+            mid(c, "No online orders right now", w / 2f, (boardTop + boardBottom) / 2f, condX, 40 * s, SUN_MUTE,
+                    Paint.Align.CENTER, 2 * s);
+            return;
+        }
+        // fewer orders -> taller brand headers; many -> slimmer, so the cards keep the room
+        int total = 0;
+        for (Group g : groups) total += g.items.size();
+        float stripH = (total > 60 ? 40 : 56) * s;
+        float avail = boardBottom - boardTop - 10 * s;
+        int bestCols = 2;
+        float bestCw = 0, bestCh = 0, bestSc = -1;
+        for (int cols = 2; cols <= 12; cols++) {
+            int rows = 0;
+            for (Group g : groups) rows += (g.items.size() + cols - 1) / cols;
+            float cw = (right - left - 2 * pad - (cols - 1) * gap) / cols;
+            float rh = (avail - groups.size() * (stripH + pad + secGap) - (rows - groups.size()) * gap) / rows;
+            float ch = Math.min(rh, cw / 2.25f);
+            float sc = Math.min(ch, cw / 2.7f);
+            if (rh > 0 && sc > bestSc) {
+                bestSc = sc;
+                bestCols = cols;
+                bestCw = cw;
+                bestCh = ch;
+            }
+        }
+        float y = boardTop + 10 * s, nameSize = Math.min(30 * s, stripH * 0.55f), countSize = Math.min(24 * s, stripH * 0.45f);
+        for (Group g : groups) {
+            y = drawZone(c, g, left, right, y, bestCols, bestCw, bestCh, gap, stripH, pad, nameSize, countSize, wall, -1, -1)
+                    + secGap;
+        }
+    }
+
+    private void drawPortraitLegend(Canvas c, float w, float h) {
+        fill.setColor(SUN_BG);
+        c.drawRect(0, h - 62 * s, w, h, fill);
+        float ly = h - 44 * s, lx = 16 * s;
+        rect.set(lx, ly - 11 * s, lx + 34 * s, ly + 11 * s);
+        fill.setColor(Color.WHITE);
+        c.drawRoundRect(rect, 5 * s, 5 * s, fill);
+        fill.setColor(SUN_GREEN);
+        c.drawRect(lx, ly - 11 * s, lx + 34 * s, ly - 5 * s, fill);
+        mid(c, "READY — collect from the slot", lx + 44 * s, ly, bold, 17 * s, SUN_INK, Paint.Align.LEFT, 0);
+        lx = w / 2f + 20 * s;
+        rect.set(lx, ly - 11 * s, lx + 34 * s, ly + 11 * s);
+        fill.setColor(PREP_BG);
+        c.drawRoundRect(rect, 5 * s, 5 * s, fill);
+        fill.setColor(0xFFFFB020);
+        c.drawRect(lx, ly - 11 * s, lx + 34 * s, ly - 5 * s, fill);
+        mid(c, "PREPARING — please wait", lx + 44 * s, ly, bold, 17 * s, SUN_INK, Paint.Align.LEFT, 0);
+        String rs = bridgeStatus == null ? "" : bridgeStatus;
+        float size = fitSize(rs, medium, 14 * s, w - 50 * s);
+        fill.setColor(bridgeOk ? SUN_GREEN : 0xFFE06A00);
+        c.drawCircle(22 * s, h - 16 * s, 5 * s, fill);
+        mid(c, rs, 34 * s, h - 16 * s, medium, size, SUN_MUTE, Paint.Align.LEFT, 0);
     }
 
     private void cardBadge(Canvas c, Group g, float x, float cy, float size) {
