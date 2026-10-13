@@ -307,3 +307,67 @@ func TestPin(t *testing.T) {
 	}
 	pinBlocked = time.Time{}
 }
+
+func TestPrepStore(t *testing.T) {
+	dataDir = t.TempDir()
+	cfg = Config{}
+	kds := func(path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		r.Header.Set("X-Babai-KDS", "1")
+		w := httptest.NewRecorder()
+		switch path {
+		case "/prep/seed":
+			handlePrepSeed(w, r)
+		case "/prep/history":
+			handlePrepHistory(w, r)
+		}
+		return w
+	}
+	prof := `{"targets":["Sambar","Dosa Batter"],"menu":{"Masala Dosa":{"1":0.2}},"recipes":[[],[]]}`
+	b, _ := json.Marshal(map[string]string{"profile": prof, "seed": "T|2026-09-01|0|8:1.5 9:2\nD|2026-09-01|Masala Dosa|8:4\n"})
+	if w := kds("/prep/seed", string(b)); !strings.Contains(w.Body.String(), `"ok":true`) {
+		t.Fatal(w.Body.String())
+	}
+	// a second tablet doesn't replace the recipes
+	b2, _ := json.Marshal(map[string]string{"profile": strings.Replace(prof, "Sambar", "X", 1), "seed": ""})
+	kds("/prep/seed", string(b2))
+	if !strings.Contains(readPrepFile("profile.json"), "Sambar") {
+		t.Fatal("recipes replaced by a second tablet")
+	}
+	// tablet A: part of 10 Oct; tablet B: the complete day -> B kept; then A again (part) -> still B
+	kds("/prep/history", "T|2026-10-10|0|8:1\nK|2026-10-10|1,0,0,0|\n")
+	kds("/prep/history", "T|2026-10-10|0|8:1 9:3\nD|2026-10-10|Masala Dosa|8:5\nC|2026-10-10||\nH|2026-10-15||\n")
+	kds("/prep/history", "T|2026-10-10|0|8:9\nH|2026-10-15||\n") // tablets always send their holiday list
+	d, ok := readPrepDay("2026-10-10")
+	if !ok || !d.complete || len(d.lines) != 2 {
+		t.Fatalf("kept day %+v", d)
+	}
+	// no header: refused
+	r := httptest.NewRequest(http.MethodPost, "/prep/history", strings.NewReader("T|2026-10-11|0|8:1\n"))
+	w := httptest.NewRecorder()
+	handlePrepHistory(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatal("history without the KDS header accepted")
+	}
+	// what a tablet gets back
+	w = httptest.NewRecorder()
+	handlePrepBase(w, httptest.NewRequest(http.MethodGet, "/prep/base", nil))
+	var base struct {
+		Base, Profile, Seed, History string
+		Holidays                     []string
+		Days                         int
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &base); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(base.Profile, "Sambar") || !strings.Contains(base.Seed, "2026-09-01") || base.Days != 1 ||
+		!strings.Contains(base.History, "C|2026-10-10") || len(base.Holidays) != 1 || base.Holidays[0] != "2026-10-15" {
+		t.Fatalf("base %+v", base)
+	}
+	// same base already on the tablet: recipes + seed not sent again
+	w = httptest.NewRecorder()
+	handlePrepBase(w, httptest.NewRequest(http.MethodGet, "/prep/base?have="+base.Base, nil))
+	if strings.Contains(w.Body.String(), "Sambar") {
+		t.Fatal("recipes sent again")
+	}
+}

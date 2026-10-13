@@ -648,6 +648,11 @@ public final class PrepStats {
     /** Own dated history (rewritten once a day). */
     public String historyBlob() {
         historyChanged = false;
+        return historyText();
+    }
+
+    /** The same text, without marking it saved. */
+    public String historyText() {
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<String, double[][]> e : ownT.entrySet()) {
             double[][] day = e.getValue();

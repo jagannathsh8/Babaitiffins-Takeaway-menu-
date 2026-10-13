@@ -119,3 +119,12 @@ The Hub page asks for a PIN before it shows or changes anything (first time: **1
 * Change the PIN under **This PC → PIN** (4 to 8 digits).
 * 5 wrong PINs in a row block it for one minute.
 * Scanner phones and the KDS rider screen don't need the PIN: they use their own pairing and a read-only feed.
+
+## Prep Live data
+
+The Hub page, **Prep Live data** section:
+
+* Prep Live tablets keep their recipes and history on the Hub.
+* The first tablet sends the Petpooja history (1 Sep - 5 Oct) and recipes it came with. After that every finished day is added by itself.
+* A new or reset tablet gets the whole history at once.
+* **Add older data or new recipes:** upload the files Babai support prepares from Petpooja exports or the BOM Excel.

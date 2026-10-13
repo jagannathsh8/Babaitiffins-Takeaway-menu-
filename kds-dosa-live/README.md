@@ -83,6 +83,14 @@ Projection (owner's rule, backtested on Petpooja data 1 Sep - 5 Oct 2026):
 | 22-28 Sep | 42% | 20% | 15% |
 | 29 Sep - 5 Oct | 43% | 20% | 17% |
 
+DATA ON THE BABAI HUB: when the Babai Hub PC is on the Wi-Fi, Prep Live keeps its data there, so every tablet uses the same history (`PrepSync`, `http://<hub PC>:8790/prep/...`).
+
+* The first tablet sends the recipes and Petpooja history the APK came with.
+* Every tablet sends its recorded days (and holiday plans); the hub keeps, per date, the best copy.
+* On start a tablet reads all of it back: a new or reset tablet gets the whole history at once.
+* New recipes uploaded on the hub page replace the APK's own (kept in files, so they still work with the hub off).
+* The projection still runs on the tablet. With the hub off, nothing changes.
+
 REPORT / EXCEL: pick any date (today live, 42 days of tablet history, Petpooja seed days),
 view prep items or dishes per hour, export .xlsx (Summary, Prep items, Dishes sold) via the
 system "Save as" screen, then share.

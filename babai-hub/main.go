@@ -119,6 +119,10 @@ func main() {
 	// shop Wi-Fi (other devices): scanner phones and the KDS rider screen
 	mux.HandleFunc("/scan", handleScan)
 	mux.HandleFunc("/rider.json", handleRider)
+	mux.HandleFunc("/prep/base", handlePrepBase)
+	mux.HandleFunc("/prep/seed", handlePrepSeed)
+	mux.HandleFunc("/prep/history", handlePrepHistory)
+	mux.HandleFunc("/prepdata", localOnly(pinned(handlePrepAdmin)))
 	mux.HandleFunc("/quit", localOnly(func(w http.ResponseWriter, r *http.Request) {
 		if !fromOwnPage(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)

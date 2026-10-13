@@ -361,6 +361,15 @@ a{color:var(--accent)}
 <details><summary class="hint">Scans today (newest first)</summary><table class="kt"><tbody id="slog"></tbody></table></details>
 </section>
 
+<section id="prep"><div class="step">Prep Live</div><h2>Prep Live data (kept on this PC)</h2>
+<p class="hint">Every Prep Live tablet reads its recipes and history from here when it starts, and sends each finished day back. The first tablet that connects sends the Petpooja history and recipes it came with, so nothing has to be typed in. A new or reset tablet gets the whole history at once.</p>
+<p id="prepst" class="hint">–</p>
+<details><summary class="hint">Add older data or new recipes (files from Babai support)</summary>
+<label for="prepkind">What is the file?</label>
+<select id="prepkind"><option value="history">Recorded days (history .txt)</option><option value="seed">Petpooja history (prep_days.txt) – replaces the old one</option><option value="profile">Recipes (prep_profile.json) – replaces the old one</option></select>
+<input type="file" id="prepfile" accept=".txt,.json"><div class="row"><button type="button" id="prepup">Upload</button></div><p id="prepmsg" class="msg"></p></details>
+</section>
+
 <section><h2>What Petpooja sent</h2>
 <p class="hint" id="ppInfo">Nothing yet.</p>
 <div class="tbl"><table><thead><tr><th>Token</th><th>Table</th><th>Type</th><th>Status</th><th>Items</th></tr></thead><tbody id="kots"></tbody></table></div>
@@ -456,6 +465,15 @@ $("plist").addEventListener("click",function(e){var b=e.target.closest("button")
  if(b.dataset.op==="qr"){post("/phones",{Op:"qr",Key:b.dataset.k}).then(function(r){if(r.ok)pqr(r.qr,r.msg);else show($("phmsg"),r)});return}
  if(b.dataset.op==="remove"&&confirm("Remove "+b.dataset.n+"? It won't be able to mark orders any more.")){post("/phones",{Op:"remove",Key:b.dataset.k}).then(function(r){show($("phmsg"),r);$("pqrwrap").hidden=true;phQR="";loadPhones()})}});
 loadPhones();setInterval(loadPhones,5000);
+function loadPrep(){fetch("/prepdata").then(function(r){return r.json()}).then(function(p){
+ $("prepst").innerHTML=(p.items?"Recipes: <b>"+p.items+" prep items</b>":"Recipes: <b>not here yet</b> (sent by the first Prep Live tablet)")
+ +" \u2022 Petpooja history: "+(p.seedDays?"<b>"+p.seedDays+" days</b> ("+p.seedFrom+" \u2192 "+p.seedTo+")":"none yet")
+ +" \u2022 Recorded by tablets: "+(p.days?"<b>"+p.days+" days</b> ("+p.from+" \u2192 "+p.to+")":"none yet")
+ +(p.lastUp?" \u2022 last sent "+ago(Math.round((Date.now()-p.lastUp)/1000))+" from "+esc(p.lastBy):"")})}
+$("prepup").addEventListener("click",function(){var f=$("prepfile").files[0];if(!f){show($("prepmsg"),{ok:false,msg:"Choose the file first."});return}
+ $("prepmsg").textContent="Uploading…";$("prepmsg").className="msg";var rd=new FileReader();rd.onload=function(){post("/prepdata",{Op:$("prepkind").value,Data:rd.result}).then(function(r){show($("prepmsg"),r);loadPrep()})};rd.readAsText(f)});
+loadPrep();setInterval(loadPrep,30000);
+
 $("fpin").addEventListener("submit",function(e){e.preventDefault();post("/pin",{Old:$("pold").value,New:$("pnew").value}).then(function(r){show($("pinmsg"),r);if(r.ok){$("pold").value="";$("pnew").value=""}})});
 $("lockBtn").addEventListener("click",function(){post("/lock",{}).then(function(){location.reload()})});
 if(location.hash==="#scanners")setTimeout(function(){$("scanners").scrollIntoView()},300);

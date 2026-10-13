@@ -75,7 +75,9 @@ final class PrepLive {
         new Thread(new Runnable() {
             @Override public void run() {
                 try {
-                    final PrepStats.Model m = loadModel(ctx);
+                    PrepStats.Model m0 = PrepSync.cachedModel(ctx);     // recipes / history last read from the hub
+                    if (m0 == null) m0 = loadModel(ctx);               // else what the APK came with
+                    final PrepStats.Model m = m0;
                     if (m == null) return;
                     final PrepStats st = new PrepStats(m);
                     final SharedPreferences p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -106,6 +108,7 @@ final class PrepLive {
                             last = first;
                             stats = st;
                             loading = false;
+                            PrepSync.start(ctx.getApplicationContext());
                         }
                     });
                 } catch (Throwable ignored) {
@@ -127,15 +130,31 @@ final class PrepLive {
         return stats == null ? Double.NaN : stats.model().seedDosaAvgPrepMin;
     }
 
-    private static PrepStats.Model loadModel(Context ctx) {
+    /** The recipes + Petpooja history the APK came with (assets). */
+    static String asset(Context ctx, String name) {
         try {
-            InputStream in = ctx.getAssets().open("prep_profile.json");
+            InputStream in = ctx.getAssets().open(name);
             java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
             byte[] buf = new byte[8192];
             int r;
             while ((r = in.read(buf)) > 0) bo.write(buf, 0, r);
             in.close();
-            JSONObject o = new JSONObject(bo.toString("UTF-8"));
+            return bo.toString("UTF-8");
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    private static PrepStats.Model loadModel(Context ctx) {
+        String profile = asset(ctx, "prep_profile.json");
+        if (profile.isEmpty()) return null;
+        return modelFrom(profile, asset(ctx, "prep_days.txt"));
+    }
+
+    /** Recipes (prep_profile.json text) + dated history (prep_days.txt text) -> model; null if unusable. */
+    static PrepStats.Model modelFrom(String profile, String seed) {
+        try {
+            JSONObject o = new JSONObject(profile);
             PrepStats.Model m = new PrepStats.Model();
             JSONArray t = o.getJSONArray("targets");
             int n = t.length();
@@ -183,18 +202,14 @@ final class PrepLive {
             JSONArray df = o.optJSONArray("defaults");
             m.defaults = new int[df == null ? 0 : df.length()];
             for (int i = 0; i < m.defaults.length; i++) m.defaults[i] = df.getInt(i);
-            try {
-                java.io.BufferedReader br = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(ctx.getAssets().open("prep_days.txt"), "UTF-8"));
-                for (String line; (line = br.readLine()) != null; ) {
+            // no dated seed: projections use the tablet's own history only
+            if (seed != null) {
+                for (String line : seed.split("\n")) {
                     try {
-                        m.addSeedLine(line);
+                        m.addSeedLine(line.trim());
                     } catch (RuntimeException ignored) {
                     }
                 }
-                br.close();
-            } catch (java.io.IOException ignored) {
-                // no dated seed: projections use the tablet's own history only
             }
             return m;
         } catch (Throwable e) {
@@ -250,13 +265,53 @@ final class PrepLive {
         ed.clear();
         for (Map.Entry<String, String> e : stats.save().entrySet()) ed.putString(e.getKey(), e.getValue());
         ed.apply();
-        if (stats.historyChanged()) historyPrefs.edit().putString("history", stats.historyBlob()).apply();
+        if (stats.historyChanged()) {
+            historyPrefs.edit().putString("history", stats.historyBlob()).apply();
+            PrepSync.historyChanged();
+        }
         lastPersist = now;
         dirty = false;
     }
 
     static boolean available() {
         return stats != null;
+    }
+
+    /** Main thread: this tablet's recorded days, for the hub. */
+    static String historyText() {
+        return stats == null ? null : stats.historyText();
+    }
+
+    /** Main thread: the hub's merged history (all tablets) replaces this tablet's own. */
+    static void applyHistory(String text) {
+        if (stats == null || text == null) return;
+        stats.loadHistory(text);
+        if (historyPrefs != null) historyPrefs.edit().putString("history", stats.historyText()).apply();
+        last = stats.compute(System.currentTimeMillis());
+        if (screen != null) screen.bind(last);
+    }
+
+    /** Main thread: new recipes from the hub. Today's counts start again from the board. */
+    static void applyModel(PrepStats.Model m, String history) {
+        if (stats == null || m == null) return;
+        PrepStats st = new PrepStats(m);
+        st.loadHistory(history != null ? history : stats.historyText());
+        if (prefs != null) {
+            Map<String, String> saved = new HashMap<String, String>();
+            for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) saved.put(e.getKey(), String.valueOf(e.getValue()));
+            st.load(saved, System.currentTimeMillis());
+        }
+        int[] sl = new int[CARDS];
+        for (int i = 0; i < CARDS; i++) {
+            int t = slots != null && i < slots.length ? slots[i] : -1;
+            if (t < 0 || t >= m.targets.length) t = i < m.defaults.length ? m.defaults[i] : Math.min(i, m.targets.length - 1);
+            sl[i] = t;
+        }
+        slots = sl;
+        stats = st;
+        last = st.compute(System.currentTimeMillis());
+        dirty = true;
+        if (screen != null) screen.bind(last);
     }
 
     static void setSlot(int card, int target) {
