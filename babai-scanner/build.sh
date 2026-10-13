@@ -36,15 +36,19 @@ sdkInfo:
 packageInfo:
   forcedPackageId: 127
 versionInfo:
-  versionCode: 1
+  versionCode: 2
   versionName: 1.0
 doNotCompress:
 - png
+- resources.arsc
 YML
 java -jar "$TOOLS/apktool.jar" b -o "$WORK/res.apk" "$WORK/proj" >/dev/null
 cp "$WORK/dex/classes.dex" "$WORK/classes.dex"
 (cd "$WORK" && zip -q res.apk classes.dex)
+# Android 11+ refuses an app (targetSdk 30+) whose resources.arsc is compressed: "App not installed"
+(cd "$WORK" && unzip -q -o res.apk resources.arsc && zip -q -d res.apk resources.arsc && zip -q -0 res.apk resources.arsc)
 java -jar "$TOOLS/uber-apk-signer.jar" -a "$WORK/res.apk" -o "$WORK/signed" ${KS:+--ks "$KS" --ksAlias "$KS_ALIAS" --ksPass "$KS_PASS" --ksKeyPass "$KS_PASS"} >/dev/null
 mkdir -p "$HERE/dist"
 cp "$WORK"/signed/*.apk "$HERE/dist/BabaiScanner.apk"
+unzip -v "$HERE/dist/BabaiScanner.apk" resources.arsc | grep -q " Stored " || { echo "resources.arsc is compressed"; exit 1; }
 echo "== done: dist/BabaiScanner.apk"
