@@ -120,6 +120,11 @@ Long-press **🛵 RIDER** → *Rider screen settings* → **📷 Camera**. Until
 
 ## Rider screen: how it works
 
+* **Babai Hub (preferred source):** when the Babai Hub PC is on the Wi-Fi, the rider screen reads `http://<hub PC>:8790/rider.json` every 2 s.
+  * It gets every online order from Petpooja (not only what this KDS board shows), Bridge Print slots, and "ready since" times kept on the PC.
+  * The address can be set in the long-press settings, or is found by itself (Petpooja PC first, then the Wi-Fi).
+  * If the hub doesn't answer for 10 s, the screen uses this KDS board again by itself. The bottom line shows which source is in use.
+
 * **Orders and status come from Petpooja** (this KDS). An order shows as READY when its KOT is Food Ready. It leaves the screen only when Petpooja shows it dispatched (the rider picked it up) or cancelled.
 * **Bridge Print only gives the pickup slot.** Without it, the slot shows "—".
 * **No vanishing:**

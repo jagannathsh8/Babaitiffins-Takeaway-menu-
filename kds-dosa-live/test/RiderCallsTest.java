@@ -196,6 +196,26 @@ public final class RiderCallsTest {
         check("ready time kept after restart", a2.readyList().get(0).readyAt == T, a2.readyList().get(0).readyAt - T);
         check("restored order is not called as new", a2.due(T + 7 * 60_000L + 4_000).isEmpty() || !a2.lastWasNew, "");
 
+        // Babai Hub knows when an order turned ready (TV restarted / just switched on): timer kept, no "new" call.
+        RiderCalls h = new RiderCalls();
+        h.update(new ArrayList<RiderCalls.Order>(), T);
+        RiderCalls.Order ho = new RiderCalls.Order(31, "Swiggy", "0744", "250787919580744", "40", T - 20 * 60_000L, true, false);
+        ho.readyAtHint = T - 9 * 60_000L;
+        List<RiderCalls.Order> hb = new ArrayList<RiderCalls.Order>();
+        hb.add(ho);
+        h.update(hb, T + 1_000);
+        check("hub ready time used", h.readyList().get(0).readyAt == T - 9 * 60_000L, h.readyList().get(0).readyAt - T);
+        check("hub-ready order not called as new", h.due(T + 5_000).isEmpty() || !h.lastWasNew, "");
+        // just turned ready on the hub: still a new call
+        RiderCalls h2 = new RiderCalls();
+        h2.update(new ArrayList<RiderCalls.Order>(), T);
+        RiderCalls.Order hn = new RiderCalls.Order(32, "Zomato", "1046", "8496851046", "7", T - 60_000L, true, false);
+        hn.readyAtHint = T + 1_000 - 3_000;
+        List<RiderCalls.Order> hb2 = new ArrayList<RiderCalls.Order>();
+        hb2.add(hn);
+        h2.update(hb2, T + 1_000);
+        check("fresh hub-ready order is new", h2.due(T + 5_000).size() == 1 && h2.lastWasNew, "");
+
         System.out.println(failures == 0 ? "ALL PASS" : failures + " FAILED");
         if (failures > 0) System.exit(1);
     }

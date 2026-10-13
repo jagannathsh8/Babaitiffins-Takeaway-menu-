@@ -37,6 +37,7 @@ final class RiderCalls {
         String slot;   // Bridge Print pickup slot, filled in when known
         final long createdMs;
         final boolean ready, gone;   // gone = dispatched / cancelled
+        long readyAtHint;            // when it turned ready, as the Babai Hub saw it (0 = unknown)
 
         Order(long id, String platform, String last4, String slot, long createdMs, boolean ready, boolean gone) {
             this(id, platform, last4, "", slot, createdMs, ready, gone);
@@ -161,10 +162,16 @@ final class RiderCalls {
                 }
                 w = new Waiting();
                 Long saved = readyStore.get(key(o));
+                if (o.readyAtHint > 0 && o.readyAtHint <= now + 5_000L && now - o.readyAtHint < SAFETY_MS
+                        && (saved == null || o.readyAtHint < saved)) {
+                    saved = Math.min(now, o.readyAtHint);  // the hub saw it ready earlier (e.g. TV restarted)
+                    if (now - saved < 15_000L) saved = null; // just turned ready: a new call
+                }
                 boolean restored = saved != null && saved <= now && now - saved < SAFETY_MS;
                 w.readyAt = restored ? saved : now;
-                if (!restored) {
-                    readyStore.put(key(o), now);
+                Long stored = readyStore.get(key(o));
+                if (stored == null || stored.longValue() != w.readyAt) {
+                    readyStore.put(key(o), w.readyAt);
                     storeChanged = true;
                 }
                 // Orders already ready when the app starts are not "new": they join the repeat cycle.

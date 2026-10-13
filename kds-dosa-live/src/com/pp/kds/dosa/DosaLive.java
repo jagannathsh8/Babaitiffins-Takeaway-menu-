@@ -273,6 +273,7 @@ public final class DosaLive {
         riderOn = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getBoolean("rider_calls", false);
         BridgeSlots.setAddress(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getString("bridge_addr", ""));
         BridgeSlots.autoFind(ctx.getApplicationContext()); // Bridge Print on the Petpooja PC, when not set
+        HubFeed.start(ctx); // rider orders from the Babai Hub PC, when it is on the Wi-Fi
         riderMaxMin = 0;            // ready orders stay until Petpooja shows them dispatched / cancelled
         riders.setMaxMinutes(0);
         loadReadyTimes(ctx);
@@ -330,7 +331,8 @@ public final class DosaLive {
                     }
                     BridgeSlots.setKdsKinds(kinds);
                     lastRiderOrders = kdsOrders;
-                    riders.update(kdsOrders, now); // orders + status: Petpooja (this KDS)
+                    // orders + status: the Babai Hub (all of Petpooja) when it is live, else this KDS board
+                    if (!HubFeed.fresh()) riders.update(kdsOrders, now);
                 } catch (Throwable ignored) {
                 }
                 try {
@@ -358,7 +360,8 @@ public final class DosaLive {
         }
         if (persistPending && now - lastPersistAt >= 30_000L) persist();
         try {
-            riders.update(lastRiderOrders, now); // grace / safety checks also while the board is quiet
+            // grace / safety checks also while the board is quiet
+            riders.update(HubFeed.fresh() ? HubFeed.orders() : lastRiderOrders, now);
             saveReadyTimes(now);
             if (panel != null) panel.bindRider();
         } catch (Throwable ignored) {
@@ -471,6 +474,10 @@ public final class DosaLive {
     private static RiderInfo infoFor(String orderId) {
         String d = RiderOcr.digits(orderId);
         if (d.length() < 4) return null;
+        if (HubFeed.fresh()) {
+            RiderInfo h = HubFeed.info().get(d);
+            if (h != null) return h;
+        }
         Map<String, RiderInfo> m = riderInfo;
         RiderInfo i = m.get(d);
         if (i != null) return i;
@@ -832,6 +839,21 @@ public final class DosaLive {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding((int) (20 * d), (int) (8 * d), (int) (20 * d), 0);
 
+        // -- Babai Hub (orders for the rider screen) --
+        box.addView(heading(a, "Babai Hub (orders)"));
+        TextView hubInfo = new TextView(a);
+        hubInfo.setText("The Babai Hub PC gives the rider screen every online order straight from Petpooja, "
+                + "with slots and ready times. Left empty, it is found on the Wi-Fi by itself. Without it, the "
+                + "rider screen uses this KDS board.\n\nStatus: " + HubFeed.status());
+        hubInfo.setTextIsSelectable(true);
+        box.addView(hubInfo);
+        final android.widget.EditText hubAddr = new android.widget.EditText(a);
+        hubAddr.setSingleLine(true);
+        hubAddr.setHint("e.g. 192.168.1.20:8790");
+        hubAddr.setText(HubFeed.manual());
+        hubAddr.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        box.addView(hubAddr);
+
         // -- Bridge Print (pickup slots) --
         box.addView(heading(a, "Bridge Print (pickup slots)"));
         final TextView info = new TextView(a);
@@ -897,6 +919,8 @@ public final class DosaLive {
                     @Override public void onClick(android.content.DialogInterface dlg, int which) {
                         RiderCam.saveSettings(a, checked(camMode), checked(camWhich), checked(camFlash),
                                 cPrev.isChecked(), cFood.isChecked(), cRider.isChecked());
+                        String h = HubFeed.norm(hubAddr.getText().toString());
+                        if (!h.equals(HubFeed.manual())) HubFeed.setManual(h);
                         final String v = addr.getText().toString().trim();
                         if (v.equals(ui.getString("bridge_addr", ""))) return;
                         ui.edit().putString("bridge_addr", v).apply();
@@ -1189,9 +1213,12 @@ public final class DosaLive {
                 if (!sl.isEmpty()) o.slot = sl;
             }
             String addr = BridgeSlots.address();
-            String src = "Orders: Petpooja \u2022 Slots: " + (addr == null || addr.isEmpty()
+            boolean hub = HubFeed.fresh();
+            boolean bridge = (addr != null && !addr.isEmpty() && bridgeMode()) || (hub && HubFeed.bridgeOk());
+            String src = (hub ? "Orders: Babai Hub (Petpooja)" : "Orders: Petpooja (this KDS)") + " \u2022 Slots: "
+                    + (bridge ? "Bridge Print connected" : addr == null || addr.isEmpty()
                     ? "Bridge Print not set (long-press \uD83D\uDEF5 RIDER)" : "Bridge Print " + BridgeSlots.status());
-            riderView.setData(rl, pl, src, addr != null && !addr.isEmpty() && bridgeMode());
+            riderView.setData(rl, pl, src, bridge);
             riderView.setRemovals(riders.removedCount(), riders.removals());
             RiderCam.setBoard(rl, pl);
         }
