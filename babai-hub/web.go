@@ -257,6 +257,9 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:
 .dish .tx{padding:8px 10px;flex:1}.dish .tx b{display:block}.dish .tx span{color:var(--muted);font-size:.85rem}
 .dish .bt{display:flex;gap:4px;padding:0 8px 8px;flex-wrap:wrap}.dish .bt button{padding:4px 9px;font-size:.85rem}
 #dprev[hidden]{display:none}
+#pqrbox{background:#fff;padding:10px;border-radius:10px;display:inline-block}
+.ph{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #eee;flex-wrap:wrap}.ph b{min-width:140px}.ph .hint{flex:1;margin:0}
+h3{margin:16px 0 6px;font-size:1rem}
 #dprev{width:260px;max-width:100%;aspect-ratio:520/322;object-fit:cover;border-radius:10px;display:block;margin-top:8px;background:#000}
 .stat b{display:block;font-size:1.4rem;font-variant-numeric:tabular-nums}.stat span{color:var(--muted);font-size:.85rem}
 #qrbox{background:#fff;padding:10px;border-radius:10px;display:inline-block;margin-top:8px}
@@ -339,6 +342,21 @@ a{color:var(--accent)}
 <p class="hint">Photos are made small here before they are sent (about 30 KB each), so the carousel stays inside Firebase's free plan.</p>
 </section>
 
+<section id="scanners"><div class="step">Step 5 · optional</div><h2>Scanner phones &amp; rider screen</h2>
+<p class="hint">Babai Scanner phones scan a KOT barcode and the hub marks that online order <b>Food Ready</b> in Petpooja (the same request the KDS app sends). They use the shop Wi-Fi when they can, and the internet (Firebase) anywhere else.</p>
+<h3>Bridge Print (pickup slots)</h3>
+<form id="fb"><label for="baddr">Bridge Print address (leave empty to find it on the Petpooja PC)</label><input type="text" id="baddr" placeholder="e.g. 192.168.1.3:8787" autocomplete="off">
+<div class="row"><button>Save &amp; test</button></div></form><p id="bstate" class="hint"></p><p id="bmsg" class="msg"></p>
+<h3>Phones</h3>
+<div id="plist"></div>
+<form id="fph"><label for="pname">New phone's name</label><input type="text" id="pname" maxlength="30" placeholder="e.g. Counter phone, Packing 2"><div class="row"><button>Add phone</button></div></form>
+<p id="phmsg" class="msg"></p>
+<div id="pqrwrap" hidden><p class="hint" id="pqrfor"></p><div id="pqrbox"></div><p class="hint">Open Babai Scanner on the phone → <b>Pair with hub</b> → scan this code. Keep it private: whoever scans it can mark orders ready (remove the phone here to stop it).</p></div>
+<p class="hint">Shop Wi-Fi: <b id="pwifi">–</b> · Internet: <b id="pnet">–</b></p>
+<p class="hint">KDS rider screen: long-press 🛵 RIDER → settings → <b>Babai Hub</b> → <span id="pkds">–</span> (or let it find the hub). The first time, if Windows asks, allow Babai Hub on <b>private networks</b>.</p>
+<details><summary class="hint">Scans today (newest first)</summary><table class="kt"><tbody id="slog"></tbody></table></details>
+</section>
+
 <section><h2>What Petpooja sent</h2>
 <p class="hint" id="ppInfo">Nothing yet.</p>
 <div class="tbl"><table><thead><tr><th>Token</th><th>Table</th><th>Type</th><th>Status</th><th>Items</th></tr></thead><tbody id="kots"></tbody></table></div>
@@ -417,6 +435,24 @@ $("dcancel").addEventListener("click",function(){dishForm(-1)});
 $("dnone").addEventListener("click",function(){if(confirm("Hide the dish carousel? Customers will see only the game."))post("/promo",{Op:"none"}).then(function(r){show($("dmsg"),r);loadDishes()})});
 $("ddefault").addEventListener("click",function(){if(confirm("Remove your dishes and use Babai's default dishes?"))post("/promo",{Op:"default"}).then(function(r){show($("dmsg"),r);dishForm(-1);loadDishes()})});
 loadDishes();setInterval(loadDishes,15000);
+var phQR="";
+function pqr(t,who){$("pqrwrap").hidden=false;$("pqrfor").textContent="Pairing code for "+who;if(t!==phQR&&window.QRCode){$("pqrbox").innerHTML="";new QRCode($("pqrbox"),{text:t,width:220,height:220,correctLevel:QRCode.CorrectLevel.M});phQR=t}}
+function loadPhones(){fetch("/phones").then(function(r){return r.json()}).then(function(p){
+ if(!bLoaded){$("baddr").value=p.bridgeAddr||"";bLoaded=true}
+ var b=p.bridge||{};$("bstate").textContent="Bridge Print: "+(b.addr?b.addr+" \u2022 ":"")+(b.state||"")+(b.auto&&b.note?" ("+b.note+")":"");
+ $("pwifi").textContent=(p.wifi||[]).join(", ")||"no network found";$("pnet").textContent=p.internet;$("pkds").textContent=(p.wifi||[])[0]||"this PC's address";
+ $("plist").innerHTML=(p.phones||[]).length?(p.phones||[]).map(function(x){return '<div class="ph"><b>'+esc(x.name)+'</b><span class="hint">'+(x.seen?"last used "+ago(Math.round((Date.now()-x.seen)/1000))+" via "+(x.route==="wifi"?"Wi-Fi":"internet"):"not used yet")+'</span><button type="button" class="ghost" data-k="'+esc(x.key)+'" data-op="qr">Show QR</button><button type="button" class="ghost" data-k="'+esc(x.key)+'" data-n="'+esc(x.name)+'" data-op="remove">Remove</button></div>'}).join(""):'<p class="hint">No phones yet.</p>';
+ $("slog").innerHTML=(p.scans||[]).map(function(e){var d=new Date(e.t);return "<tr><td>"+d.toLocaleTimeString()+"</td><td>"+esc(e.d)+"</td><td>"+(e.r==="wifi"?"Wi-Fi":"internet")+"</td><td>"+(e.ok?"\u2713 ":"\u2715 ")+esc(e.m)+"</td></tr>"}).join("");
+})}
+var bLoaded=false;
+$("fb").addEventListener("submit",function(e){e.preventDefault();$("bmsg").textContent="Testing…";$("bmsg").className="msg";post("/bridge",{Addr:$("baddr").value}).then(function(r){show($("bmsg"),r);loadPhones()})});
+$("fph").addEventListener("submit",function(e){e.preventDefault();post("/phones",{Op:"add",Name:$("pname").value}).then(function(r){show($("phmsg"),r);if(r.ok){$("pname").value="";pqr(r.qr,r.msg.replace(/^.* on /,"").replace(/\.$/,""))}loadPhones()})});
+$("plist").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;
+ if(b.dataset.op==="qr"){post("/phones",{Op:"qr",Key:b.dataset.k}).then(function(r){if(r.ok)pqr(r.qr,r.msg);else show($("phmsg"),r)});return}
+ if(b.dataset.op==="remove"&&confirm("Remove "+b.dataset.n+"? It won't be able to mark orders any more.")){post("/phones",{Op:"remove",Key:b.dataset.k}).then(function(r){show($("phmsg"),r);$("pqrwrap").hidden=true;phQR="";loadPhones()})}});
+loadPhones();setInterval(loadPhones,5000);
+if(location.hash==="#scanners")setTimeout(function(){$("scanners").scrollIntoView()},300);
+
 if(location.hash==="#dishes")setTimeout(function(){$("dishes").scrollIntoView()},300);
 refresh();setInterval(refresh,3000);
 </script></body></html>`

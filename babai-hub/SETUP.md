@@ -19,7 +19,7 @@ Already done: https://babaidosa.netlify.app. In step 4 you upload the final page
 3. Open the **Rules** tab, replace everything with the line below, and click **Publish**:
 
    ```
-   {"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"promo":{".read":true},"pimg":{".read":true},"t":{"$tok":{".read":true}}}}}}}
+   {"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"promo":{".read":true},"pimg":{".read":true},"t":{"$tok":{".read":true}},"sq":{"$k":{".write":"root.child('babai/o/'+$o+'/pk/'+$k).exists()","$id":{".validate":"newData.hasChildren(['c','t']) && newData.child('c').isString() && newData.child('c').val().length <= 80 && newData.child('t').isNumber() && $id.length <= 40"}}},"sr":{"$k":{".read":"root.child('babai/o/'+$o+'/pk/'+$k).exists()"}}}}}}}
    ```
 
 4. Go back to the **Data** tab and copy the address at the top
@@ -93,3 +93,20 @@ The Hub page, **Step 4**, or tray icon → **Dish carousel…**:
 * Photos are made small on the PC (about 10-40 KB each) before they are sent. A phone downloads each photo only when its slide comes up, and only once.
 * Each outlet's Hub has its own dishes.
 * The Hub adds the new rules to Firebase by itself. If that ever fails, paste the rules above again.
+
+## Scanner phones, Bridge Print and the rider screen
+
+The Hub page, **Step 5**, or tray icon → **Scanner phones & Bridge Print…**:
+
+* **Bridge Print:** leave the address empty and the Hub finds it on the Petpooja PC (port 8787) by itself, or type it (e.g. `192.168.1.3:8787`). Its pickup slots go to the rider screen and to the scanner phones.
+* **Phones:** type a name → **Add phone** → scan the QR code with the Babai Scanner app. **Show QR** pairs the same phone again; **Remove** cuts a lost phone off at once.
+* A scan marks the online order **Food Ready** in Petpooja, with the same request the KDS app sends. It only ever marks Food Ready, never cancels or changes anything else.
+  * **Matching:** the barcode's last 4 digits (the KDS rule). When the barcode has more digits, only the order whose ID matches the most digits is marked.
+  * A scan that arrives on both routes is marked once.
+* **Routes:**
+  * **Shop Wi-Fi first:** fastest, and works without internet.
+  * **Internet second:** through Firebase. The phone can only write scans for its own outlet and read its own answers; it never gets the database secret.
+* **Scans today** lists every scan: time, phone, route and result.
+* **KDS rider screen:** it can read its orders from the Hub at `http://<hub PC>:8790/rider.json`. That gives all online orders from Petpooja with no 300-line limit, slots from Bridge Print, and "ready since" times kept on the PC.
+* **Windows firewall:** the first time a phone or TV connects, Windows may ask about Babai Hub. Allow it on **private networks**.
+* The Hub adds the new Firebase rules by itself. If that ever fails, paste the rules above again.

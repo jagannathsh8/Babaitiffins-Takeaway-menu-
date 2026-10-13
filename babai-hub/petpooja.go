@@ -52,6 +52,9 @@ type Row struct {
 	Quantity    looseNum `json:"quantity"`
 	Status      looseNum `json:"status"` // item: 9 ready, 10 dispatched, -9 cancelled
 	KotItemID   looseNum `json:"kot_item_id"`
+	ItemID      looseNum `json:"item_id"` // menu item id: what the KDS sends to mark an item ready
+	OhStatus    looseStr `json:"oh_status"`
+	OnlineName  looseStr `json:"online_order_user_name"`
 }
 
 // looseStr / looseNum read a field whatever way Petpooja writes it (the KDS app's reader is just
@@ -109,14 +112,17 @@ type Kot struct {
 	Created   int64   `json:"c"` // ms, local time of the billing PC
 	POID      string  `json:"po,omitempty"`
 	Channel   string  `json:"ch,omitempty"`
+	Platform  string  `json:"pf,omitempty"` // Swiggy / Zomato / ... as the KDS names it (online orders)
+	Online    bool    `json:"on,omitempty"` // an online platform order (o_u_id set)
 	Items     []KItem `json:"i"`
 }
 
 type KItem struct {
-	N string  `json:"n"`
-	C string  `json:"c,omitempty"`
-	Q float64 `json:"q"`
-	S int     `json:"s"`
+	N  string  `json:"n"`
+	C  string  `json:"c,omitempty"`
+	Q  float64 `json:"q"`
+	S  int     `json:"s"`
+	ID int64   `json:"-"` // item_id (marking Food Ready)
 }
 
 type StockItem struct {
@@ -207,6 +213,7 @@ func pollOnce(host string) error {
 	stockDue := now.Sub(ppStockAt) >= stockEvery
 	ppMu.Unlock()
 	onBoard(kots, now)
+	trackRiderReady(kots, now)
 	if stockDue {
 		if items, err := fetchStock(base, code); err == nil {
 			ppMu.Lock()
@@ -388,7 +395,8 @@ func groupRows(rows []Row) []Kot {
 		k := byID[id]
 		if k == nil {
 			k = &Kot{ID: id, Table: strings.TrimSpace(string(r.TableNo)), Status: strings.TrimSpace(string(r.KotStatus)),
-				POID: string(r.POID), Created: parseCreated(string(r.Created)), Channel: channel(r)}
+				POID: string(r.POID), Created: parseCreated(string(r.Created)), Channel: channel(r),
+				Platform: platformName(r), Online: strings.TrimSpace(string(r.OUID)) != ""}
 			if r.KotUniqueID.OK {
 				k.Token = r.KotUniqueID.Int()
 			}
@@ -413,7 +421,11 @@ func groupRows(rows []Row) []Kot {
 		if name == "" {
 			continue
 		}
-		k.Items = append(k.Items, KItem{N: name, C: strings.TrimSpace(string(r.Category)), Q: q, S: s})
+		var iid int64
+		if r.ItemID.OK {
+			iid = r.ItemID.Int()
+		}
+		k.Items = append(k.Items, KItem{N: name, C: strings.TrimSpace(string(r.Category)), Q: q, S: s, ID: iid})
 	}
 	out := make([]Kot, 0, len(order))
 	for _, id := range order {
@@ -421,6 +433,28 @@ func groupRows(rows []Row) []Kot {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Created < out[j].Created })
 	return out
+}
+
+// aggregators: Petpooja's online user ids (live, staging) -> platform, as the KDS app names them.
+var aggregators = []struct{ live, staging, name string }{
+	{"5409", "3481", "Zomato"}, {"14347", "3554", "Ubereats"}, {"6736", "3495", "Swiggy"},
+	{"13554", "3566", "Dunzo"}, {"38913", "3658", "Google pay"}, {"39481", "3663", "Amazon"},
+	{"23098", "3693", "Uengage"}, {"40177", "3685", "Dotpe"}, {"4117", "3458", "Own Website"},
+	{"307753", "307753", "Toing By Swiggy"},
+}
+
+// platformName: the KDS's channelName (aggregator by o_u_id, else online_order_user_name, else "Online").
+func platformName(r Row) string {
+	id := strings.TrimSpace(string(r.OUID))
+	for _, a := range aggregators {
+		if id != "" && (id == a.live || id == a.staging) {
+			return a.name
+		}
+	}
+	if n := strings.TrimSpace(string(r.OnlineName)); n != "" {
+		return n
+	}
+	return "Online"
 }
 
 func channel(r Row) string {

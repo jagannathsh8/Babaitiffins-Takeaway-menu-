@@ -36,7 +36,15 @@ func (f *fakeFirebase) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(f.code)
 		return
 	}
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		if d, ok := f.data[r.URL.Path]; ok && r.URL.Query().Get("shallow") == "" {
+			io.WriteString(w, d)
+			return
+		}
+	case http.MethodDelete:
+		delete(f.data, r.URL.Path)
+	default:
 		f.data[r.URL.Path] = string(b)
 	}
 	if r.URL.Query().Get("print") == "silent" {
@@ -71,6 +79,7 @@ type fakePetpooja struct {
 	bodies   map[string]map[string]any
 	headers  http.Header
 	syncAsks int
+	marks    []map[string]any
 }
 
 func (p *fakePetpooja) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +99,9 @@ func (p *fakePetpooja) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		io.WriteString(w, `{"error":"","message":"","data":[`+p.rows+`]}`)
+	case "/petpooja_server/change_kot_status":
+		p.marks = append(p.marks, body)
+		io.WriteString(w, `{"error":"","message":"Status changed successfully","allow_access":"1","data":{}}`)
 	case "/petpooja_server/touch_items":
 		io.WriteString(w, `{"items":[{"id":"11","name":"Masala Dosa","category":"Dosa","in_stock":1},{"id":"12","name":"Pesarattu","category":"Dosa","in_stock":0}]}`)
 	default:

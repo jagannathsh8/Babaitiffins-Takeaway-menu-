@@ -335,7 +335,7 @@ func resetStreams() {
 
 // rulesJSON: who may read what (see the layout above). Customers: outlet names, one token at a
 // time, the dosa wait and the dish carousel. Everything else needs the secret (the hubs).
-const rulesJSON = `{"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"promo":{".read":true},"pimg":{".read":true},"t":{"$tok":{".read":true}}}}}}}`
+const rulesJSON = `{"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"promo":{".read":true},"pimg":{".read":true},"t":{"$tok":{".read":true}},"sq":{"$k":{".write":"root.child('babai/o/'+$o+'/pk/'+$k).exists()","$id":{".validate":"newData.hasChildren(['c','t']) && newData.child('c').isString() && newData.child('c').val().length <= 80 && newData.child('t').isNumber() && $id.length <= 40"}}},"sr":{"$k":{".read":"root.child('babai/o/'+$o+'/pk/'+$k).exists()"}}}}}}}`
 
 var (
 	rulesOK    bool
@@ -353,7 +353,7 @@ func ensureRules(now time.Time) {
 	if err != nil {
 		return
 	}
-	if strings.Contains(string(b), `"pimg"`) {
+	if strings.Contains(string(b), `"sq"`) && strings.Contains(string(b), `"pimg"`) {
 		rulesOK = true
 		return
 	}
@@ -362,7 +362,7 @@ func ensureRules(now time.Time) {
 		return
 	}
 	rulesOK = true
-	log.Printf("Firebase rules updated (dish carousel)")
+	log.Printf("Firebase rules updated (dish carousel, scanner phones)")
 }
 
 // ---- monthly usage (shown on the page, to keep an eye on the free plan) --------------------

@@ -43,6 +43,15 @@ type Config struct {
 	Secret       string  `json:"secret"`       // Firebase database secret
 	Page         string  `json:"page"`         // customer page address
 	Port         int     `json:"port"`
+	Bridge       string  `json:"bridge,omitempty"` // Bridge Print address (empty: found on the Petpooja PC)
+	Phones       []Phone `json:"phones,omitempty"` // paired Babai Scanner phones
+}
+
+// Phone is one paired Babai Scanner phone. Key: its private pairing key (in the QR code).
+type Phone struct {
+	Key   string `json:"key"`
+	Name  string `json:"name"`
+	Added int64  `json:"added"`
 }
 
 var (
@@ -85,6 +94,8 @@ func main() {
 
 	go cloudLoop()
 	go petpoojaLoop()
+	go bridgeLoop()
+	go scanQueueLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "babai-hub "+version) })
@@ -99,6 +110,11 @@ func main() {
 	mux.HandleFunc("/pause", localOnly(handlePause))
 	mux.HandleFunc("/promo", localOnly(handlePromo))
 	mux.HandleFunc("/promo/img", localOnly(handlePromoImage))
+	mux.HandleFunc("/phones", localOnly(handlePhones))
+	mux.HandleFunc("/bridge", localOnly(handleBridge))
+	// shop Wi-Fi (other devices): scanner phones and the KDS rider screen
+	mux.HandleFunc("/scan", handleScan)
+	mux.HandleFunc("/rider.json", handleRider)
 	mux.HandleFunc("/quit", localOnly(func(w http.ResponseWriter, r *http.Request) {
 		if !fromOwnPage(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
