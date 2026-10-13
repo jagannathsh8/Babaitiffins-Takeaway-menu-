@@ -128,3 +128,11 @@ The Hub page, **Prep Live data** section:
 * The first tablet sends the Petpooja history (1 Sep - 5 Oct) and recipes it came with. After that every finished day is added by itself.
 * A new or reset tablet gets the whole history at once.
 * **Add older data or new recipes:** upload the files Babai support prepares from Petpooja exports or the BOM Excel.
+
+## Updates
+
+From version 2.1 the Hub updates itself:
+
+* Once a day it reads `https://<customer page>/hub/version.json`. A newer version is downloaded and checked against its sha256, then installed between 3 and 5 at night. Settings stay.
+* The Hub page (**This PC → Updates**) shows the version and has **Check now**, **Update now** and **Turn off**.
+* **To publish a new version:** put `babai-hub.exe` and `version.json` (`{"v":"2.2","url":"babai-hub.exe","sha256":"..."}`) in a `hub/` folder next to `index.html` and deploy the site on Netlify. Every outlet's Hub picks it up within a day.

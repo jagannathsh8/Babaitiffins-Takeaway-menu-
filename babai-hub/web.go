@@ -323,6 +323,8 @@ a{color:var(--accent)}
 <div class="msg" id="amsg" role="status"></div>
 <p class="hint">Cloud use this month (<span id="month"></span>): <span id="use"></span>. Firebase's free plan allows 10 GB downloaded a month and 1 GB stored.</p>
 <p class="hint">Finished KOTs are also saved on this PC in <code id="dir"></code>\days</p>
+<h3>Updates</h3><p class="hint" id="updst">–</p>
+<div class="row"><button type="button" class="ghost" id="updCheck">Check now</button><button type="button" class="ghost" id="updNow">Update now</button><button type="button" class="ghost" id="updToggle">Turn off</button></div><p id="updmsg" class="msg"></p>
 <h3>PIN</h3><p class="hint">The page asks for the PIN (first time: 1234) and stays open in this browser for 12 hours.</p>
 <form id="fpin"><label for="pold">Current PIN</label><input type="password" id="pold" inputmode="numeric" maxlength="8" autocomplete="off">
 <label for="pnew">New PIN (4 to 8 digits)</label><input type="password" id="pnew" inputmode="numeric" maxlength="8" autocomplete="off">
@@ -473,6 +475,13 @@ function loadPrep(){fetch("/prepdata").then(function(r){return r.json()}).then(f
 $("prepup").addEventListener("click",function(){var f=$("prepfile").files[0];if(!f){show($("prepmsg"),{ok:false,msg:"Choose the file first."});return}
  $("prepmsg").textContent="Uploading…";$("prepmsg").className="msg";var rd=new FileReader();rd.onload=function(){post("/prepdata",{Op:$("prepkind").value,Data:rd.result}).then(function(r){show($("prepmsg"),r);loadPrep()})};rd.readAsText(f)});
 loadPrep();setInterval(loadPrep,30000);
+var updOn=true;function loadUpd(){fetch("/update").then(function(r){return r.json()}).then(function(u){updOn=u.on;
+ $("updst").textContent="This hub: version "+u.version+" \u2022 "+(u.on?"updates itself (checks once a day, installs at night)":"automatic updates are off")+" \u2022 "+u.state;
+ $("updToggle").textContent=u.on?"Turn off":"Turn on"})}
+$("updCheck").addEventListener("click",function(){post("/update",{Op:"check"}).then(function(r){show($("updmsg"),r);setTimeout(loadUpd,4000)})});
+$("updNow").addEventListener("click",function(){post("/update",{Op:"now"}).then(function(r){show($("updmsg"),r);setTimeout(loadUpd,8000)})});
+$("updToggle").addEventListener("click",function(){post("/update",{Op:updOn?"off":"on"}).then(function(r){show($("updmsg"),r);loadUpd()})});
+loadUpd();setInterval(loadUpd,30000);
 
 $("fpin").addEventListener("submit",function(e){e.preventDefault();post("/pin",{Old:$("pold").value,New:$("pnew").value}).then(function(r){show($("pinmsg"),r);if(r.ok){$("pold").value="";$("pnew").value=""}})});
 $("lockBtn").addEventListener("click",function(){post("/lock",{}).then(function(){location.reload()})});

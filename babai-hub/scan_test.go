@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -369,5 +371,32 @@ func TestPrepStore(t *testing.T) {
 	handlePrepBase(w, httptest.NewRequest(http.MethodGet, "/prep/base?have="+base.Base, nil))
 	if strings.Contains(w.Body.String(), "Sambar") {
 		t.Fatal("recipes sent again")
+	}
+}
+
+func TestUpdate(t *testing.T) {
+	if !newerVersion("2.10", "2.9") || newerVersion("2.1", "2.1") || !newerVersion("3", "2.9.9") || newerVersion("2.0", "2.1") {
+		t.Fatal("version compare")
+	}
+	cfg = Config{Page: "https://babaidosa.netlify.app/"}
+	b, err := updateBase()
+	if err != nil || b.String() != "https://babaidosa.netlify.app/hub/" {
+		t.Fatalf("base %v %v", b, err)
+	}
+	cfg = Config{Page: "http://x.example/"}
+	if _, err := updateBase(); err == nil {
+		t.Fatal("http page accepted for updates")
+	}
+	dataDir = t.TempDir()
+	body := []byte("pretend exe")
+	sum := sha256.Sum256(body)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(body) }))
+	defer srv.Close()
+	p, err := downloadChecked(srv.URL+"/babai-hub.exe", hex.EncodeToString(sum[:]), "2.2")
+	if err != nil || !strings.HasSuffix(p, "babai-hub-2.2.exe") {
+		t.Fatalf("download %q %v", p, err)
+	}
+	if _, err := downloadChecked(srv.URL+"/babai-hub.exe", strings.Repeat("0", 64), "2.3"); err == nil || !strings.Contains(err.Error(), "sha256") {
+		t.Fatalf("wrong sha256 accepted: %v", err)
 	}
 }

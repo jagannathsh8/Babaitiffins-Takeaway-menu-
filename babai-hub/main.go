@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	version     = "2.0"
+	version     = "2.1"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -43,9 +43,10 @@ type Config struct {
 	Secret       string  `json:"secret"`       // Firebase database secret
 	Page         string  `json:"page"`         // customer page address
 	Port         int     `json:"port"`
-	Bridge       string  `json:"bridge,omitempty"` // Bridge Print address (empty: found on the Petpooja PC)
-	Phones       []Phone `json:"phones,omitempty"` // paired Babai Scanner phones
-	Pin          string  `json:"pin,omitempty"`    // hub page PIN (empty = 1234)
+	Bridge       string  `json:"bridge,omitempty"`     // Bridge Print address (empty: found on the Petpooja PC)
+	Phones       []Phone `json:"phones,omitempty"`     // paired Babai Scanner phones
+	Pin          string  `json:"pin,omitempty"`        // hub page PIN (empty = 1234)
+	AutoUpdate   *bool   `json:"autoUpdate,omitempty"` // nil = on
 }
 
 // Phone is one paired Babai Scanner phone. Key: its private pairing key (in the QR code).
@@ -96,6 +97,7 @@ func main() {
 	go cloudLoop()
 	go petpoojaLoop()
 	go bridgeLoop()
+	go updateLoop()
 	go scanQueueLoop()
 
 	mux := http.NewServeMux()
@@ -123,6 +125,7 @@ func main() {
 	mux.HandleFunc("/prep/seed", handlePrepSeed)
 	mux.HandleFunc("/prep/history", handlePrepHistory)
 	mux.HandleFunc("/prepdata", localOnly(pinned(handlePrepAdmin)))
+	mux.HandleFunc("/update", localOnly(pinned(handleUpdate)))
 	mux.HandleFunc("/quit", localOnly(func(w http.ResponseWriter, r *http.Request) {
 		if !fromOwnPage(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
