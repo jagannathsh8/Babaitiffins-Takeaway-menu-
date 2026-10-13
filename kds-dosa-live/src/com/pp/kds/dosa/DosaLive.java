@@ -43,6 +43,8 @@ public final class DosaLive {
     private static final String PREFS = "dosa_live_stats";
     private static final long TICK_MS = 2_000L;          // board poll, mirrors KDS 2 s poll
     private static final long RECOMPUTE_MS = 15_000L;    // sliding throughput window refresh
+    private static final long WATCH_MS = 250L;           // board-change check between ticks
+    private static long lastTickAt;
     private static final int BOARD_CAP = 2000;           // item lines kept by KotRepositoryImpl (raised from 300 by build.sh)
     private static final String DOSA = "dosa";
 
@@ -299,10 +301,24 @@ public final class DosaLive {
                 handler.postDelayed(this, TICK_MS);
             }
         });
+        // A new board list (e.g. Food Ready on another KDS) shows within a quarter second instead
+        // of waiting for the next 2 s tick. Only a reference compare while nothing changes.
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                try {
+                    DashboardUiState st = currentState();
+                    if (st != null && st.getCards() != null && st.getCards() != lastCards
+                            && System.currentTimeMillis() - lastTickAt >= WATCH_MS) tick();
+                } catch (Throwable ignored) {
+                }
+                handler.postDelayed(this, WATCH_MS);
+            }
+        }, WATCH_MS);
     }
 
     private static void tick() {
         long now = System.currentTimeMillis();
+        lastTickAt = now;
         boolean changed = false;
         DashboardUiState state = currentState();
         if (state != null) {
@@ -361,7 +377,7 @@ public final class DosaLive {
         if (persistPending && now - lastPersistAt >= 30_000L) persist();
         try {
             // grace / safety checks also while the board is quiet
-            riders.update(HubFeed.fresh() ? HubFeed.orders() : lastRiderOrders, now);
+            riders.update(HubFeed.fresh() ? RiderCalls.fasterOf(HubFeed.orders(), lastRiderOrders) : lastRiderOrders, now);
             saveReadyTimes(now);
             if (panel != null) panel.bindRider();
         } catch (Throwable ignored) {

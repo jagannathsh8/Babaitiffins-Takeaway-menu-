@@ -3,6 +3,7 @@ package com.pp.kds.dosa;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -385,6 +386,36 @@ final class RiderCalls {
             if (c >= '0' && c <= '9') sb.append(c);
         }
         return sb.toString();
+    }
+
+    /**
+     * The hub's list, with "ready" / "gone" taken from this KDS board when the board already has
+     * it (the board hears a Food Ready from another KDS within a second; the hub may be a few
+     * seconds behind). Only moves an order forward, never back.
+     */
+    static List<Order> fasterOf(List<Order> hub, List<Order> board) {
+        if (board == null || board.isEmpty()) return hub;
+        Map<String, Order> byOrder = new HashMap<String, Order>();
+        Map<Long, Order> byId = new HashMap<Long, Order>();
+        for (Order b : board) {
+            if (!b.ready && !b.gone) continue;
+            if (!b.orderId.isEmpty()) byOrder.put(b.orderId, b);
+            byId.put(b.id, b);
+        }
+        if (byId.isEmpty()) return hub;
+        List<Order> out = new ArrayList<Order>(hub.size());
+        for (Order h : hub) {
+            Order b = h.orderId.isEmpty() ? null : byOrder.get(h.orderId);
+            if (b == null) b = byId.get(h.id);
+            if (b != null && ((b.ready && !h.ready) || (b.gone && !h.gone))) {
+                Order c = new Order(h.id, h.platform, h.last4, h.orderId, h.slot, h.createdMs, h.ready || b.ready, h.gone || b.gone);
+                c.readyAtHint = h.readyAtHint;
+                out.add(c);
+            } else {
+                out.add(h);
+            }
+        }
+        return out;
     }
 
     /** Last 4 digits of the platform order ID ("1791447658581597964" -> "7964"). */

@@ -216,6 +216,21 @@ public final class RiderCallsTest {
         h2.update(hb2, T + 1_000);
         check("fresh hub-ready order is new", h2.due(T + 5_000).size() == 1 && h2.lastWasNew, "");
 
+        {   // board already shows Food Ready from another KDS; the hub is a few seconds behind
+            List<RiderCalls.Order> hub = new ArrayList<RiderCalls.Order>(), kb = new ArrayList<RiderCalls.Order>();
+            hub.add(new RiderCalls.Order(41, "Swiggy", "0744", "231844100744", "", T, false, false));
+            hub.add(new RiderCalls.Order(42, "Zomato", "5521", "88125521", "", T, true, false));
+            hub.add(new RiderCalls.Order(43, "Zomato", "7000", "88127000", "", T, false, false));
+            kb.add(new RiderCalls.Order(999, "Swiggy", "0744", "231844100744", "", T, true, false)); // same order, other KOT id
+            kb.add(new RiderCalls.Order(42, "Zomato", "5521", "88125521", "", T, false, false));     // board behind: keep hub
+            kb.add(new RiderCalls.Order(43, "Zomato", "7000", "", "", T, false, true));               // by id: dispatched
+            List<RiderCalls.Order> fm = RiderCalls.fasterOf(hub, kb);
+            check("faster: board ready wins", fm.get(0).ready && !fm.get(0).gone, "");
+            check("faster: never back", fm.get(1).ready, "");
+            check("faster: gone by id", fm.get(2).gone, "");
+            check("faster: same size, same order", fm.size() == 3 && fm.get(0).id == 41, "");
+        }
+
         System.out.println(failures == 0 ? "ALL PASS" : failures + " FAILED");
         if (failures > 0) System.exit(1);
     }

@@ -28,7 +28,7 @@ const (
 	petpoojaPort    = 3000
 	clientID        = "android_kds" // what the KDS app sends
 	intraVersion    = 7
-	pollEvery       = 4 * time.Second
+	pollEvery       = 2 * time.Second
 	stockEvery      = 3 * time.Minute
 	userJSON        = `{"site_user_language_profile":0}`
 	kdsAppVersion   = "5.0.1"

@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicReference;
 final class HubFeed {
 
     static final int PORT = 8790;
-    private static final long POLL_MS = 2_000L;
+    private static final long POLL_MS = 1_000L;
     private static final long FRESH_MS = 10_000L;
     private static final long FIND_EVERY_MS = 5 * 60_000L;
 
