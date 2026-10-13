@@ -161,13 +161,15 @@ var qfmt = function (v) { return v === 0 ? "0" : v < 1 ? fmt(v, 2) : v % 1 ? fmt
 
 // ---------------- settings ----------------
 var DEF = {
-  bom: "https://script.google.com/macros/s/AKfycbzAxvN1KMOv0bkS8wmDZDL6qPD5WZG8NfN602R5B6RC3RWfVyj2sHjMB3h3Ao5LmFA3/exec",
+  bom: "https://script.google.com/macros/s/AKfycby9mS0a151QD11oQ8DTuQ-hWZZbXrTNzC6RrtjRVEUvUa98ncfhENeuxiVDRpAk9zPU/exec",
   bomKey: "", db: "babai-dosa-default-rtdb.asia-southeast1.firebasedatabase.app", plan: "",
   outlets: "HSR,SJP,VTR,JPN", buffer: 5, pinHash: ""
 };
 function load(k, d) { try { var v = localStorage.getItem("babai_ip_" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
 function save(k, v) { try { localStorage.setItem("babai_ip_" + k, JSON.stringify(v)); } catch (e) {} }
 var cfg = Object.assign({}, DEF, load("cfg", {}));
+// browsers that saved the first BOM link move to the current one
+if (/AKfycbzAxvN1KMOv0bkS8wmDZDL6qPD5WZG8NfN602R5B6RC3RWfVyj2sHjMB3h3Ao5LmFA3/.test(cfg.bom)) { cfg.bom = DEF.bom; save("cfg", cfg); }
 async function sha(s) {
   try { var b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("babai-ip|" + s)); return Array.from(new Uint8Array(b)).map(function (x) { return ("0" + x.toString(16)).slice(-2); }).join(""); }
   catch (e) { return "plain:" + s; }
