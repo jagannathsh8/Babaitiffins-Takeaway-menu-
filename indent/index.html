@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Babai Indent Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: kitchen-ledger tool. Sticky control bar (date, outlet), summary strip, then tabbed sheets
+   in the same shape as the CP indent sheets and Transfer Orders the team already uses. */
+:root{
+  --bg:#f5f3ee; --surface:#fff; --ink:#1f1c17; --mute:#6e675b; --line:#e2ddd2; --soft:#efebe2;
+  --turmeric:#b97900; --turmeric-soft:#fdf0d2; --leaf:#2f7a3d; --leaf-soft:#e3f2e3; --chilli:#b3261e; --chilli-soft:#fbe4e1;
+  --drop1:#3b6fb6; --drop2:#b97900; --drop3:#7a4fb3;
+  --display:"Barlow Condensed","Arial Narrow",sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#161410; --surface:#201d18; --ink:#f1ebe0; --mute:#a99f8e; --line:#3a352c; --soft:#2a261f;
+  --turmeric:#f0b43a; --turmeric-soft:#3a2d10; --leaf:#7bc98a; --leaf-soft:#1d3322; --chilli:#f07b6f; --chilli-soft:#3d1f1b;
+  --drop1:#7fa8e6; --drop2:#f0b43a; --drop3:#b79be6; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--body);padding-top:env(safe-area-inset-top,0px)}
+[hidden]{display:none!important}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:0 40px}
+h1,h2,h3{font-family:var(--display);letter-spacing:.02em;margin:0;text-wrap:balance}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+select,button,input{font:inherit;color:var(--ink)}
+input[type=text],input[type=password],input[type=number],input[type=date],select{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+button:focus-visible,select:focus-visible,input:focus-visible,.chip:focus-visible{outline:2px solid var(--turmeric);outline-offset:2px}
+.btn{background:var(--ink);color:var(--bg);border:0;border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.note{font-size:12px;color:var(--mute)}
+.msg{min-height:1.2em;font-size:13px}.msg.ok{color:var(--leaf)}.msg.bad{color:var(--chilli)}
+
+/* lock */
+#lock{min-height:100vh;display:grid;place-items:center;padding-inline:16px}
+#lock form{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;width:min(340px,100%);text-align:center;display:grid;gap:12px}
+#lock h1{font-size:32px}#lock h1 b{color:var(--turmeric)}
+#lock input{font-size:28px;letter-spacing:.5em;text-align:center;width:100%}
+
+/* top */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding-block:10px}
+.brand{margin-right:auto}.brand h1{font-size:28px;font-weight:800}.brand h1 b{color:var(--turmeric)}
+.ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ctl label,.lbl{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;cursor:pointer;font-weight:500}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip small{opacity:.7}
+.toggle{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
+.icon{background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+
+.state{margin:14px 0 0;padding:10px 14px;border-radius:10px;background:var(--turmeric-soft);color:var(--ink)}
+.state.bad{background:var(--chilli-soft)}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0 12px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.stat span{display:block;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.stat b{display:block;font-family:var(--display);font-size:30px;font-weight:700;line-height:1.1}
+.stat small{display:block;color:var(--mute)}
+
+.tabs{display:flex;gap:2px;border-bottom:2px solid var(--line);overflow-x:auto}
+.tab{background:none;border:0;padding:10px 14px;font-family:var(--display);font-size:19px;font-weight:700;color:var(--mute);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--turmeric)}
+.panel{padding-top:16px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:10px}
+.bar p{margin:0;color:var(--mute);max-width:72ch}
+.sheet{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:760px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);background:var(--soft)}
+td:nth-child(2),th:nth-child(2){text-align:left;white-space:normal;min-width:190px}
+td.uom,th.uom{text-align:left;color:var(--mute)}
+tr.group td{background:var(--soft);text-align:left;font-family:var(--display);font-size:16px;font-weight:700;letter-spacing:.04em}
+th.d1{box-shadow:inset 0 3px 0 var(--drop1)}th.d2{box-shadow:inset 0 3px 0 var(--drop2)}th.d3{box-shadow:inset 0 3px 0 var(--drop3)}
+td input{width:70px;text-align:right;border:1px solid transparent;border-radius:6px;background:transparent;padding:3px 6px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+td input:hover{border-color:var(--line)}
+td input.edited{background:var(--turmeric-soft);border-color:var(--turmeric)}
+td input.zero{color:var(--mute)}
+.tot{font-weight:600}
+.delta{display:inline-block;min-width:54px;font-size:12px;padding:1px 6px;border-radius:999px;text-align:center}
+.up{background:var(--chilli-soft);color:var(--chilli)}.down{background:var(--leaf-soft);color:var(--leaf)}.flat{background:var(--soft);color:var(--mute)}
+tfoot td{font-weight:600;background:var(--soft)}
+.list{columns:2 260px;margin:6px 0 0;padding-left:18px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.box h3{font-size:20px;margin-bottom:6px}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);width:min(560px,94vw);padding:20px}
+dialog::backdrop{background:#0006}
+.form{display:grid;gap:10px}.form label{display:grid;gap:4px;font-size:13px}.form input{width:100%}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--mute);margin-top:6px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--turmeric);border-radius:50%;animation:spin 1s linear infinite;vertical-align:-2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none}}
+@media print{
+  .top,.tabs,.bar .ctl,.summary,.state,.noprint{display:none!important}
+  body{background:#fff;color:#000}.sheet{border:0}th{background:#eee;color:#000}
+  td input{border:0!important;background:none!important;color:#000}
+  .print-head{display:block!important}
+}
+.print-head{display:none;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<div id="lock"><form id="lockform"><h1>Babai <b>Indent</b> Planner</h1><p class="note">Enter the PIN</p>
+<input id="pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" aria-label="PIN"><button class="btn">Open</button><p id="lockmsg" class="msg bad" role="status"></p></form></div>
+
+<div id="app" hidden>
+<div class="top"><div class="wrap">
+  <div class="brand"><h1>Babai <b>Indent</b> Planner</h1></div>
+  <div class="ctl"><label for="date">Indent for</label><input type="date" id="date"><span id="dayname" class="note"></span></div>
+  <div class="ctl"><span class="lbl">Outlet</span><div class="chips" id="outlets" role="group" aria-label="Outlet"></div></div>
+  <label class="toggle"><input type="checkbox" id="holiday"> Holiday / festival</label>
+  <button class="icon" id="reload" title="Read the BOM and sales again">↻ Refresh</button>
+  <button class="icon" id="settingsBtn">Settings</button>
+</div></div>
+
+<div class="wrap">
+  <div id="state" class="state" role="status"></div>
+  <div class="summary" id="summary"></div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="t-cp" aria-selected="true">CP Indent</button>
+    <button class="tab" role="tab" id="t-rm" aria-selected="false">RM Indent</button>
+    <button class="tab" role="tab" id="t-ck" aria-selected="false">Central Kitchen</button>
+    <button class="tab" role="tab" id="t-acc" aria-selected="false">Accuracy</button>
+    <button class="tab" role="tab" id="t-chk" aria-selected="false">Data check</button>
+  </div>
+  <div id="panel" class="panel"></div>
+</div>
+</div>
+
+<dialog id="settings"><form method="dialog" class="form" id="setform">
+  <h2>Settings</h2>
+  <p class="note">Saved in this browser only. The keys are what let this page read your BOM and the outlets' sales; don't share them.</p>
+  <label>BOM feed (Apps Script web app URL)<input type="text" id="s-bom" autocomplete="off"></label>
+  <label>BOM key (the secret text in the script)<input type="password" id="s-bomkey" autocomplete="off"></label>
+  <label>Firebase database<input type="text" id="s-db" autocomplete="off"></label>
+  <label>Planner key (Babai Hub page → Prep Live data → Indent planner)<input type="text" id="s-plan" autocomplete="off"></label>
+  <label>Outlets (codes, in order)<input type="text" id="s-outlets" autocomplete="off"></label>
+  <label>Safety buffer %<input type="number" id="s-buf" min="0" max="50" step="1"></label>
+  <label>New PIN (leave empty to keep)<input type="password" id="s-pin" inputmode="numeric" maxlength="8" autocomplete="off"></label>
+  <div class="ctl"><button class="btn" value="save" id="s-save">Save</button><button class="btn ghost" value="cancel" formnovalidate>Cancel</button></div>
+</form></dialog>
+
+<script src="plan.js"></script>
+<script src="xlsx.full.min.js" defer></script>
+<script>
+(function () {
+"use strict";
+var P = window.BabaiPlan;
+var $ = function (id) { return document.getElementById(id); };
+var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+var fmt = function (v, d) { d = d == null ? 0 : d; return Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d }); };
+var qfmt = function (v) { return v === 0 ? "0" : v < 1 ? fmt(v, 2) : v % 1 ? fmt(v, 1) : fmt(v); };
+
+// ---------------- settings ----------------
+var DEF = {
+  bom: "https://script.google.com/macros/s/AKfycbzAxvN1KMOv0bkS8wmDZDL6qPD5WZG8NfN602R5B6RC3RWfVyj2sHjMB3h3Ao5LmFA3/exec",
+  bomKey: "", db: "babai-dosa-default-rtdb.asia-southeast1.firebasedatabase.app", plan: "",
+  outlets: "HSR,SJP,VTR,JPN", buffer: 5, pinHash: ""
+};
+function load(k, d) { try { var v = localStorage.getItem("babai_ip_" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function save(k, v) { try { localStorage.setItem("babai_ip_" + k, JSON.stringify(v)); } catch (e) {} }
+var cfg = Object.assign({}, DEF, load("cfg", {}));
+async function sha(s) {
+  try { var b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("babai-ip|" + s)); return Array.from(new Uint8Array(b)).map(function (x) { return ("0" + x.toString(16)).slice(-2); }).join(""); }
+  catch (e) { return "plain:" + s; }
+}
+
+// ---------------- PIN ----------------
+var PIN_DEFAULT_HASH = null;
+$("lockform").addEventListener("submit", async function (e) {
+  e.preventDefault();
+  var pin = $("pin").value.trim();
+  var want = cfg.pinHash || PIN_DEFAULT_HASH || (PIN_DEFAULT_HASH = await sha("1234"));
+  if ((await sha(pin)) !== want) { $("lockmsg").textContent = "Wrong PIN."; $("pin").value = ""; return; }
+  try { sessionStorage.setItem("babai_ip_open", "1"); } catch (x) {}
+  openApp();
+});
+function unlocked() { try { return sessionStorage.getItem("babai_ip_open") === "1"; } catch (e) { return false; } }
+
+// ---------------- state ----------------
+var S = { model: null, sales: {}, names: {}, sent: {}, outlet: "", date: "", holiday: false, tab: load("tab", "cp"), loading: false, err: "", bomAt: "" };
+function outletCodes() { return cfg.outlets.split(",").map(function (s) { return s.trim().toLowerCase().replace(/[^a-z0-9]/g, ""); }).filter(Boolean); }
+function tomorrow() { var d = new Date(); d.setDate(d.getDate() + 1); return P.ymd(d); }
+function dayName(s) { return P.parseYmd(s).toLocaleDateString("en-IN", { weekday: "long" }); }
+
+function openApp() {
+  $("lock").hidden = true; $("app").hidden = false;
+  S.date = $("date").value = tomorrow();
+  S.outlet = outletCodes()[0] || "";
+  if (!cfg.bomKey || !cfg.plan) { showSettings(); }
+  refresh();
+}
+if (unlocked()) openApp(); else $("pin").focus();
+
+// ---------------- data ----------------
+async function getJSON(url) {
+  var r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+async function refresh() {
+  S.loading = true; S.err = ""; render();
+  var problems = [];
+  try {
+    if (!cfg.bomKey) throw new Error("Add the BOM key in Settings.");
+    var feed = await getJSON(cfg.bom + (cfg.bom.indexOf("?") >= 0 ? "&" : "?") + "key=" + encodeURIComponent(cfg.bomKey));
+    if (!feed.ok) throw new Error(feed.error === "wrong key" ? "The BOM key is not right (Settings)." : (feed.error || "BOM feed error"));
+    S.model = P.buildModel(feed);
+    S.bomAt = feed.fetched || "";
+  } catch (e) { problems.push("BOM: " + (e.message || e)); S.model = S.model || null; }
+  try {
+    if (!cfg.plan) throw new Error("Add the planner key in Settings.");
+    var base = dbBase() + "/babai/plan/" + encodeURIComponent(cfg.plan);
+    var all = await getJSON(base + "/o.json");
+    S.sales = {}; S.names = {};
+    Object.keys(all || {}).forEach(function (code) {
+      var o = all[code] || {};
+      S.names[code] = o.n || code.toUpperCase();
+      var days = {};
+      Object.keys(o.d || {}).forEach(function (date) { days[date] = P.dayFromHub(o.d[date]); });
+      S.sales[code] = days;
+    });
+    var sent = await getJSON(base + "/sent.json");
+    S.sent = {};
+    Object.keys(sent || {}).forEach(function (code) { S.sent[code] = {}; Object.keys(sent[code] || {}).forEach(function (date) { try { S.sent[code][date] = JSON.parse(sent[code][date]); } catch (x) {} }); });
+    if (!Object.keys(S.sales).length) problems.push("Sales: no outlet has sent data yet. Each outlet's Babai Hub (2.1+) with Firebase set up sends it every 15 minutes.");
+  } catch (e) { problems.push("Sales: " + (e.message || e) + (String(e.message).indexOf("HTTP 401") >= 0 ? " (planner key not right?)" : "")); }
+  S.err = problems.join("  •  ");
+  S.loading = false;
+  render();
+}
+
+function dbBase() { var d = cfg.db.trim().replace(/\/$/, ""); return /^https?:\/\//.test(d) ? d : "https://" + d; }
+
+// ---------------- planning ----------------
+var CP_ORDER = ["CP - Breakfast sambar","CP - Lemon rice","CP - Pulihora","CP - Curd rice","CP - Veg Pulao","CP - Meals pappu","CP - Aloo curry","CP - Veg Hyderabadi Dum Biryani","CP - Gongura rice base","CP - Pappu rice base","CP - Pesarattu batter","CP - Tomato chutney base","CP - Ulavacharu base gravy","CP - Gobi sauce","CP - Dosa karam chutney","CP - Allam chutney","CP - Drumstick Soup","CP - Stuffed bajji chilli","CP - Dosa batter","CP - Idli batter","CP - Onion pakoda premix","CP - Coffee powder mixture","CP - Bajji premix","CP - Gobi premix","CP - Ragda premix","CP - Idli karam podi","CP - Dosa podi","CP - Gunpowder (tossed rice)","CP - Putnala Podi (Meals)","CP - Roasted peanut","CP - Roasted sooji","CP - Ragda","CP - Pav bhaji masala","CP - Chole","CP - Mint chutney","CP - Sweet chutney","CP - Samosa","CP - Nylon sev","CP - Pani puri","CP - Rose milk (Bottle)","CP - Kesar Badam Milk","CP - Mango lassi (bottle)","CP - Lassi (Bottle)","CP - Sugar syrup","CP - Custard","CP - Ragi Roti Dough","CP - Akki Roti Dough","CP - Mango delight","CP - Apricot Delight","FS - Putharekalu 1pc","CP - Junnu","CP - Meals Chutney","CP - Meals Curry","CP - Meals Fry","CP - Meals sambar","CP - Rasam","CP - Meals Sweet"];
+var FRUITS = /watermelon|pineapple|grape|apple|banana|pomegranate|muskmelon|papaya|orange|mango(?! pickle| pulp)|kiwi|guava|sapota|chikoo|fruit/i;
+
+var planCache = {};
+function planFor(code, date) {
+  var k = code + "|" + date + "|" + S.holiday + "|" + cfg.buffer;
+  if (!planCache[k] && S.model) planCache[k] = P.planOutlet(S.model, S.sales[code] || {}, date, { holiday: S.holiday, buffer: (+cfg.buffer || 0) / 100 });
+  return planCache[k];
+}
+function draftKey(code, date, kind) { return "draft_" + kind + "_" + code + "_" + date; }
+function itemInfo(key) { return (S.model && S.model.items[key]) || { name: key, uom: "", cost: 0 }; }
+
+/** CP rows for an outlet: [{key,name,uom,prop:[3],final:[3],usedLast,sentLast}] */
+function cpRows(code) {
+  var pl = planFor(code, S.date); if (!pl) return [];
+  var draft = load(draftKey(code, S.date, "cp"), {});
+  var order = CP_ORDER.map(P.norm), keys = Object.keys(pl.cp);
+  var extra = keys.filter(function (k) { return order.indexOf(k) < 0; }).sort();
+  var lastDate = P.addDays(S.date, -7), used = S.model && S.sales[code] && S.sales[code][lastDate] ? P.usedOn(S.model, S.sales[code][lastDate]).cp : null;
+  var sentLast = S.sent[code] && S.sent[code][lastDate] && S.sent[code][lastDate].cp;
+  return order.concat(extra).filter(function (k) { return pl.cp[k] || (S.model && S.model.items[k]); }).map(function (k) {
+    var info = itemInfo(k), uom = info.uom || "kg";
+    var prop = (pl.cp[k] || [0, 0, 0]).map(function (v) { return P.roundQty(v, uom); });
+    var name = info.name || CP_ORDER[order.indexOf(k)] || k;
+    return { key: k, name: name, uom: uom, prop: prop, final: draft[k] ? draft[k].slice() : prop.slice(),
+      usedLast: used ? (used[k] || 0) : null, sentLast: sentLast && sentLast[k] ? sentLast[k].reduce(function (a, b) { return a + b; }, 0) : null };
+  });
+}
+function rmRows(code) {
+  var pl = planFor(code, S.date); if (!pl) return [];
+  var draft = load(draftKey(code, S.date, "rm"), {});
+  return Object.keys(pl.rm).map(function (k) {
+    var info = itemInfo(k), q = P.roundQty(pl.rm[k], info.uom);
+    return { key: k, name: info.name, uom: info.uom || "kg", cost: info.cost || 0, prop: q, final: draft[k] != null ? draft[k] : q, fruit: FRUITS.test(info.name) };
+  }).filter(function (r) { return r.prop > 0 || r.final > 0; }).filter(function (r) { return !/^ro water$/i.test(r.name); })
+    .sort(function (a, b) { return (a.fruit - b.fruit) || a.name.localeCompare(b.name); });
+}
+
+// ---------------- render ----------------
+function render() {
+  $("dayname").textContent = S.date ? dayName(S.date) : "";
+  var codes = outletCodes();
+  $("outlets").innerHTML = codes.map(function (c) {
+    var n = Object.keys(S.sales[c] || {}).length;
+    return '<button class="chip" aria-pressed="' + (S.outlet === c) + '" data-o="' + c + '">' + esc((S.names[c] || c).toUpperCase()) + (n ? "" : " <small>(no data)</small>") + "</button>";
+  }).join("") + '<button class="chip" aria-pressed="' + (S.outlet === "all") + '" data-o="all">All outlets</button>';
+  var st = $("state");
+  if (S.loading) { st.className = "state"; st.innerHTML = '<span class="spinner"></span> Reading the BOM sheet and the outlets’ sales…'; }
+  else if (S.err) { st.className = "state bad"; st.textContent = S.err; }
+  else { st.className = "state"; st.textContent = "BOM: " + Object.keys(S.model.products).length + " products, read " + (S.bomAt ? new Date(S.bomAt).toLocaleTimeString() : "now") + " · Sales: " + Object.keys(S.sales).map(function (c) { return (S.names[c] || c) + " " + Object.keys(S.sales[c]).length + " days"; }).join(", "); }
+  document.querySelectorAll(".tab").forEach(function (t) { t.setAttribute("aria-selected", t.id === "t-" + S.tab); });
+  if (!S.model) { $("summary").innerHTML = ""; $("panel").innerHTML = S.loading ? "" : '<div class="box"><h3>Nothing to show yet</h3><p class="note">The planner needs the BOM sheet. Open Settings and check the BOM feed and key.</p></div>'; return; }
+  summary();
+  $("panel").innerHTML = { cp: cpPanel, rm: rmPanel, ck: ckPanel, acc: accPanel, chk: chkPanel }[S.tab]();
+}
+function codesShown() { return S.outlet === "all" ? outletCodes() : [S.outlet]; }
+function summary() {
+  var kg = 0, val = 0, items = 0, days = 0, pace = [];
+  codesShown().forEach(function (c) {
+    cpRows(c).forEach(function (r) { var t = r.final.reduce(function (a, b) { return a + b; }, 0); if (t) items++; if (/kg|ltr/i.test(r.uom)) kg += t; });
+    rmRows(c).forEach(function (r) { val += r.final * r.cost; });
+    var pl = planFor(c, S.date); if (pl) { days += pl.sources.length; pace.push(Math.round((pl.pace.raw - 1) * 100)); }
+  });
+  $("summary").innerHTML =
+    '<div class="stat"><span>CP lines to send</span><b class="num">' + items + "</b><small>" + (S.outlet === "all" ? "all outlets" : esc((S.names[S.outlet] || S.outlet).toUpperCase())) + " · 3 drops</small></div>" +
+    '<div class="stat"><span>CP weight (kg / ltr)</span><b class="num">' + fmt(kg) + "</b><small>incl. " + cfg.buffer + "% buffer</small></div>" +
+    '<div class="stat"><span>RM transfer value</span><b class="num">₹' + fmt(val) + "</b><small>at BOM cost per unit</small></div>" +
+    '<div class="stat"><span>Based on</span><b class="num">' + days + " days</b><small>" + (S.holiday ? "past Sundays" : "same weekday, 4 weeks") + (pace.length ? " · pace " + pace.map(function (p) { return (p >= 0 ? "+" : "") + p + "%"; }).join(", ") : "") + "</small></div>";
+}
+
+function cpPanel() {
+  var codes = codesShown(), single = codes.length === 1;
+  var rows = single ? cpRows(codes[0]) : mergeCP(codes);
+  var h = '<div class="bar"><p>Projected CP indent for <b>' + dayName(S.date) + " " + S.date.split("-").reverse().join("-") + "</b> per drop, in the outlet sheet’s order." + (single ? " Change any number before sending; changed cells stay highlighted." : " All outlets is read-only.") + "</p>" +
+    '<div class="ctl noprint">' + (single ? '<button class="btn ghost" id="resetcp">Back to projection</button><button class="btn ghost" id="sentcp">Save as sent</button>' : "") + '<button class="btn ghost" id="printBtn">Print</button><button class="btn" id="xlcp">Excel</button></div></div>' +
+    '<div class="print-head"><h2>BT CP INDENT – ' + esc(single ? (S.names[codes[0]] || codes[0]).toUpperCase() : "ALL OUTLETS") + " – " + S.date.split("-").reverse().join("-") + " " + dayName(S.date) + "</h2></div>" +
+    '<div class="sheet"><table><thead><tr><th>#</th><th>Item name</th><th class="uom">UOM</th><th class="d1">06:30</th><th class="d2">11:00</th><th class="d3">05:30</th><th>Total</th><th class="noprint">Used last ' + dayName(S.date).slice(0, 3) + '</th><th class="noprint">Sent last ' + dayName(S.date).slice(0, 3) + '</th><th class="noprint">vs used</th></tr></thead><tbody>';
+  rows.forEach(function (r, i) {
+    var tot = r.final.reduce(function (a, b) { return a + b; }, 0);
+    var d = r.usedLast ? Math.round((tot - r.usedLast) / r.usedLast * 100) : null;
+    h += "<tr><td class=\"num\">" + (i + 1) + "</td><td>" + esc(r.name) + '</td><td class="uom">' + esc(r.uom.toUpperCase()) + "</td>" +
+      r.final.map(function (v, k) { return "<td>" + (single ? '<input class="' + (v !== r.prop[k] ? "edited " : "") + (v === 0 ? "zero" : "") + '" inputmode="decimal" aria-label="' + esc(r.name) + " " + P.DROPS[k].label + '" data-cp="' + esc(r.key) + '" data-k="' + k + '" value="' + v + '">' : '<span class="num">' + qfmt(v) + "</span>") + "</td>"; }).join("") +
+      '<td class="num tot">' + qfmt(tot) + '</td><td class="num noprint">' + (r.usedLast == null ? "–" : qfmt(Math.round(r.usedLast * 10) / 10)) + '</td><td class="num noprint">' + (r.sentLast == null ? "–" : qfmt(r.sentLast)) + '</td><td class="noprint">' + (d == null ? "" : '<span class="delta num ' + (Math.abs(d) < 5 ? "flat" : d > 0 ? "up" : "down") + '">' + (d > 0 ? "+" : "") + d + "%</span>") + "</td></tr>";
+  });
+  h += '</tbody></table></div><p class="note">Drops: 6:30 covers orders until 11:00 · 11:00 covers 11:00–17:00 · 5:30 covers 17:00 to close. "Used" = what last week’s sales needed through the BOM (no buffer).</p>';
+  return h;
+}
+function mergeCP(codes) {
+  var map = {}, order = [];
+  codes.forEach(function (c) { cpRows(c).forEach(function (r) {
+    var m = map[r.key]; if (!m) { m = map[r.key] = { key: r.key, name: r.name, uom: r.uom, prop: [0, 0, 0], final: [0, 0, 0], usedLast: null, sentLast: null }; order.push(r.key); }
+    for (var k = 0; k < 3; k++) { m.prop[k] += r.prop[k]; m.final[k] += r.final[k]; }
+    if (r.usedLast != null) m.usedLast = (m.usedLast || 0) + r.usedLast;
+    if (r.sentLast != null) m.sentLast = (m.sentLast || 0) + r.sentLast;
+  }); });
+  return order.map(function (k) { return map[k]; });
+}
+
+function rmPanel() {
+  var codes = codesShown(), single = codes.length === 1;
+  var rows = single ? rmRows(codes[0]) : (function () { var m = {}; codes.forEach(function (c) { rmRows(c).forEach(function (r) { if (!m[r.key]) m[r.key] = Object.assign({}, r, { final: 0, prop: 0 }); m[r.key].final += r.final; m[r.key].prop += r.prop; }); });
+    return Object.keys(m).map(function (k) { return m[k]; }).sort(function (a, b) { return (a.fruit - b.fruit) || a.name.localeCompare(b.name); }); })();
+  var h = '<div class="bar"><p>Raw materials the outlet needs from the Central Warehouse for <b>' + dayName(S.date) + "</b>: what its dishes use directly, plus what goes into the items it makes itself (OP). CP items come from the central kitchen and are not in this list. Fruits are listed separately, as on today’s transfer orders.</p>" +
+    '<div class="ctl noprint">' + (single ? '<button class="btn ghost" id="sentrm">Save as sent</button>' : "") + '<button class="btn ghost" id="printBtn">Print</button><button class="btn" id="xlrm">Excel (Transfer Order)</button></div></div>' +
+    '<div class="print-head"><h2>Transfer Order – Central Warehouse → ' + esc(single ? (S.names[codes[0]] || codes[0]).toUpperCase() : "ALL OUTLETS") + " – " + S.date.split("-").reverse().join("/") + "</h2></div>" +
+    '<div class="sheet"><table><thead><tr><th>#</th><th>Item &amp; Description</th><th>Qty</th><th class="uom">Unit</th><th>Cost price</th><th>Amount</th></tr></thead><tbody>';
+  var grp = null, n = 0, sub = 0, total = 0;
+  function flush() { if (grp !== null) h += '<tr><td></td><td style="color:var(--mute)">' + (grp ? "Fruits" : "Raw materials") + ' total</td><td></td><td></td><td></td><td class="num tot">₹' + fmt(sub, 2) + "</td></tr>"; }
+  rows.forEach(function (r) {
+    if (r.fruit !== grp) { flush(); grp = r.fruit; sub = 0; h += '<tr class="group"><td colspan="6">' + (grp ? "Fruits · separate transfer order" : "Raw materials") + "</td></tr>"; }
+    var amt = r.final * r.cost; sub += amt; total += amt; n++;
+    h += '<tr><td class="num">' + n + "</td><td>" + esc(r.name) + "</td><td>" + (single ? '<input class="' + (r.final !== r.prop ? "edited" : "") + '" inputmode="decimal" aria-label="' + esc(r.name) + '" data-rm="' + esc(r.key) + '" value="' + r.final + '">' : '<span class="num">' + qfmt(r.final) + "</span>") + '</td><td class="uom">' + esc(r.uom) + '</td><td class="num">₹' + fmt(r.cost, 2) + '</td><td class="num">₹' + fmt(amt, 2) + "</td></tr>";
+  });
+  flush();
+  h += '</tbody><tfoot><tr><td></td><td>Total</td><td></td><td></td><td></td><td class="num">₹' + fmt(total, 2) + "</td></tr></tfoot></table></div>";
+  if (!rows.length) h += '<p class="note">No raw materials yet: the outlet needs sales history, and its dishes need BOM rows.</p>';
+  return h;
+}
+
+function ckPanel() {
+  var codes = outletCodes(), per = {}, sum = {}, order = [];
+  codes.forEach(function (c) { cpRows(c).forEach(function (r) {
+    if (!sum[r.key]) { sum[r.key] = { name: r.name, uom: r.uom, d: [0, 0, 0] }; order.push(r.key); }
+    (per[r.key] = per[r.key] || {})[c] = r.final.reduce(function (a, b) { return a + b; }, 0);
+    for (var k = 0; k < 3; k++) sum[r.key].d[k] += r.final[k];
+  }); });
+  var need = {}; order.forEach(function (k) { need[k] = sum[k].d.reduce(function (a, b) { return a + b; }, 0); });
+  var ck = P.explodeCP(S.model, need);
+  var h = '<div class="bar"><p>What the central kitchen has to make for all outlets for <b>' + dayName(S.date) + "</b>, by drop (outlets’ changed numbers included), and the raw materials that takes.</p>" +
+    '<div class="ctl noprint"><button class="btn ghost" id="printBtn">Print</button><button class="btn" id="xlck">Excel</button></div></div>' +
+    '<div class="sheet"><table><thead><tr><th>#</th><th>CP item</th><th class="uom">UOM</th>' + codes.map(function (c) { return "<th>" + esc((S.names[c] || c).toUpperCase()) + "</th>"; }).join("") + '<th class="d1">06:30</th><th class="d2">11:00</th><th class="d3">05:30</th><th>Make</th></tr></thead><tbody>';
+  var n = 0;
+  order.forEach(function (k) { var t = need[k]; if (!t) return; n++;
+    h += '<tr><td class="num">' + n + "</td><td>" + esc(sum[k].name) + '</td><td class="uom">' + esc(sum[k].uom.toUpperCase()) + "</td>" + codes.map(function (c) { return '<td class="num">' + qfmt(per[k][c] || 0) + "</td>"; }).join("") + sum[k].d.map(function (v) { return '<td class="num">' + qfmt(v) + "</td>"; }).join("") + '<td class="num tot">' + qfmt(t) + "</td></tr>"; });
+  h += '</tbody></table></div><h3 style="margin:20px 0 8px;font-size:22px">Raw materials for production</h3><div class="sheet"><table style="min-width:520px"><thead><tr><th>#</th><th>Raw material</th><th class="uom">Unit</th><th>Needed</th><th>Cost</th></tr></thead><tbody>';
+  var tot = 0; n = 0;
+  Object.keys(ck.rm).sort(function (a, b) { return itemInfo(a).name.localeCompare(itemInfo(b).name); }).forEach(function (k) { var i = itemInfo(k), q = ck.rm[k]; if (/^ro water$/i.test(i.name)) return; n++; tot += q * (i.cost || 0);
+    h += '<tr><td class="num">' + n + "</td><td>" + esc(i.name) + '</td><td class="uom">' + esc(i.uom) + '</td><td class="num tot">' + qfmt(Math.round(q * 100) / 100) + '</td><td class="num">₹' + fmt(q * (i.cost || 0)) + "</td></tr>"; });
+  h += '</tbody><tfoot><tr><td></td><td>Total</td><td></td><td></td><td class="num">₹' + fmt(tot) + "</td></tr></tfoot></table></div>";
+  var miss = Object.keys(ck.missing);
+  if (miss.length) h += '<p class="note">No recipe rows in the BOM for: ' + miss.map(function (k) { return esc(itemInfo(k).name); }).join(", ") + ". Add them to the sheet to include their raw materials.</p>";
+  return h;
+}
+
+function accPanel() {
+  var codes = codesShown(), rows = [];
+  for (var i = 7; i >= 1; i--) {
+    var date = P.addDays(P.ymd(new Date()), -i), used = 0, sent = 0, proj = 0, haveSent = false, haveUsed = false;
+    codes.forEach(function (c) {
+      var day = S.sales[c] && S.sales[c][date];
+      if (day) { haveUsed = true; var u = P.usedOn(S.model, day).cp; Object.keys(u).forEach(function (k) { if (/kg|ltr/i.test(itemInfo(k).uom)) used += u[k]; }); }
+      var p = P.planOutlet(S.model, S.sales[c] || {}, date, { buffer: (+cfg.buffer || 0) / 100 });
+      Object.keys(p.cp).forEach(function (k) { if (/kg|ltr/i.test(itemInfo(k).uom)) proj += p.cp[k].reduce(function (a, b) { return a + b; }, 0); });
+      var s = S.sent[c] && S.sent[c][date] && S.sent[c][date].cp;
+      if (s) { haveSent = true; Object.keys(s).forEach(function (k) { if (/kg|ltr/i.test(itemInfo(k).uom)) sent += s[k].reduce(function (a, b) { return a + b; }, 0); }); }
+    });
+    rows.push({ date: date, used: haveUsed ? used : null, sent: haveSent ? sent : null, proj: proj });
+  }
+  var max = Math.max.apply(null, rows.map(function (r) { return Math.max(r.used || 0, r.sent || 0, r.proj || 0); }).concat([1]));
+  var W = 760, H = 240, L = 50, B = 28, T = 12, sx = (W - L - 10) / rows.length, y = function (v) { return H - B - (v / max) * (H - B - T); };
+  var step = Math.pow(10, Math.floor(Math.log10(max / 4 || 1))); var tick = Math.ceil(max / 4 / step) * step;
+  var svg = '<svg viewBox="0 0 ' + W + " " + H + '" width="100%" style="min-width:540px" role="img" aria-label="Projected, sent and used CP per day">';
+  for (var g = 0; g <= max; g += tick) svg += '<line x1="' + L + '" x2="' + (W - 10) + '" y1="' + y(g) + '" y2="' + y(g) + '" stroke="var(--line)"/><text x="' + (L - 6) + '" y="' + (y(g) + 4) + '" text-anchor="end" font-size="11" fill="var(--mute)">' + fmt(g) + "</text>";
+  rows.forEach(function (r, i) { var x = L + i * sx + sx * 0.18, bw = sx * 0.2;
+    [["proj", "var(--drop1)"], ["sent", "var(--turmeric)"], ["used", "var(--leaf)"]].forEach(function (p, j) { var v = r[p[0]]; if (v == null) return; svg += '<rect x="' + (x + j * bw) + '" y="' + y(v) + '" width="' + (bw - 3) + '" height="' + (H - B - y(v)) + '" rx="2" fill="' + p[1] + '"/>'; });
+    svg += '<text x="' + (L + i * sx + sx / 2) + '" y="' + (H - 9) + '" text-anchor="middle" font-size="12" fill="var(--mute)">' + P.parseYmd(r.date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric" }) + "</text>"; });
+  svg += "</svg>";
+  var t = rows.map(function (r) { var acc = r.sent != null && r.used ? Math.round(100 - Math.abs(r.sent - r.used) / r.used * 100) : null;
+    return "<tr><td>" + esc(r.date) + '</td><td class="num">' + fmt(r.proj) + '</td><td class="num">' + (r.sent == null ? "not saved" : fmt(r.sent)) + '</td><td class="num">' + (r.used == null ? "no sales" : fmt(r.used)) + '</td><td class="num">' + (r.sent != null && r.used != null ? fmt(r.sent - r.used) : "–") + "</td><td>" + (acc == null ? "" : '<span class="delta num ' + (acc >= 92 ? "down" : acc >= 85 ? "flat" : "up") + '">' + acc + "%</span>") + "</td></tr>"; }).join("");
+  return '<div class="bar"><p>Last 7 days, kg / ltr CP items: what the planner projected, what was saved as sent, and what sales actually used through the BOM. "Save as sent" on the CP tab fills the middle bar.</p></div>' +
+    '<div class="box" style="overflow-x:auto">' + svg + '<div class="legend"><span><i style="background:var(--drop1)"></i>Projected</span><span><i style="background:var(--turmeric)"></i>Sent</span><span><i style="background:var(--leaf)"></i>Used</span></div></div>' +
+    '<div class="sheet"><table style="min-width:560px"><thead><tr><th style="text-align:left">Day</th><th>Projected</th><th>Sent</th><th>Used</th><th>Left over</th><th>Accuracy</th></tr></thead><tbody>' + t + "</tbody></table></div>";
+}
+
+function chkPanel() {
+  var h = "";
+  outletCodes().forEach(function (c) {
+    var pl = planFor(c, S.date), days = Object.keys(S.sales[c] || {}).sort();
+    h += '<div class="box"><h3>' + esc((S.names[c] || c).toUpperCase()) + "</h3><p class=\"note\">" + (days.length ? days.length + " days of sales (" + days[0] + " → " + days[days.length - 1] + "). Projection for " + S.date + " uses: " + (pl.sources.join(", ") || "–") : "No sales yet from this outlet’s Babai Hub.") + "</p>";
+    var un = Object.keys(pl.unmatched).sort(function (a, b) { return pl.unmatched[b] - pl.unmatched[a]; });
+    if (un.length) h += "<p><b>Dishes sold but not in the BOM</b> (not counted, add them to the sheet with the same name as in Petpooja):</p><ul class=\"list\">" + un.map(function (n) { return "<li>" + esc(n) + ' <span class="note num">(' + fmt(pl.unmatched[n], 1) + "/day)</span></li>"; }).join("") + "</ul>";
+    var om = Object.keys(pl.opMissing);
+    if (om.length) h += "<p><b>Outlet-made items (OP) without their own recipe rows</b> (their CP / RM can’t be worked out):</p><ul class=\"list\">" + om.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>";
+    if (!un.length && !om.length && days.length) h += '<p class="note">Every dish sold matches the BOM.</p>';
+    h += "</div>";
+  });
+  return '<div class="bar"><p>Things the planner can’t count yet. Fix them in the BOM sheet; the planner reads it again on Refresh.</p></div>' + h;
+}
+
+// ---------------- export ----------------
+function xl(name, aoa, cols) {
+  if (!window.XLSX) { flash("Excel is still loading, try again in a moment."); return; }
+  var ws = XLSX.utils.aoa_to_sheet(aoa); ws["!cols"] = cols; var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Indent"); XLSX.writeFile(wb, name);
+}
+function dmy() { return S.date.split("-").reverse().join("-"); }
+function outName(c) { return (S.names[c] || c).toUpperCase(); }
+function exportCP() {
+  var codes = codesShown(), single = codes.length === 1, rows = single ? cpRows(codes[0]) : mergeCP(codes);
+  var aoa = [["BT CP INDENT"], [single ? outName(codes[0]) : "ALL OUTLETS", "", dmy(), dayName(S.date)], ["#", "Item name", "UOM", "06:30", "11:00", "05:30", "Total"]];
+  rows.forEach(function (r, i) { aoa.push([i + 1, r.name, r.uom.toUpperCase()].concat(r.final, [r.final.reduce(function (a, b) { return a + b; }, 0)])); });
+  xl("CP-Indent-" + (single ? outName(codes[0]) : "ALL") + "-" + dmy() + ".xlsx", aoa, [{ wch: 4 }, { wch: 34 }, { wch: 6 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }]);
+}
+function exportRM() {
+  var codes = codesShown(), single = codes.length === 1;
+  var rows = single ? rmRows(codes[0]) : [];
+  if (!single) codes.forEach(function (c) { rmRows(c).forEach(function (r) { var m = rows.find(function (x) { return x.key === r.key; }); if (m) m.final += r.final; else rows.push(Object.assign({}, r)); }); });
+  var aoa = [["Transfer Order"], ["Source", "Central Warehouse", "Destination", single ? "Babai Tiffins, " + outName(codes[0]) : "All outlets"], ["Date", dmy()], [], ["#", "Item & Description", "Qty", "Unit", "Cost Price", "Amount"]];
+  var tot = 0, n = 0;
+  [false, true].forEach(function (fruit) { rows.filter(function (r) { return r.fruit === fruit; }).forEach(function (r) { n++; var a = Math.round(r.final * r.cost * 100) / 100; tot += a; aoa.push([n, r.name, r.final, r.uom, r.cost, a]); }); });
+  aoa.push([], ["", "Total", "", "", "", Math.round(tot * 100) / 100]);
+  xl("RM-Transfer-" + (single ? outName(codes[0]) : "ALL") + "-" + dmy() + ".xlsx", aoa, [{ wch: 4 }, { wch: 34 }, { wch: 8 }, { wch: 6 }, { wch: 10 }, { wch: 12 }]);
+}
+function exportCK() {
+  var codes = outletCodes(), per = {}, order = [], sum = {};
+  codes.forEach(function (c) { cpRows(c).forEach(function (r) { if (!sum[r.key]) { sum[r.key] = { name: r.name, uom: r.uom, d: [0, 0, 0] }; order.push(r.key); } (per[r.key] = per[r.key] || {})[c] = r.final.reduce(function (a, b) { return a + b; }, 0); for (var k = 0; k < 3; k++) sum[r.key].d[k] += r.final[k]; }); });
+  var aoa = [["CENTRAL KITCHEN PRODUCTION", "", dmy(), dayName(S.date)], ["#", "CP item", "UOM"].concat(codes.map(outName), ["06:30", "11:00", "05:30", "Make"])];
+  order.forEach(function (k, i) { var t = sum[k].d.reduce(function (a, b) { return a + b; }, 0); if (t) aoa.push([i + 1, sum[k].name, sum[k].uom.toUpperCase()].concat(codes.map(function (c) { return per[k][c] || 0; }), sum[k].d, [t])); });
+  xl("Central-Kitchen-" + dmy() + ".xlsx", aoa, [{ wch: 4 }, { wch: 34 }, { wch: 6 }]);
+}
+async function saveSent(kind) {
+  var c = S.outlet; if (S.outlet === "all") return;
+  var cp = {}, rm = {};
+  cpRows(c).forEach(function (r) { if (r.final.some(function (v) { return v > 0; })) cp[r.key] = r.final; });
+  rmRows(c).forEach(function (r) { if (r.final > 0) rm[r.key] = r.final; });
+  var prev = (S.sent[c] && S.sent[c][S.date]) || {};
+  var rec = { cp: kind === "cp" ? cp : prev.cp || null, rm: kind === "rm" ? rm : prev.rm || null, at: Date.now() };
+  try {
+    var url = dbBase() + "/babai/plan/" + encodeURIComponent(cfg.plan) + "/sent/" + c + "/" + S.date + ".json";
+    var r = await fetch(url, { method: "PUT", body: JSON.stringify(JSON.stringify(rec)) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    (S.sent[c] = S.sent[c] || {})[S.date] = rec;
+    flash("Saved as sent for " + outName(c) + " · " + dmy());
+  } catch (e) { flash("Couldn’t save: " + e.message); }
+}
+function flash(t) { var st = $("state"); st.className = "state"; st.textContent = t; setTimeout(render, 3500); }
+
+// ---------------- events ----------------
+document.addEventListener("click", function (e) {
+  var t = e.target.closest(".tab"); if (t) { S.tab = t.id.slice(2); save("tab", S.tab); render(); return; }
+  var o = e.target.closest("[data-o]"); if (o) { S.outlet = o.dataset.o; render(); return; }
+  var id = e.target.id;
+  if (id === "reload") { planCache = {}; refresh(); }
+  else if (id === "settingsBtn") showSettings();
+  else if (id === "resetcp") { save(draftKey(S.outlet, S.date, "cp"), {}); render(); }
+  else if (id === "xlcp") exportCP(); else if (id === "xlrm") exportRM(); else if (id === "xlck") exportCK();
+  else if (id === "sentcp") saveSent("cp"); else if (id === "sentrm") saveSent("rm");
+  else if (id === "printBtn") window.print();
+});
+document.addEventListener("change", function (e) {
+  if (e.target.id === "date") { S.date = e.target.value || tomorrow(); render(); }
+  else if (e.target.id === "holiday") { S.holiday = e.target.checked; render(); }
+  else if (e.target.dataset.cp) {
+    var k = e.target.dataset.cp, d = load(draftKey(S.outlet, S.date, "cp"), {});
+    var row = cpRows(S.outlet).find(function (r) { return r.key === k; });
+    var f = (d[k] || row.final).slice(); f[+e.target.dataset.k] = Math.max(0, parseFloat(e.target.value) || 0); d[k] = f;
+    save(draftKey(S.outlet, S.date, "cp"), d); render();
+  } else if (e.target.dataset.rm) {
+    var d2 = load(draftKey(S.outlet, S.date, "rm"), {}); d2[e.target.dataset.rm] = Math.max(0, parseFloat(e.target.value) || 0);
+    save(draftKey(S.outlet, S.date, "rm"), d2); render();
+  }
+});
+function showSettings() {
+  $("s-bom").value = cfg.bom; $("s-bomkey").value = cfg.bomKey; $("s-db").value = cfg.db; $("s-plan").value = cfg.plan;
+  $("s-outlets").value = cfg.outlets; $("s-buf").value = cfg.buffer; $("s-pin").value = "";
+  $("settings").showModal();
+}
+$("setform").addEventListener("submit", async function (e) {
+  if (e.submitter && e.submitter.value !== "save") return;
+  cfg.bom = $("s-bom").value.trim() || DEF.bom; cfg.bomKey = $("s-bomkey").value.trim(); cfg.db = $("s-db").value.trim() || DEF.db;
+  cfg.plan = $("s-plan").value.trim(); cfg.outlets = $("s-outlets").value.trim() || DEF.outlets; cfg.buffer = Math.max(0, Math.min(50, +$("s-buf").value || 0));
+  var np = $("s-pin").value.trim(); if (np) cfg.pinHash = await sha(np);
+  save("cfg", cfg); planCache = {};
+  if (outletCodes().indexOf(S.outlet) < 0) S.outlet = outletCodes()[0];
+  refresh();
+});
+})();
+</script>
+</body>
+</html>
