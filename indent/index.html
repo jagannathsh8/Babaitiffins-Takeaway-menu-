@@ -139,7 +139,7 @@ dialog::backdrop{background:#0006}
   <h2>Settings</h2>
   <p class="note">Saved in this browser only. The keys are what let this page read your BOM and the outlets' sales; don't share them.</p>
   <label>BOM feed (Apps Script web app URL)<input type="text" id="s-bom" autocomplete="off"></label>
-  <label>BOM key (the secret text in the script)<input type="password" id="s-bomkey" autocomplete="off"></label>
+  <label>BOM key (leave empty if the script has no password)<input type="password" id="s-bomkey" autocomplete="off"></label>
   <label>Firebase database<input type="text" id="s-db" autocomplete="off"></label>
   <label>Planner key (Babai Hub page → Prep Live data → Indent planner)<input type="text" id="s-plan" autocomplete="off"></label>
   <label>Outlets (codes, in order)<input type="text" id="s-outlets" autocomplete="off"></label>
@@ -197,7 +197,7 @@ function openApp() {
   $("lock").hidden = true; $("app").hidden = false;
   S.date = $("date").value = tomorrow();
   S.outlet = outletCodes()[0] || "";
-  if (!cfg.bomKey || !cfg.plan) { showSettings(); }
+  if (!cfg.plan) { showSettings(); }
   refresh();
 }
 if (unlocked()) openApp(); else $("pin").focus();
@@ -212,8 +212,7 @@ async function refresh() {
   S.loading = true; S.err = ""; render();
   var problems = [];
   try {
-    if (!cfg.bomKey) throw new Error("Add the BOM key in Settings.");
-    var feed = await getJSON(cfg.bom + (cfg.bom.indexOf("?") >= 0 ? "&" : "?") + "key=" + encodeURIComponent(cfg.bomKey));
+    var feed = await getJSON(cfg.bom + (cfg.bomKey ? (cfg.bom.indexOf("?") >= 0 ? "&" : "?") + "key=" + encodeURIComponent(cfg.bomKey) : ""));
     if (!feed.ok) throw new Error(feed.error === "wrong key" ? "The BOM key is not right (Settings)." : (feed.error || "BOM feed error"));
     S.model = P.buildModel(feed);
     S.bomAt = feed.fetched || "";

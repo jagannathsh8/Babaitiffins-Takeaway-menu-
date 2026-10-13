@@ -2,7 +2,7 @@
 
 Static website (Netlify, `https://babaidosa.netlify.app/indent/`) for ops: CP indent per outlet and drop, RM transfer order, central kitchen production and accuracy.
 
-* **BOM:** read live from the Google Sheet "BOM SCRAP" → tab **Master BOM** through a read-only Apps Script web app (secret key typed once in Settings).
+* **BOM:** read live from the Google Sheet "BOM SCRAP" → tab **Master BOM** through a read-only Apps Script web app (an optional key, typed once in Settings).
   * Ingredient kind by SKU: 1xxx raw material, 2xxx CP (central kitchen), 3xxx OP (made at the outlet, expanded through its own rows).
   * BOM Qty (Recipe Qty ÷ RM yield) per product unit ÷ product Yield.
 * **Sales:** each outlet's Babai Hub (2.1+) sends dish counts per hour per day to Firebase `/babai/plan/<planner key>/o/<outlet>/d/<date>`. The planner key is shown on the Hub page.
