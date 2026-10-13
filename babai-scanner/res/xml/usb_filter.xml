@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- USB barcode scanners: HID (keyboard) devices -->
+    <usb-device class="3"/>
+</resources>
