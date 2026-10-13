@@ -149,6 +149,7 @@ func cloudStep(now time.Time) {
 	registerOutlet()
 	ensureRules(now)
 	syncPromo(now)
+	syncPlan(now)
 	mu.Lock()
 	fresh := !lastBoard.IsZero() && now.Sub(lastBoard) < freshFor
 	tokens, meta, live := tokensRaw, metaRaw, liveRaw
@@ -331,11 +332,12 @@ func resetStreams() {
 	}
 	registeredOutlet = ""
 	markPromoDirty()
+	resetPlan()
 }
 
 // rulesJSON: who may read what (see the layout above). Customers: outlet names, one token at a
 // time, the dosa wait and the dish carousel. Everything else needs the secret (the hubs).
-const rulesJSON = `{"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"promo":{".read":true},"pimg":{".read":true},"t":{"$tok":{".read":true}},"sq":{"$k":{".write":"root.child('babai/o/'+$o+'/pk/'+$k).exists()","$id":{".validate":"newData.hasChildren(['c','t']) && newData.child('c').isString() && newData.child('c').val().length <= 80 && newData.child('t').isNumber() && $id.length <= 40"}}},"sr":{"$k":{".read":"root.child('babai/o/'+$o+'/pk/'+$k).exists()"}}}}}}}`
+const rulesJSON = `{"rules":{".read":false,".write":false,"babai":{"outlets":{".read":true},"o":{"$o":{"meta":{".read":true},"promo":{".read":true},"pimg":{".read":true},"t":{"$tok":{".read":true}},"sq":{"$k":{".write":"root.child('babai/o/'+$o+'/pk/'+$k).exists()","$id":{".validate":"newData.hasChildren(['c','t']) && newData.child('c').isString() && newData.child('c').val().length <= 80 && newData.child('t').isNumber() && $id.length <= 40"}}},"sr":{"$k":{".read":"root.child('babai/o/'+$o+'/pk/'+$k).exists()"}}}},"plan":{"$k":{".read":true,"sent":{"$ol":{"$d":{".write":true,".validate":"newData.isString() && newData.val().length < 200000"}}}}}}}}`
 
 var (
 	rulesOK    bool
@@ -353,7 +355,7 @@ func ensureRules(now time.Time) {
 	if err != nil {
 		return
 	}
-	if strings.Contains(string(b), `"sq"`) && strings.Contains(string(b), `"pimg"`) {
+	if strings.Contains(string(b), `"plan"`) && strings.Contains(string(b), `"sq"`) && strings.Contains(string(b), `"pimg"`) {
 		rulesOK = true
 		return
 	}

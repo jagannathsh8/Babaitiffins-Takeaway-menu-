@@ -366,6 +366,7 @@ a{color:var(--accent)}
 <section id="prep"><div class="step">Prep Live</div><h2>Prep Live data (kept on this PC)</h2>
 <p class="hint">Every Prep Live tablet reads its recipes and history from here when it starts, and sends each finished day back. The first tablet that connects sends the Petpooja history and recipes it came with, so nothing has to be typed in. A new or reset tablet gets the whole history at once.</p>
 <p id="prepst" class="hint">–</p>
+<h3>Indent planner</h3><p class="hint">This hub sends each day's dish counts per hour (no customer details) for the Babai Indent Planner website. Planner key (the same on every outlet's hub): <b><code id="plankey">–</code></b> — type it once in the planner's settings.</p>
 <details><summary class="hint">Add older data or new recipes (files from Babai support)</summary>
 <label for="prepkind">What is the file?</label>
 <select id="prepkind"><option value="history">Recorded days (history .txt)</option><option value="seed">Petpooja history (prep_days.txt) – replaces the old one</option><option value="profile">Recipes (prep_profile.json) – replaces the old one</option></select>
@@ -471,7 +472,7 @@ function loadPrep(){fetch("/prepdata").then(function(r){return r.json()}).then(f
  $("prepst").innerHTML=(p.items?"Recipes: <b>"+p.items+" prep items</b>":"Recipes: <b>not here yet</b> (sent by the first Prep Live tablet)")
  +" \u2022 Petpooja history: "+(p.seedDays?"<b>"+p.seedDays+" days</b> ("+p.seedFrom+" \u2192 "+p.seedTo+")":"none yet")
  +" \u2022 Recorded by tablets: "+(p.days?"<b>"+p.days+" days</b> ("+p.from+" \u2192 "+p.to+")":"none yet")
- +(p.lastUp?" \u2022 last sent "+ago(Math.round((Date.now()-p.lastUp)/1000))+" from "+esc(p.lastBy):"")})}
+ +"";$("plankey").textContent=p.plannerKey||"set up Firebase (Step 2) first";$("prepst").innerHTML+=(p.lastUp?" \u2022 last sent "+ago(Math.round((Date.now()-p.lastUp)/1000))+" from "+esc(p.lastBy):"")})}
 $("prepup").addEventListener("click",function(){var f=$("prepfile").files[0];if(!f){show($("prepmsg"),{ok:false,msg:"Choose the file first."});return}
  $("prepmsg").textContent="Uploading…";$("prepmsg").className="msg";var rd=new FileReader();rd.onload=function(){post("/prepdata",{Op:$("prepkind").value,Data:rd.result}).then(function(r){show($("prepmsg"),r);loadPrep()})};rd.readAsText(f)});
 loadPrep();setInterval(loadPrep,30000);

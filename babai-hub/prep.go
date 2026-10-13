@@ -362,7 +362,7 @@ func prepStatus() map[string]any {
 	for _, f := range files {
 		td = append(td, strings.TrimSuffix(filepath.Base(f), ".txt"))
 	}
-	st := map[string]any{"items": items, "seedDays": len(sd), "days": len(td)}
+	st := map[string]any{"items": items, "seedDays": len(sd), "days": len(td), "plannerKey": plannerKey()}
 	if len(sd) > 0 {
 		st["seedFrom"], st["seedTo"] = sd[0], sd[len(sd)-1]
 	}

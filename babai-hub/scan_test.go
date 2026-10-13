@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -398,5 +400,59 @@ func TestUpdate(t *testing.T) {
 	}
 	if _, err := downloadChecked(srv.URL+"/babai-hub.exe", strings.Repeat("0", 64), "2.3"); err == nil || !strings.Contains(err.Error(), "sha256") {
 		t.Fatalf("wrong sha256 accepted: %v", err)
+	}
+}
+
+func TestPlannerData(t *testing.T) {
+	fb, _, done := setup(t)
+	defer done()
+	now := time.Now()
+	day := now.AddDate(0, 0, -3)
+	date := day.Format("2006-01-02")
+	at := time.Date(day.Year(), day.Month(), day.Day(), 8, 15, 0, 0, time.Local).UnixMilli()
+	lines := []Rec{
+		{ID: 1, C: at, St: "10", I: []ArchItem{{N: "Masala Dosa", Q: 2}, {N: "Filter Coffee", Q: 1}, {N: "Vada", Q: 1, X: 1}}},
+		{ID: 2, C: at + 3600_000, St: "10", I: []ArchItem{{N: "Masala Dosa", Q: 1}}},
+		{ID: 3, C: at, St: "0", I: []ArchItem{{N: "Masala Dosa", Q: 5}}}, // cancelled KOT
+	}
+	var b strings.Builder
+	for _, r := range lines {
+		j, _ := json.Marshal(r)
+		b.Write(j)
+		b.WriteByte('\n')
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "days", date+".jsonl"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// an older day only the Prep Live tablet recorded
+	old := now.AddDate(0, 0, -20).Format("2006-01-02")
+	if _, _, err := mergeHistory("D|"+old+"|Idli (2 Pcs)|7:4 8:6\nT|"+old+"|0|7:1\nC|"+old+"||\n", false); err != nil {
+		t.Fatal(err)
+	}
+	key := plannerKey()
+	if len(key) != 24 {
+		t.Fatalf("key %q", key)
+	}
+	syncPlan(now)
+	got := fb.get("/babai/plan/" + key + "/o/vtr/d/" + date + ".json")
+	if got != `{"r":[["Filter Coffee","8:1"],["Masala Dosa","8:2 9:1"]],"s":"hub"}` {
+		t.Fatalf("hub day: %s", got)
+	}
+	if got := fb.get("/babai/plan/" + key + "/o/vtr/d/" + old + ".json"); got != `{"r":[["Idli (2 Pcs)","7:4 8:6"]],"s":"tablet"}` {
+		t.Fatalf("tablet day: %s", got)
+	}
+	if fb.get("/babai/plan/"+key+"/o/vtr/n.json") != `"VTR"` {
+		t.Fatal("outlet name")
+	}
+	n := fb.count("PUT /babai/plan/")
+	planMu.Lock()
+	planTodayAt, planSweepAt = time.Time{}, time.Time{}
+	planMu.Unlock()
+	syncPlan(now)
+	if fb.count("PUT /babai/plan/") != n {
+		t.Fatal("unchanged days sent again")
+	}
+	if !strings.Contains(rulesJSON, `"plan":{"$k":{".read":true`) {
+		t.Fatal("rules")
 	}
 }
