@@ -44,7 +44,7 @@ var (
 	pkSynced   string // phones list last written to Firebase
 	pkTryAt    time.Time
 	sqWake     = make(chan struct{}, 1)
-	sqLive     bool // the live Firebase connection is open
+	sqLive     bool                     // the live Firebase connection is open
 	answers    = map[string]time.Time{} // "key/id" -> written
 )
 

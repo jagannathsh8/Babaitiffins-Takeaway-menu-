@@ -110,3 +110,12 @@ The Hub page, **Step 5**, or tray icon → **Scanner phones & Bridge Print…**:
 * **KDS rider screen:** it can read its orders from the Hub at `http://<hub PC>:8790/rider.json`. That gives all online orders from Petpooja with no 300-line limit, slots from Bridge Print, and "ready since" times kept on the PC.
 * **Windows firewall:** the first time a phone or TV connects, Windows may ask about Babai Hub. Allow it on **private networks**.
 * The Hub adds the new Firebase rules by itself. If that ever fails, paste the rules above again.
+
+## PIN
+
+The Hub page asks for a PIN before it shows or changes anything (first time: **1234**). It also asks when you open the page from the tray icon.
+
+* A correct PIN keeps that browser unlocked for 12 hours. **Lock now** locks it at once.
+* Change the PIN under **This PC → PIN** (4 to 8 digits).
+* 5 wrong PINs in a row block it for one minute.
+* Scanner phones and the KDS rider screen don't need the PIN: they use their own pairing and a read-only feed.

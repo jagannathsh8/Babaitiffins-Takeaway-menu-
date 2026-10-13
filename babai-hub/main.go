@@ -45,6 +45,7 @@ type Config struct {
 	Port         int     `json:"port"`
 	Bridge       string  `json:"bridge,omitempty"` // Bridge Print address (empty: found on the Petpooja PC)
 	Phones       []Phone `json:"phones,omitempty"` // paired Babai Scanner phones
+	Pin          string  `json:"pin,omitempty"`    // hub page PIN (empty = 1234)
 }
 
 // Phone is one paired Babai Scanner phone. Key: its private pairing key (in the QR code).
@@ -99,19 +100,22 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "babai-hub "+version) })
-	mux.HandleFunc("/", localOnly(handleHome))
-	mux.HandleFunc("/status.json", localOnly(handleStatus))
-	mux.HandleFunc("/settings", localOnly(handleSettings))
-	mux.HandleFunc("/test", localOnly(handleTest))
-	mux.HandleFunc("/petpooja", localOnly(handlePetpooja))
-	mux.HandleFunc("/autostart", localOnly(handleAutostart))
-	mux.HandleFunc("/poster", localOnly(handlePoster))
-	mux.HandleFunc("/customer-page", localOnly(handleCustomerPage))
-	mux.HandleFunc("/pause", localOnly(handlePause))
-	mux.HandleFunc("/promo", localOnly(handlePromo))
-	mux.HandleFunc("/promo/img", localOnly(handlePromoImage))
-	mux.HandleFunc("/phones", localOnly(handlePhones))
-	mux.HandleFunc("/bridge", localOnly(handleBridge))
+	mux.HandleFunc("/", localOnly(pinned(handleHome)))
+	mux.HandleFunc("/status.json", localOnly(pinned(handleStatus)))
+	mux.HandleFunc("/settings", localOnly(pinned(handleSettings)))
+	mux.HandleFunc("/test", localOnly(pinned(handleTest)))
+	mux.HandleFunc("/petpooja", localOnly(pinned(handlePetpooja)))
+	mux.HandleFunc("/autostart", localOnly(pinned(handleAutostart)))
+	mux.HandleFunc("/poster", localOnly(pinned(handlePoster)))
+	mux.HandleFunc("/customer-page", localOnly(pinned(handleCustomerPage)))
+	mux.HandleFunc("/pause", localOnly(pinned(handlePause)))
+	mux.HandleFunc("/promo", localOnly(pinned(handlePromo)))
+	mux.HandleFunc("/promo/img", localOnly(pinned(handlePromoImage)))
+	mux.HandleFunc("/phones", localOnly(pinned(handlePhones)))
+	mux.HandleFunc("/unlock", localOnly(handleUnlock))
+	mux.HandleFunc("/lock", localOnly(handleLock))
+	mux.HandleFunc("/pin", localOnly(pinned(handlePinChange)))
+	mux.HandleFunc("/bridge", localOnly(pinned(handleBridge)))
 	// shop Wi-Fi (other devices): scanner phones and the KDS rider screen
 	mux.HandleFunc("/scan", handleScan)
 	mux.HandleFunc("/rider.json", handleRider)

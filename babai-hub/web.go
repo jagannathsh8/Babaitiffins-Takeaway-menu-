@@ -323,6 +323,10 @@ a{color:var(--accent)}
 <div class="msg" id="amsg" role="status"></div>
 <p class="hint">Cloud use this month (<span id="month"></span>): <span id="use"></span>. Firebase's free plan allows 10 GB downloaded a month and 1 GB stored.</p>
 <p class="hint">Finished KOTs are also saved on this PC in <code id="dir"></code>\days</p>
+<h3>PIN</h3><p class="hint">The page asks for the PIN (first time: 1234) and stays open in this browser for 12 hours.</p>
+<form id="fpin"><label for="pold">Current PIN</label><input type="password" id="pold" inputmode="numeric" maxlength="8" autocomplete="off">
+<label for="pnew">New PIN (4 to 8 digits)</label><input type="password" id="pnew" inputmode="numeric" maxlength="8" autocomplete="off">
+<div class="row"><button>Change PIN</button><button type="button" class="ghost" id="lockBtn">Lock now</button></div></form><p id="pinmsg" class="msg"></p>
 </section>
 </div>
 
@@ -370,7 +374,8 @@ var $=function(i){return document.getElementById(i)},loaded=false,qrDone="";
 var OT={1:"Delivery",2:"Pick-up",3:"Dine-in"},ST={"9":"Food ready","10":"Dispatched","0":"Cancelled"};
 function ago(s){if(s<0)return "never";if(s<60)return s+" s ago";if(s<3600)return Math.round(s/60)+" min ago";return Math.round(s/3600)+" h ago"}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
-function post(u,b){return fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Babai-Hub":"1"},body:JSON.stringify(b)}).then(function(r){return r.json()})}
+function post(u,b){return fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Babai-Hub":"1"},body:JSON.stringify(b)}).then(function(r){if(r.status===401){location.reload()}return r.json()})}
+var _f=window.fetch;window.fetch=function(u,o){return _f(u,o).then(function(r){if(r.status===401&&!(o&&o.method==="POST"))location.reload();return r})};
 function show(el,r){el.textContent=r.msg;el.className="msg "+(r.ok?"ok":"bad")}
 function refresh(){fetch("/status.json").then(function(r){return r.json()}).then(function(s){
  if(!loaded){$("server").value=s.server||"";$("outlet").value=s.outlet||"";$("loc").value=(s.lat||s.lng)?(s.lat+", "+s.lng):"";$("db").value=(s.db||"").replace(/^https:\/\//,"");$("page").value=s.page||"";loaded=true}
@@ -451,6 +456,8 @@ $("plist").addEventListener("click",function(e){var b=e.target.closest("button")
  if(b.dataset.op==="qr"){post("/phones",{Op:"qr",Key:b.dataset.k}).then(function(r){if(r.ok)pqr(r.qr,r.msg);else show($("phmsg"),r)});return}
  if(b.dataset.op==="remove"&&confirm("Remove "+b.dataset.n+"? It won't be able to mark orders any more.")){post("/phones",{Op:"remove",Key:b.dataset.k}).then(function(r){show($("phmsg"),r);$("pqrwrap").hidden=true;phQR="";loadPhones()})}});
 loadPhones();setInterval(loadPhones,5000);
+$("fpin").addEventListener("submit",function(e){e.preventDefault();post("/pin",{Old:$("pold").value,New:$("pnew").value}).then(function(r){show($("pinmsg"),r);if(r.ok){$("pold").value="";$("pnew").value=""}})});
+$("lockBtn").addEventListener("click",function(){post("/lock",{}).then(function(){location.reload()})});
 if(location.hash==="#scanners")setTimeout(function(){$("scanners").scrollIntoView()},300);
 
 if(location.hash==="#dishes")setTimeout(function(){$("dishes").scrollIntoView()},300);

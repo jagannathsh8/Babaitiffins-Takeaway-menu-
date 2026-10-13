@@ -23,11 +23,11 @@ func TestScanMarksFoodReady(t *testing.T) {
 	now := time.Now()
 	pp.set(
 		onlineRow(501, 41, "1", "250787919580744", now.Add(-9*time.Minute), "Masala Dosa", 1308051404, 1),
-		onlineRow(501, 41, "1", "250787919580744", now.Add(-9*time.Minute), "Filter Coffee", 1308051405, 9),   // already ready
-		onlineRow(501, 41, "1", "250787919580744", now.Add(-9*time.Minute), "Vada", 1308051406, -9),          // cancelled
-		onlineRow(502, 42, "1", "8496851046", now.Add(-5*time.Minute), "Idli", 1308051407, 1),                // Zomato-like id
-		onlineRow(503, 43, "9", "250712345678001", now.Add(-20*time.Minute), "Pesarattu", 1308051408, 9),     // already ready
-		row(600, 7, 3, "1", now, "Ghee Dosa", "Dosa", 1, 1),                                                  // dine-in
+		onlineRow(501, 41, "1", "250787919580744", now.Add(-9*time.Minute), "Filter Coffee", 1308051405, 9), // already ready
+		onlineRow(501, 41, "1", "250787919580744", now.Add(-9*time.Minute), "Vada", 1308051406, -9),         // cancelled
+		onlineRow(502, 42, "1", "8496851046", now.Add(-5*time.Minute), "Idli", 1308051407, 1),               // Zomato-like id
+		onlineRow(503, 43, "9", "250712345678001", now.Add(-20*time.Minute), "Pesarattu", 1308051408, 9),    // already ready
+		row(600, 7, 3, "1", now, "Ghee Dosa", "Dosa", 1, 1),                                                 // dine-in
 	)
 	if err := pollOnce(cfg.Server); err != nil {
 		t.Fatal(err)
@@ -253,4 +253,57 @@ func TestLiveQueueWakes(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("cancel did not end the stream")
 	}
+}
+
+func TestPin(t *testing.T) {
+	dataDir = t.TempDir()
+	cfg = Config{}
+	h := pinned(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("secret page")) })
+	get := func(cookie string, accept string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "/status.json", nil)
+		if accept != "" {
+			r.Header.Set("Accept", accept)
+		}
+		if cookie != "" {
+			r.AddCookie(&http.Cookie{Name: pinCookie, Value: cookie})
+		}
+		w := httptest.NewRecorder()
+		h(w, r)
+		return w
+	}
+	if w := get("", ""); w.Code != http.StatusUnauthorized {
+		t.Fatalf("locked JSON: %d", w.Code)
+	}
+	if w := get("", "text/html"); !strings.Contains(w.Body.String(), "Enter the PIN") {
+		t.Fatal("locked page should ask for the PIN")
+	}
+	unlock := func(pin string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, "/unlock", strings.NewReader(`{"Pin":"`+pin+`"}`))
+		r.Header.Set("X-Babai-Hub", "1")
+		w := httptest.NewRecorder()
+		handleUnlock(w, r)
+		return w
+	}
+	if w := unlock("0000"); strings.Contains(w.Body.String(), `"ok":true`) || len(w.Result().Cookies()) > 0 {
+		t.Fatal("wrong PIN unlocked")
+	}
+	w := unlock("1234")
+	cs := w.Result().Cookies()
+	if len(cs) != 1 || cs[0].Name != pinCookie || !cs[0].HttpOnly {
+		t.Fatalf("cookie %v %s", cs, w.Body.String())
+	}
+	if w := get(cs[0].Value, ""); w.Body.String() != "secret page" {
+		t.Fatal("unlocked browser refused")
+	}
+	if w := get("forged", ""); w.Code != http.StatusUnauthorized {
+		t.Fatal("forged cookie accepted")
+	}
+	// 5 wrong in a row: blocked for a minute, even for the right PIN
+	for i := 0; i < 5; i++ {
+		unlock("9999")
+	}
+	if w := unlock("1234"); !strings.Contains(w.Body.String(), "Wait a minute") {
+		t.Fatal("not blocked after 5 wrong PINs")
+	}
+	pinBlocked = time.Time{}
 }
