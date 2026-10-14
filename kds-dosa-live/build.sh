@@ -76,6 +76,22 @@ if new not in s:
     open(p, "w").write(s)
 PY
 grep -q "const/16 v2, 0x7d0" "$CAP"
+# Self-update (AppUpdate): our install results come back through Petpooja's own manifest
+# receiver; hand those to AppUpdate first (it returns true for ours, false for anything else).
+IRR="$WORK/dec/smali_classes4/com/pp/kds/core/update/InstallResultReceiver.smali"
+python3 - "$IRR" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+head = ".method public onReceive(Landroid/content/Context;Landroid/content/Intent;)V\n    .locals 3\n"
+hook = ("    invoke-static {p1, p2}, Lcom/pp/kds/dosa/AppUpdate;->onInstallResult(Landroid/content/Context;Landroid/content/Intent;)Z\n\n"
+        "    move-result v0\n\n    if-eqz v0, :babai_not_ours\n\n    return-void\n\n    :babai_not_ours\n")
+if "dosa/AppUpdate" not in s:
+    assert s.count(head) == 1, "unexpected InstallResultReceiver shape"
+    s = s.replace(head, head + hook)
+    open(p, "w").write(s)
+PY
+grep -q "AppUpdate;->onInstallResult" "$IRR"
 # The camera scan screen is replaced by src/com/pp/kds/scan/ScannerActivity.java (same class name,
 # so the manifest and the KDS camera button stay as they are). ScannerBridge is kept unchanged.
 rm -f "$WORK"/dec/smali_classes4/com/pp/kds/scan/ScannerActivity*.smali

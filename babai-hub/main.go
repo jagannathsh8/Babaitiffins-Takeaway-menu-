@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	version     = "2.4"
+	version     = "2.5"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -100,6 +100,7 @@ func main() {
 	go petpoojaLoop()
 	go bridgeLoop()
 	go updateLoop()
+	go kdsMirrorLoop()
 	go scanQueueLoop()
 
 	mux := http.NewServeMux()
@@ -119,6 +120,7 @@ func main() {
 	mux.HandleFunc("/unlock", localOnly(handleUnlock))
 	mux.HandleFunc("/lock", localOnly(handleLock))
 	mux.HandleFunc("/pin", localOnly(pinned(handlePinChange)))
+	mux.HandleFunc("/kds/", handleKDS) // KDS app update for the screens on the Wi-Fi
 	mux.HandleFunc("/hide", localOnly(pinned(handleHide)))
 	mux.HandleFunc("/bridge", localOnly(pinned(handleBridge)))
 	// shop Wi-Fi (other devices): scanner phones and the KDS rider screen

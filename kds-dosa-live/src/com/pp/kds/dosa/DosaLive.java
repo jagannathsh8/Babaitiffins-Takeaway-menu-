@@ -277,6 +277,7 @@ public final class DosaLive {
         BridgeSlots.setAddress(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getString("bridge_addr", ""));
         BridgeSlots.autoFind(ctx.getApplicationContext()); // Bridge Print on the Petpooja PC, when not set
         HiddenBrands.load(ctx);
+        AppUpdate.start(ctx); // new KDS builds from the Babai Hub / Netlify site
         HubFeed.start(ctx); // rider orders from the Babai Hub PC, when it is on the Wi-Fi
         riderMaxMin = 0;            // ready orders stay until Petpooja shows them dispatched / cancelled
         riders.setMaxMinutes(0);
@@ -360,6 +361,10 @@ public final class DosaLive {
             }
         }
         reloadIfQuiet(now);
+        try {
+            AppUpdate.tick(current == null ? null : current.get(), now);
+        } catch (Throwable ignored) {
+        }
         try {
             if (!seedApplied && PrepLive.available()) {
                 stats.setSeedAvg(PrepLive.seedDosaAvg()); // real Petpooja Dine-In dosa average
@@ -942,8 +947,21 @@ public final class DosaLive {
         final android.widget.RadioGroup camFlash = radios(a, new String[]{"Off", "On", "Auto (when dark)"}, RiderCam.flash());
         box.addView(camFlash);
 
+        // -- app updates --
+        box.addView(heading(a, "App updates"));
+        TextView upd = new TextView(a);
+        upd.setText(AppUpdate.status() + "\nNew builds come from the Babai Hub (or the internet) and install "
+                + "between 3 and 6 am: tap Install when Android asks.");
+        upd.setTextIsSelectable(true);
+        box.addView(upd);
+
         new android.app.AlertDialog.Builder(a)
                 .setTitle("\uD83D\uDEF5 Rider screen settings")
+                .setNeutralButton("Update now", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface dlg, int which) {
+                        AppUpdate.now(a);
+                    }
+                })
                 .setView(scrollable(a, box))
                 .setPositiveButton("Save", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface dlg, int which) {

@@ -236,8 +236,9 @@ func installUpdate() {
 // handleUpdate (hub page): GET status; POST {op: "check"|"now"|"on"|"off"}.
 func handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
+		kds := kdsStatus()
 		updMu.Lock()
-		st := map[string]any{"version": version, "state": updState, "on": autoUpdateOn(), "ready": updReadyV}
+		st := map[string]any{"version": version, "state": updState, "on": autoUpdateOn(), "ready": updReadyV, "kds": kds}
 		if !updChecked.IsZero() {
 			st["checked"] = updChecked.UnixMilli()
 		}
@@ -263,6 +264,7 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		reply(w, true, map[bool]string{true: "Automatic updates on.", false: "Automatic updates off."}[on])
 	case "check", "now":
+		go kdsCheck()
 		select {
 		case updWake <- in.Op == "now":
 		default:
