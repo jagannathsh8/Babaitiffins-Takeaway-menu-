@@ -7,6 +7,7 @@ package main
 // Address: typed on the hub page, or found by itself on the Petpooja PC (port 8787).
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -118,7 +119,11 @@ func bridgePoll(addr string) error {
 			continue
 		}
 		var root any
-		if json.Unmarshal(body, &root) != nil {
+		// UseNumber: order IDs like Ownly's 1791976083241811062 (19 digits) lose their last digits
+		// as float64, so they never matched an order and showed no slot.
+		dec := json.NewDecoder(bytes.NewReader(body))
+		dec.UseNumber()
+		if dec.Decode(&root) != nil {
 			last = fmt.Errorf("%s: not JSON", p)
 			continue
 		}
@@ -187,6 +192,8 @@ func bridgeRead(o map[string]any, child bool, order, token string) (string, stri
 		switch t := v.(type) {
 		case string:
 			sv = strings.TrimSpace(t)
+		case json.Number:
+			sv = t.String()
 		case float64:
 			sv = strconv.FormatFloat(t, 'f', -1, 64)
 		default:
