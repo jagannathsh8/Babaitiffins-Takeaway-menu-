@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHiddenBrands(t *testing.T) {
@@ -83,5 +84,31 @@ func TestBridgeNestedJobs(t *testing.T) {
 	}
 	if _, ok := m["1791982278801803444"]; ok {
 		t.Fatalf("order without a token got one: %v", m)
+	}
+}
+
+func TestBridgeKeepsSlotsAfterJobLeaves(t *testing.T) {
+	body := `{"jobs":[{"token":24,"orderId":"1791982801171825483"},{"token":7,"orderId":"250951448167204"}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/state" {
+			_, _ = w.Write([]byte(body))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	if err := bridgePoll(addr); err != nil {
+		t.Fatal(err)
+	}
+	body = `{"jobs":[{"token":7,"orderId":"250951448167204"}]}` // the Ownly job left the list
+	brMu.Lock()
+	brProbeAt = time.Time{}
+	brMu.Unlock()
+	if err := bridgePoll(addr); err != nil {
+		t.Fatal(err)
+	}
+	if slotFor("1791982801171825483") != "24" || slotFor("250951448167204") != "7" {
+		t.Fatalf("slots %v / seen %v", brSlots, brSeen)
 	}
 }

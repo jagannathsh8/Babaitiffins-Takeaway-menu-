@@ -25,19 +25,22 @@ const (
 	bridgeFindWait = 2 * time.Minute
 )
 
-var bridgePaths = []string{"/state", "/api/state", "/display/state", "/api/display/state"}
+var bridgePaths = []string{"/state", "/api/state", "/display/state", "/api/display/state", "/api/orders", "/orders", "/api/tokens", "/api/display"}
 
 var (
-	brMu      sync.Mutex
-	brSlots   = map[string]string{} // order digits -> slot
-	brOKAt    time.Time
-	brErr     string
-	brPath    string
-	brAuto    string // address found by itself
-	brNote    string
-	brTriedAt time.Time
-	brRaw     []byte // last answer, for "find an order" on the hub page
-	brClient  = &http.Client{Timeout: 4 * time.Second}
+	brMu       sync.Mutex
+	brSlots    = map[string]string{} // order digits -> slot
+	brOKAt     time.Time
+	brErr      string
+	brPath     string
+	brAuto     string // address found by itself
+	brNote     string
+	brTriedAt  time.Time
+	brRaw      []byte // last answers, for "find an order" on the hub page
+	brPathsAll []string
+	brSeen     = map[string]brSeenSlot{} // every slot seen, kept 4 h: Bridge Print's list only holds recent print jobs
+	brProbeAt  time.Time
+	brClient   = &http.Client{Timeout: 4 * time.Second}
 )
 
 func bridgeAddr() string {
@@ -106,13 +109,19 @@ func bridgeFind() {
 }
 
 func bridgePoll(addr string) error {
+	// Read every Bridge Print page that answers (settings + print jobs on one, the slot board on
+	// another) and combine the slots. Pages are looked for again every 2 minutes.
 	brMu.Lock()
-	paths := bridgePaths
-	if brPath != "" {
-		paths = []string{brPath}
+	paths := brPathsAll
+	if len(paths) == 0 || time.Since(brProbeAt) > 2*time.Minute {
+		paths = bridgePaths
+		brProbeAt = time.Now()
 	}
 	brMu.Unlock()
 	var last error
+	m := map[string]string{}
+	var ok []string
+	var raw bytes.Buffer
 	for _, p := range paths {
 		body, err := httpGetText("http://" + addr + p)
 		if err != nil {
@@ -128,15 +137,29 @@ func bridgePoll(addr string) error {
 			last = fmt.Errorf("%s: not JSON", p)
 			continue
 		}
-		m := map[string]string{}
 		bridgeWalk(root, m, 0)
+		ok = append(ok, p)
+		raw.WriteString("### " + p + "\n")
+		raw.Write(body)
+		raw.WriteString("\n")
+	}
+	if len(ok) > 0 {
 		brMu.Lock()
-		brSlots, brOKAt, brErr, brPath, brRaw = m, time.Now(), "", p, body
+		now := time.Now()
+		for o, s := range m {
+			brSeen[o] = brSeenSlot{s, now}
+		}
+		for o, x := range brSeen {
+			if now.Sub(x.at) > brKeep {
+				delete(brSeen, o)
+			}
+		}
+		brSlots, brOKAt, brErr, brPath, brPathsAll, brRaw = m, now, "", ok[0], ok, raw.Bytes()
 		brMu.Unlock()
 		return nil
 	}
 	brMu.Lock()
-	brPath = ""
+	brPath, brPathsAll = "", nil
 	brMu.Unlock()
 	if last == nil {
 		last = fmt.Errorf("no answer")
@@ -267,6 +290,13 @@ func bridgeTokenKey(lk string) bool {
 	return true
 }
 
+type brSeenSlot struct {
+	slot string
+	at   time.Time
+}
+
+const brKeep = 4 * time.Hour
+
 // slotFor: the Bridge Print slot of a platform order ID ("" when unknown).
 func slotFor(orderID string) string {
 	d := digitsOnly(orderID)
@@ -281,10 +311,13 @@ func slotFor(orderID string) string {
 	if s, ok := brSlots[d]; ok {
 		return s
 	}
-	for k, s := range brSlots { // same order written slightly differently: last 8+ digits
+	if x, ok := brSeen[d]; ok {
+		return x.slot // printed earlier; its job has left Bridge Print's list since
+	}
+	for k, x := range brSeen { // same order written slightly differently: last 8+ digits
 		n := min(len(k), len(d))
 		if n >= 8 && (strings.HasSuffix(k, d) || strings.HasSuffix(d, k)) {
-			return s
+			return x.slot
 		}
 	}
 	return ""
@@ -354,9 +387,9 @@ func handleBridgeFind(w http.ResponseWriter, r *http.Request) {
 	brMu.Lock()
 	raw := string(brRaw)
 	slot := ""
-	for k, s := range brSlots {
+	for k, x := range brSeen {
 		if len(q) >= 4 && strings.HasSuffix(k, q) {
-			slot = k + " → slot " + s
+			slot = k + " → slot " + x.slot + " (seen " + x.at.Format("15:04") + ")"
 			break
 		}
 	}
@@ -384,7 +417,11 @@ func handleBridgeFind(w http.ResponseWriter, r *http.Request) {
 			i = at + len(q)
 		}
 		if n == 0 {
-			b.WriteString("This number is not in Bridge Print's data at all (Bridge Print has no slot for it).")
+			if slot != "" {
+				b.WriteString("Its print job has left Bridge Print's list; the hub keeps the slot it saw.")
+			} else {
+				b.WriteString("This number is not in Bridge Print's data now, and the hub hasn't seen a slot for it since it started.")
+			}
 		}
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
