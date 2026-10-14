@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -43,7 +44,22 @@ var (
 	planTodayAt time.Time
 	planSweepAt time.Time
 	planNameAt  string
+	planState   = "not sent yet"
+	planDaysOK  = map[string]bool{}
 )
+
+func setPlanState(s string) {
+	planMu.Lock()
+	planState = s
+	planMu.Unlock()
+}
+
+// planStatus: what the hub page shows under the planner key.
+func planStatus() string {
+	planMu.Lock()
+	defer planMu.Unlock()
+	return planState
+}
 
 // plannerKey: the same for every hub using the same Firebase secret.
 func plannerKey() string {
@@ -190,6 +206,9 @@ func syncPlan(now time.Time) {
 	key := plannerKey()
 	code := outletCode(getConfig().Outlet)
 	if key == "" || code == "" {
+		if code == "" {
+			setPlanState("not sent: fill in the outlet name (Step 2)")
+		}
 		return
 	}
 	base := "/babai/plan/" + key + "/o/" + code
@@ -206,10 +225,15 @@ func syncPlan(now time.Time) {
 	planMu.Unlock()
 	if nameDue {
 		body, _ := json.Marshal(strings.TrimSpace(getConfig().Outlet))
-		if fb(http.MethodPut, base+"/n", "", body) == nil {
+		if err := fb(http.MethodPut, base+"/n", "", body); err == nil {
 			planMu.Lock()
 			planNameAt = getConfig().Outlet
+			if len(planDaysOK) == 0 {
+				planState = "connected as " + code + " · no days with orders to send yet"
+			}
 			planMu.Unlock()
+		} else {
+			setPlanState("couldn't send to Firebase: " + err.Error())
 		}
 	}
 	var dates []string
@@ -245,17 +269,20 @@ func syncPlan(now time.Time) {
 		}
 		if err := fb(http.MethodPut, base+"/d/"+date, "", body); err != nil {
 			log.Printf("planner: %v", err)
+			setPlanState("couldn't send " + date + " to Firebase: " + err.Error())
 			return
 		}
 		planMu.Lock()
 		planSent[date] = h
+		planDaysOK[date] = true
+		planState = fmt.Sprintf("sent as %s · %d days · last %s at %s", code, len(planDaysOK), date, now.Format("15:04"))
 		planMu.Unlock()
 	}
 }
 
 func resetPlan() {
 	planMu.Lock()
-	planSent = map[string]string{}
+	planSent, planDaysOK = map[string]string{}, map[string]bool{}
 	planTodayAt, planSweepAt, planNameAt = time.Time{}, time.Time{}, ""
 	planMu.Unlock()
 }
