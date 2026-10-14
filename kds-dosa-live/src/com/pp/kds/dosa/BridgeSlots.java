@@ -88,7 +88,36 @@ final class BridgeSlots {
             int n = Math.min(k.length(), d.length());
             if (n >= 8 && (k.endsWith(d) || d.endsWith(k))) return e.getValue();
         }
-        return "";
+        return roundedMatch(m, d);
+    }
+
+    /**
+     * Bridge Print (JavaScript) keeps numbers to ~16 digits: a 19-digit Ownly order 1791982601318835770
+     * comes back as 1791982601318835700. For long numbers, the nearest one within that rounding.
+     */
+    static String roundedMatch(Map<String, String> m, String d) {
+        if (d.length() < 17 || d.length() > 19) return "";
+        double want;
+        try {
+            want = Double.parseDouble(d);
+        } catch (NumberFormatException e) {
+            return "";
+        }
+        String best = "";
+        double bestGap = 2048;
+        for (Map.Entry<String, String> e : m.entrySet()) {
+            String k = e.getKey();
+            if (k.length() != d.length()) continue;
+            try {
+                double gap = Math.abs(Double.parseDouble(k) - want);
+                if (gap <= bestGap) {
+                    best = e.getValue();
+                    bestGap = gap;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return best;
     }
 
     /**

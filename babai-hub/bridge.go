@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -320,7 +321,34 @@ func slotFor(orderID string) string {
 			return x.slot
 		}
 	}
-	return ""
+	return roundedMatch(d)
+}
+
+// roundedMatch: Bridge Print (JavaScript) keeps numbers to ~16 digits, so a 19-digit Ownly order
+// 1791982601318835770 comes back as e.g. 1791982601318835700. For long numbers, the order whose
+// number is within that rounding (and nearest) is the same order.
+func roundedMatch(d string) string {
+	if len(d) < 17 || len(d) > 19 {
+		return ""
+	}
+	want, err := strconv.ParseFloat(d, 64)
+	if err != nil {
+		return ""
+	}
+	best, bestGap := "", 2048.0
+	for k, x := range brSeen {
+		if len(k) != len(d) {
+			continue
+		}
+		v, err := strconv.ParseFloat(k, 64)
+		if err != nil {
+			continue
+		}
+		if gap := math.Abs(v - want); gap <= bestGap {
+			best, bestGap = x.slot, gap
+		}
+	}
+	return best
 }
 
 func bridgeStatus() map[string]any {
@@ -393,10 +421,15 @@ func handleBridgeFind(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	if slot == "" && len(q) >= 17 {
+		if s := roundedMatch(q); s != "" {
+			slot = q + " → slot " + s + " (Bridge Print has this number rounded)"
+		}
+	}
 	brMu.Unlock()
 	var b strings.Builder
 	if len(q) < 4 {
-		b.WriteString("Type at least the last 4 digits of the order number.")
+		b.WriteString("Type the order number: the last 4+ digits, or the whole number for Ownly orders.")
 	} else if raw == "" {
 		b.WriteString("Nothing received from Bridge Print yet.")
 	} else {

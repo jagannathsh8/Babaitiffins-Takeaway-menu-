@@ -112,3 +112,28 @@ func TestBridgeKeepsSlotsAfterJobLeaves(t *testing.T) {
 		t.Fatalf("slots %v / seen %v", brSlots, brSeen)
 	}
 }
+
+func TestBridgeRoundedOwnlyIDs(t *testing.T) {
+	// Bridge Print (JavaScript) rounds 19-digit IDs: 1791982601318835770 -> 1791982601318835700
+	body := `{"jobs":[{"token":12,"orderId":1791982601318835700},{"token":13,"orderId":1791982537269922000},{"token":7,"orderId":250951448167204}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
+	defer srv.Close()
+	brMu.Lock()
+	brSeen, brProbeAt, brPathsAll = map[string]brSeenSlot{}, time.Time{}, nil
+	brMu.Unlock()
+	if err := bridgePoll(strings.TrimPrefix(srv.URL, "http://")); err != nil {
+		t.Fatal(err)
+	}
+	if s := slotFor("1791982601318835770"); s != "12" {
+		t.Fatalf("5770 -> %q", s)
+	}
+	if s := slotFor("1791982537269921921"); s != "13" {
+		t.Fatalf("1921 -> %q", s)
+	}
+	if s := slotFor("1791999999999999999"); s != "" {
+		t.Fatalf("unrelated order got slot %q", s)
+	}
+	if slotFor("250951448167204") != "7" {
+		t.Fatal("swiggy")
+	}
+}
