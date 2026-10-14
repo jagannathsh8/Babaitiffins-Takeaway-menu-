@@ -189,7 +189,12 @@ function unlocked() { try { return sessionStorage.getItem("babai_ip_open") === "
 
 // ---------------- state ----------------
 var S = { model: null, sales: {}, names: {}, sent: {}, outlet: "", date: "", holiday: false, tab: load("tab", "cp"), loading: false, err: "", bomAt: "" };
-function outletCodes() { return cfg.outlets.split(",").map(function (s) { return s.trim().toLowerCase().replace(/[^a-z0-9]/g, ""); }).filter(Boolean); }
+function outletCodes() {
+  var c = cfg.outlets.split(",").map(function (s) { return s.trim().toLowerCase().replace(/[^a-z0-9]/g, ""); }).filter(Boolean);
+  // outlets whose hub uses another name (e.g. "Sarjapur" for SJP) still show, with the hub's name
+  Object.keys((typeof S === "object" && S.sales) || {}).forEach(function (k) { if (c.indexOf(k) < 0) c.push(k); });
+  return c;
+}
 function tomorrow() { var d = new Date(); d.setDate(d.getDate() + 1); return P.ymd(d); }
 function dayName(s) { return P.parseYmd(s).toLocaleDateString("en-IN", { weekday: "long" }); }
 
@@ -232,7 +237,7 @@ async function refresh() {
     var sent = await getJSON(base + "/sent.json");
     S.sent = {};
     Object.keys(sent || {}).forEach(function (code) { S.sent[code] = {}; Object.keys(sent[code] || {}).forEach(function (date) { try { S.sent[code][date] = JSON.parse(sent[code][date]); } catch (x) {} }); });
-    if (!Object.keys(S.sales).length) problems.push("Sales: no outlet has sent data yet. Each outlet's Babai Hub (2.1+) with Firebase set up sends it every 15 minutes.");
+    if (!Object.keys(S.sales).length) problems.push("Sales: no outlet has sent data yet. Check on the Babai Hub page: Firebase connected (Step 2), the outlet name filled in, and that the planner key here is exactly the one shown under Prep Live data. A hub sends within about a minute of starting.");
   } catch (e) { problems.push("Sales: " + (e.message || e) + (String(e.message).indexOf("HTTP 401") >= 0 ? " – Firebase isn't open to the planner yet. Run Babai Hub 2.2 or newer, with Firebase connected, on one outlet PC; it opens it within a minute." : "")); }
   S.err = problems.join("  •  ");
   S.loading = false;
