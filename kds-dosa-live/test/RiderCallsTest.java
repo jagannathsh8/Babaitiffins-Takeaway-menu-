@@ -136,17 +136,17 @@ public final class RiderCallsTest {
         check("picked up removes", u.waitingCount() == 0, u.waitingCount());
         check("removal reason", u.removals().get(0).reason.contains("dispatched"), u.removals().get(0).reason);
 
-        // Off the KDS board: kept through a refresh / blip, removed after 2 minutes.
+        // Off the KDS board (picked up): removed within 10 s.
         RiderCalls g = new RiderCalls();
         List<RiderCalls.Order> b2 = new ArrayList<RiderCalls.Order>();
         b2.add(o(9, "Swiggy", "5343", "40", T, true, false));
         g.update(b2, T);
         b2.clear();
         g.update(b2, T + 1_000);
-        g.update(b2, T + 90_000);
-        check("blip kept (90 s)", g.waitingCount() == 1, g.waitingCount());
-        g.update(b2, T + 122_000);
-        check("gone after 2 min", g.waitingCount() == 0 && g.removals().get(0).reason.contains("KDS board"), g.waitingCount());
+        g.update(b2, T + 5_000);
+        check("kept for a moment (4 s)", g.waitingCount() == 1, g.waitingCount());
+        g.update(b2, T + 9_000);
+        check("gone within 10 s", g.waitingCount() == 0 && g.removals().get(0).reason.contains("picked up"), g.waitingCount());
 
         // 20 ready orders; Petpooja's answer suddenly holds only 6 of them (short / cut answer):
         // the other 14 stay on the rider screen, and come back normally with the next full answer.
@@ -166,12 +166,24 @@ public final class RiderCallsTest {
         check("held 19 min", m.waitingCount() == 20, m.waitingCount());
         m.update(cut, T + 7 * 60_000L + 21 * 60_000L);
         check("cleared after 20 min", m.waitingCount() == 6, m.waitingCount());
-        // One rider pickup among many still clears in 2 min.
+        // Source switch (hub <-> KDS board): a missing order is kept, not taken as picked up.
+        RiderCalls sw = new RiderCalls();
+        List<RiderCalls.Order> sb = new ArrayList<RiderCalls.Order>();
+        sb.add(o(70, "Swiggy", "4410", "9", T, true, false));
+        sw.update(sb, T);
+        sw.holdForSwitch(T + 1_000);
+        sw.update(new ArrayList<RiderCalls.Order>(), T + 2_000);
+        sw.update(new ArrayList<RiderCalls.Order>(), T + 30_000);
+        check("switch: kept 30 s", sw.waitingCount() == 1, sw.waitingCount());
+        sw.update(sb, T + 31_000);
+        check("switch: back", sw.waitingCount() == 1 && sw.removedCount() == 0, sw.removedCount());
+
+        // One rider pickup among many still clears within 10 s.
         RiderCalls one = new RiderCalls();
         one.update(full, T);
         one.update(new ArrayList<RiderCalls.Order>(full.subList(1, 20)), T + 1_000);
-        one.update(new ArrayList<RiderCalls.Order>(full.subList(1, 20)), T + 122_000);
-        check("single pickup: 2 min", one.waitingCount() == 19, one.waitingCount());
+        one.update(new ArrayList<RiderCalls.Order>(full.subList(1, 20)), T + 9_000);
+        check("single pickup: within 10 s", one.waitingCount() == 19, one.waitingCount());
 
         // Old orders are never hidden for their age (busy mornings: placed > 45 min ago, ready now).
         RiderCalls old = new RiderCalls();

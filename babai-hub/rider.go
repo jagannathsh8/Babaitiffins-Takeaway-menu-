@@ -69,7 +69,7 @@ func trackRiderReady(kots []Kot, now time.Time) {
 	}
 	ms := now.UnixMilli()
 	for _, k := range kots {
-		if !isRiderOrder(k) || k.Status == "0" || k.Status == "10" {
+		if !isRiderOrder(k) || k.Status == "0" || k.Status == "10" || kotHidden(k) {
 			continue
 		}
 		readySeenAt[k.ID] = ms
@@ -117,7 +117,7 @@ func riderOrders(kots []Kot) []riderOrder {
 	defer riderMu.Unlock()
 	out := []riderOrder{}
 	for _, k := range kots {
-		if !isRiderOrder(k) || k.Status == "0" || k.Status == "10" {
+		if !isRiderOrder(k) || k.Status == "0" || k.Status == "10" || kotHidden(k) {
 			continue
 		}
 		o := riderOrder{ID: k.ID, Platform: brandOf(k), Order: k.POID, Slot: slotFor(k.POID), Created: k.Created}
@@ -166,6 +166,6 @@ func handleRider(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"v": 1, "hub": version, "now": now.UnixMilli(), "pp": ppAt, "ok": fresh,
-		"bridge": brOK, "outlet": getConfig().Outlet, "orders": orders,
+		"bridge": brOK, "outlet": getConfig().Outlet, "orders": orders, "hide": hiddenBrands(),
 	})
 }

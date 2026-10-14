@@ -518,5 +518,5 @@ func phonesStatus() map[string]any {
 		}
 	}
 	return map[string]any{"phones": list, "wifi": lanAddrs(), "internet": internet, "scans": scanLogSnapshot(),
-		"bridge": bridgeStatus(), "bridgeAddr": c.Bridge}
+		"bridge": bridgeStatus(), "bridgeAddr": c.Bridge, "hide": strings.Join(hiddenBrands(), ", ")}
 }

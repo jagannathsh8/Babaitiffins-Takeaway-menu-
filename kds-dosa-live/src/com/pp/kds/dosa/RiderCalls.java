@@ -23,12 +23,23 @@ final class RiderCalls {
     static final long GATHER_MS = 3_000L;        // ready within 3 s of each other -> one call
     static final long REPEAT_MS = 30_000L;       // repeat cycle
     static final long MAX_MS = 15 * 60_000L;     // e.g. 15 min (when a limit is chosen)
-    static final long MISSING_MS = 120_000L;     // off the KDS board this long (refresh / blip) before it counts as gone
+    // Off Petpooja's list this long = picked up (dispatched orders leave the list). Short, so the
+    // rider screen clears within ~10 s of pickup; a broken answer (many at once) uses MASS_MISSING_MS.
+    static final long MISSING_MS = 7_000L;
     static final long SAFETY_MS = 3 * 3600_000L;  // never dispatched in Petpooja: cleared after 3 h
     // Many ready orders off the board in the same refresh = a short / broken answer from Petpooja,
     // not riders: those orders stay this long (they come back with the next full answer).
     static final long MASS_MISSING_MS = 20 * 60_000L;
     static final int MASS_MISSING_MIN = 4;
+    // While the order source switches (Babai Hub <-> this KDS board) the lists differ for a moment:
+    // nothing that goes missing then is taken as picked up for this long.
+    static final long SWITCH_HOLD_MS = 60_000L;
+    private long holdUntil;
+
+    /** The order list is about to come from a different source: don't clear anything for a moment. */
+    void holdForSwitch(long now) {
+        holdUntil = now + 15_000L;
+    }
     static final long STALE_MS = 45 * 60_000L;   // already ready + this old when first seen: skip
     static final int MAX_PER_CALL = 6;
 
@@ -197,13 +208,13 @@ final class RiderCalls {
             } else if (!seen.contains(e.getKey())) {
                 if (w.missingSince == 0) {
                     w.missingSince = now;
-                    w.graceMs = MISSING_MS;
+                    w.graceMs = now < holdUntil ? SWITCH_HOLD_MS : MISSING_MS;
                     justMissing.add(w);
                 } else if (now - w.missingSince >= w.graceMs) {
                     drop.add(e.getKey());
                     why.put(e.getKey(), w.graceMs > MISSING_MS
                             ? "off the KDS board " + (w.graceMs / 60_000L) + " min (many left at once)"
-                            : "not on the KDS board for 2 min");
+                            : "picked up (left Petpooja's list)");
                 }
             }
         }

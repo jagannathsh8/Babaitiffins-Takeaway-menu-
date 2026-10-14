@@ -45,6 +45,7 @@ public final class DosaLive {
     private static final long RECOMPUTE_MS = 15_000L;    // sliding throughput window refresh
     private static final long WATCH_MS = 250L;           // board-change check between ticks
     private static long lastTickAt;
+    private static boolean lastHubFresh;
     private static final int BOARD_CAP = 2000;           // item lines kept by KotRepositoryImpl (raised from 300 by build.sh)
     private static final String DOSA = "dosa";
 
@@ -275,6 +276,7 @@ public final class DosaLive {
         riderOn = ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getBoolean("rider_calls", false);
         BridgeSlots.setAddress(ctx.getSharedPreferences("dosa_live_ui", Context.MODE_PRIVATE).getString("bridge_addr", ""));
         BridgeSlots.autoFind(ctx.getApplicationContext()); // Bridge Print on the Petpooja PC, when not set
+        HiddenBrands.load(ctx);
         HubFeed.start(ctx); // rider orders from the Babai Hub PC, when it is on the Wi-Fi
         riderMaxMin = 0;            // ready orders stay until Petpooja shows them dispatched / cancelled
         riders.setMaxMinutes(0);
@@ -377,7 +379,12 @@ public final class DosaLive {
         if (persistPending && now - lastPersistAt >= 30_000L) persist();
         try {
             // grace / safety checks also while the board is quiet
-            riders.update(HubFeed.fresh() ? RiderCalls.fasterOf(HubFeed.orders(), lastRiderOrders) : lastRiderOrders, now);
+            boolean hubNow = HubFeed.fresh();
+            if (hubNow != lastHubFresh) {
+                riders.holdForSwitch(now);
+                lastHubFresh = hubNow;
+            }
+            riders.update(hubNow ? RiderCalls.fasterOf(HubFeed.orders(), lastRiderOrders) : lastRiderOrders, now);
             saveReadyTimes(now);
             if (panel != null) panel.bindRider();
         } catch (Throwable ignored) {
@@ -546,6 +553,13 @@ public final class DosaLive {
                 platform = BoardVisualsKt.channelName(kot);
             } catch (Throwable ignored) {
             }
+            String brand = null, onlineName = null;
+            try {
+                brand = kot.getTpVirtualBrandName();
+                onlineName = kot.getOnlineOrderUserName();
+            } catch (Throwable ignored) {
+            }
+            if (HiddenBrands.hidden(platform, brand, onlineName)) continue; // e.g. Go Self Service: no rider
             if (platform == null || platform.trim().isEmpty() || "Online".equals(platform)) {
                 platform = online ? "Online" : "Delivery";
             }

@@ -26,27 +26,29 @@ import (
 )
 
 const (
-	version     = "2.3"
+	version     = "2.4"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
 
 // Config is saved in config.json in the data folder.
 type Config struct {
-	Server       string  `json:"server"` // Petpooja billing station IP (port 3000 by default)
-	Outlet       string  `json:"outlet"` // outlet name exactly as on the bill, e.g. "VTR", "Sarjapur"
-	Lat          float64 `json:"lat"`    // outlet location (customers' page picks the nearest outlet)
-	Lng          float64 `json:"lng"`
-	AutoClearMin int     `json:"autoClearMin"` // ready tokens leave after this many minutes (TV default 10)
-	Paused       bool    `json:"paused"`       // tray: Pause / Resume
-	DB           string  `json:"db"`           // https://xxx.firebasedatabase.app
-	Secret       string  `json:"secret"`       // Firebase database secret
-	Page         string  `json:"page"`         // customer page address
-	Port         int     `json:"port"`
-	Bridge       string  `json:"bridge,omitempty"`     // Bridge Print address (empty: found on the Petpooja PC)
-	Phones       []Phone `json:"phones,omitempty"`     // paired Babai Scanner phones
-	Pin          string  `json:"pin,omitempty"`        // hub page PIN (empty = 1234)
-	AutoUpdate   *bool   `json:"autoUpdate,omitempty"` // nil = on
+	Server       string   `json:"server"` // Petpooja billing station IP (port 3000 by default)
+	Outlet       string   `json:"outlet"` // outlet name exactly as on the bill, e.g. "VTR", "Sarjapur"
+	Lat          float64  `json:"lat"`    // outlet location (customers' page picks the nearest outlet)
+	Lng          float64  `json:"lng"`
+	AutoClearMin int      `json:"autoClearMin"` // ready tokens leave after this many minutes (TV default 10)
+	Paused       bool     `json:"paused"`       // tray: Pause / Resume
+	DB           string   `json:"db"`           // https://xxx.firebasedatabase.app
+	Secret       string   `json:"secret"`       // Firebase database secret
+	Page         string   `json:"page"`         // customer page address
+	Port         int      `json:"port"`
+	Bridge       string   `json:"bridge,omitempty"`     // Bridge Print address (empty: found on the Petpooja PC)
+	Phones       []Phone  `json:"phones,omitempty"`     // paired Babai Scanner phones
+	Pin          string   `json:"pin,omitempty"`        // hub page PIN (empty = 1234)
+	AutoUpdate   *bool    `json:"autoUpdate,omitempty"` // nil = on
+	HideBrands   []string `json:"hideBrands,omitempty"` // brands kept off the rider screen
+	HideSet      bool     `json:"hideSet,omitempty"`    // false = the default (Go Self Service)
 }
 
 // Phone is one paired Babai Scanner phone. Key: its private pairing key (in the QR code).
@@ -117,6 +119,7 @@ func main() {
 	mux.HandleFunc("/unlock", localOnly(handleUnlock))
 	mux.HandleFunc("/lock", localOnly(handleLock))
 	mux.HandleFunc("/pin", localOnly(pinned(handlePinChange)))
+	mux.HandleFunc("/hide", localOnly(pinned(handleHide)))
 	mux.HandleFunc("/bridge", localOnly(pinned(handleBridge)))
 	// shop Wi-Fi (other devices): scanner phones and the KDS rider screen
 	mux.HandleFunc("/scan", handleScan)

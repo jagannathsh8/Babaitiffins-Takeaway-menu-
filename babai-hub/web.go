@@ -353,6 +353,9 @@ a{color:var(--accent)}
 <h3>Bridge Print (pickup slots)</h3>
 <form id="fb"><label for="baddr">Bridge Print address (leave empty to find it on the Petpooja PC)</label><input type="text" id="baddr" placeholder="e.g. 192.168.1.3:8787" autocomplete="off">
 <div class="row"><button>Save &amp; test</button></div></form><p id="bstate" class="hint"></p><p id="bmsg" class="msg"></p>
+<h3>Hidden brands</h3>
+<form id="fhide"><label for="hbrands">Keep these brands off the rider screen (comma between names). They stay on the KDS.</label><input type="text" id="hbrands" placeholder="e.g. Go Self Service" autocomplete="off">
+<div class="row"><button>Save</button></div></form><p id="hmsg" class="msg"></p>
 <h3>Phones</h3>
 <div id="plist"></div>
 <form id="fph"><label for="pname">New phone's name</label><input type="text" id="pname" maxlength="30" placeholder="e.g. Counter phone, Packing 2"><div class="row"><button>Add phone</button></div></form>
@@ -455,13 +458,14 @@ loadDishes();setInterval(loadDishes,15000);
 var phQR="";
 function pqr(t,who){$("pqrwrap").hidden=false;$("pqrfor").textContent="Pairing code for "+who;if(t!==phQR&&window.QRCode){$("pqrbox").innerHTML="";new QRCode($("pqrbox"),{text:t,width:220,height:220,correctLevel:QRCode.CorrectLevel.M});phQR=t}}
 function loadPhones(){fetch("/phones").then(function(r){return r.json()}).then(function(p){
- if(!bLoaded){$("baddr").value=p.bridgeAddr||"";bLoaded=true}
+ if(!bLoaded){$("baddr").value=p.bridgeAddr||"";$("hbrands").value=p.hide||"";bLoaded=true}
  var b=p.bridge||{};$("bstate").textContent="Bridge Print: "+(b.addr?b.addr+" \u2022 ":"")+(b.state||"")+(b.auto&&b.note?" ("+b.note+")":"");
  $("pwifi").textContent=(p.wifi||[]).join(", ")||"no network found";$("pnet").textContent=p.internet;$("pkds").textContent=(p.wifi||[])[0]||"this PC's address";
  $("plist").innerHTML=(p.phones||[]).length?(p.phones||[]).map(function(x){return '<div class="ph"><b>'+esc(x.name)+'</b><span class="hint">'+(x.seen?"last used "+ago(Math.round((Date.now()-x.seen)/1000))+" via "+(x.route==="wifi"?"Wi-Fi":"internet"):"not used yet")+'</span><button type="button" class="ghost" data-k="'+esc(x.key)+'" data-op="qr">Show QR</button><button type="button" class="ghost" data-k="'+esc(x.key)+'" data-n="'+esc(x.name)+'" data-op="remove">Remove</button></div>'}).join(""):'<p class="hint">No phones yet.</p>';
  $("slog").innerHTML=(p.scans||[]).map(function(e){var d=new Date(e.t);return "<tr><td>"+d.toLocaleTimeString()+"</td><td>"+esc(e.d)+"</td><td>"+(e.r==="wifi"?"Wi-Fi":"internet")+"</td><td>"+(e.ok?"\u2713 ":"\u2715 ")+esc(e.m)+"</td></tr>"}).join("");
 })}
 var bLoaded=false;
+$("fhide").addEventListener("submit",function(e){e.preventDefault();$("hmsg").textContent="Saving…";$("hmsg").className="msg";post("/hide",{Brands:$("hbrands").value}).then(function(r){show($("hmsg"),r)})});
 $("fb").addEventListener("submit",function(e){e.preventDefault();$("bmsg").textContent="Testing…";$("bmsg").className="msg";post("/bridge",{Addr:$("baddr").value}).then(function(r){show($("bmsg"),r);loadPhones()})});
 $("fph").addEventListener("submit",function(e){e.preventDefault();post("/phones",{Op:"add",Name:$("pname").value}).then(function(r){show($("phmsg"),r);if(r.ok){$("pname").value="";pqr(r.qr,r.msg.replace(/^.* on /,"").replace(/\.$/,""))}loadPhones()})});
 $("plist").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;

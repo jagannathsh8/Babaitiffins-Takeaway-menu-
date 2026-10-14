@@ -198,6 +198,12 @@ final class HubFeed {
                 }
             }
         }
+        JSONArray hide = j.optJSONArray("hide");
+        if (hide != null) {
+            List<String> names = new ArrayList<String>();
+            for (int i = 0; i < hide.length(); i++) names.add(hide.optString(i));
+            HiddenBrands.fromHub(app, names);
+        }
         orders = out;
         info = inf;
         feedOk = j.optBoolean("ok", false);
