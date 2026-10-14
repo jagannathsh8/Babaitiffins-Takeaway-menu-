@@ -63,3 +63,25 @@ func TestBridgePollEndToEnd(t *testing.T) {
 		}
 	}
 }
+
+func TestBridgeNestedJobs(t *testing.T) {
+	body := []byte(`{"settings":{"tokenLimit":32,"tokenLabel":"TOKEN"},
+	 "jobs":[
+	  {"id":"4fb3661d","token":22,"customization":{"tokenLimit":32},"payload":{"meta":{"order":{"id":1791982468606340038}}}},
+	  {"id":"9aa","token":5,"payload":{"orderId":"250951461115032"}}],
+	 "orders":[{"orderId":"1791982278801803444"},{"orderId":"1791981763126265342"}]}`)
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var root any
+	if err := dec.Decode(&root); err != nil {
+		t.Fatal(err)
+	}
+	m := map[string]string{}
+	bridgeWalk(root, m, 0)
+	if m["1791982468606340038"] != "22" || m["250951461115032"] != "5" {
+		t.Fatalf("nested: %v", m)
+	}
+	if _, ok := m["1791982278801803444"]; ok {
+		t.Fatalf("order without a token got one: %v", m)
+	}
+}

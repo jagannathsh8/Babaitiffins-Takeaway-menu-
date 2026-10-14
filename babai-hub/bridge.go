@@ -36,6 +36,7 @@ var (
 	brAuto    string // address found by itself
 	brNote    string
 	brTriedAt time.Time
+	brRaw     []byte // last answer, for "find an order" on the hub page
 	brClient  = &http.Client{Timeout: 4 * time.Second}
 )
 
@@ -130,7 +131,7 @@ func bridgePoll(addr string) error {
 		m := map[string]string{}
 		bridgeWalk(root, m, 0)
 		brMu.Lock()
-		brSlots, brOKAt, brErr, brPath = m, time.Now(), "", p
+		brSlots, brOKAt, brErr, brPath, brRaw = m, time.Now(), "", p, body
 		brMu.Unlock()
 		return nil
 	}
@@ -171,6 +172,20 @@ func bridgeWalk(node any, out map[string]string, depth int) {
 				order, token = bridgeRead(c, true, order, token) // one level down
 			}
 		}
+		if order == "" || token == "" {
+			// order number or token deeper inside (e.g. job → payload → order → id): take it when
+			// this part holds exactly one order and one token, so a list is never merged
+			orders, tokens := map[string]bool{}, map[string]bool{}
+			bridgeCollect(v, false, orders, tokens, 0)
+			if len(orders) == 1 && len(tokens) == 1 {
+				for o := range orders {
+					order = o
+				}
+				for t := range tokens {
+					token = t
+				}
+			}
+		}
 		if order != "" && token != "" {
 			if _, ok := out[order]; !ok {
 				out[order] = token
@@ -204,12 +219,52 @@ func bridgeRead(o map[string]any, child bool, order, token string) (string, stri
 		if order == "" && (strings.Contains(lk, "orderid") || lk == "order" || strings.Contains(lk, "orderno") ||
 			strings.Contains(lk, "orderuid") || strings.Contains(lk, "poid") || (child && lk == "id")) && len(d) >= 6 {
 			order = d
-		} else if token == "" && (strings.Contains(lk, "token") || strings.Contains(lk, "slot")) && d != "" && len(d) <= 6 {
+		} else if token == "" && bridgeTokenKey(lk) && d != "" && len(d) <= 6 {
 			n, _ := strconv.Atoi(d)
 			token = strconv.Itoa(n)
 		}
 	}
 	return order, token
+}
+
+// bridgeCollect: every order number and token in a part of Bridge Print's answer (4 levels).
+func bridgeCollect(node any, child bool, orders, tokens map[string]bool, depth int) {
+	if depth > 4 || len(orders) > 1 {
+		return
+	}
+	switch v := node.(type) {
+	case []any:
+		for _, x := range v {
+			bridgeCollect(x, true, orders, tokens, depth+1)
+		}
+	case map[string]any:
+		o, t := bridgeRead(v, child, "", "")
+		if o != "" {
+			orders[o] = true
+		}
+		if t != "" {
+			tokens[t] = true
+		}
+		for _, x := range v {
+			switch x.(type) {
+			case map[string]any, []any:
+				bridgeCollect(x, true, orders, tokens, depth+1)
+			}
+		}
+	}
+}
+
+// bridgeTokenKey: a field holding the pickup token / slot (not tokenLimit, tokenLabel, …).
+func bridgeTokenKey(lk string) bool {
+	if !strings.Contains(lk, "token") && !strings.Contains(lk, "slot") {
+		return false
+	}
+	for _, bad := range []string{"limit", "label", "enabled", "count", "max", "min", "size", "total", "csrf"} {
+		if strings.Contains(lk, bad) {
+			return false
+		}
+	}
+	return true
 }
 
 // slotFor: the Bridge Print slot of a platform order ID ("" when unknown).
@@ -291,4 +346,47 @@ func handleBridge(w http.ResponseWriter, r *http.Request) {
 	n := len(brSlots)
 	brMu.Unlock()
 	reply(w, true, fmt.Sprintf("Connected to Bridge Print: %d orders with a slot right now.", n))
+}
+
+// handleBridgeFind (hub page): where an order number appears in Bridge Print's last answer.
+func handleBridgeFind(w http.ResponseWriter, r *http.Request) {
+	q := digitsOnly(r.URL.Query().Get("q"))
+	brMu.Lock()
+	raw := string(brRaw)
+	slot := ""
+	for k, s := range brSlots {
+		if len(q) >= 4 && strings.HasSuffix(k, q) {
+			slot = k + " → slot " + s
+			break
+		}
+	}
+	brMu.Unlock()
+	var b strings.Builder
+	if len(q) < 4 {
+		b.WriteString("Type at least the last 4 digits of the order number.")
+	} else if raw == "" {
+		b.WriteString("Nothing received from Bridge Print yet.")
+	} else {
+		if slot != "" {
+			b.WriteString("Matched: " + slot + "\n\n")
+		} else {
+			b.WriteString("Not matched to a slot.\n\n")
+		}
+		n := 0
+		for i := 0; n < 4; n++ {
+			j := strings.Index(raw[i:], q)
+			if j < 0 {
+				break
+			}
+			at := i + j
+			from, to := max(0, at-400), min(len(raw), at+len(q)+200)
+			b.WriteString("…" + raw[from:to] + "…\n\n")
+			i = at + len(q)
+		}
+		if n == 0 {
+			b.WriteString("This number is not in Bridge Print's data at all (Bridge Print has no slot for it).")
+		}
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, b.String())
 }

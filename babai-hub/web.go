@@ -353,6 +353,7 @@ a{color:var(--accent)}
 <h3>Bridge Print (pickup slots)</h3>
 <form id="fb"><label for="baddr">Bridge Print address (leave empty to find it on the Petpooja PC)</label><input type="text" id="baddr" placeholder="e.g. 192.168.1.3:8787" autocomplete="off">
 <div class="row"><button>Save &amp; test</button></div></form><p id="bstate" class="hint"></p><p id="bmsg" class="msg"></p>
+<details><summary>Find an order in Bridge Print's data (if a slot is missing)</summary><form id="fbf"><label for="bfq">Order number (last 4+ digits)</label><input type="text" id="bfq" inputmode="numeric" autocomplete="off"><div class="row"><button>Find</button></div></form><pre id="bfout" style="white-space:pre-wrap;word-break:break-all;font-size:12px"></pre></details>
 <h3>Hidden brands</h3>
 <form id="fhide"><label for="hbrands">Keep these brands off the rider screen (comma between names). They stay on the KDS.</label><input type="text" id="hbrands" placeholder="e.g. Go Self Service" autocomplete="off">
 <div class="row"><button>Save</button></div></form><p id="hmsg" class="msg"></p>
@@ -465,6 +466,7 @@ function loadPhones(){fetch("/phones").then(function(r){return r.json()}).then(f
  $("slog").innerHTML=(p.scans||[]).map(function(e){var d=new Date(e.t);return "<tr><td>"+d.toLocaleTimeString()+"</td><td>"+esc(e.d)+"</td><td>"+(e.r==="wifi"?"Wi-Fi":"internet")+"</td><td>"+(e.ok?"\u2713 ":"\u2715 ")+esc(e.m)+"</td></tr>"}).join("");
 })}
 var bLoaded=false;
+$("fbf").addEventListener("submit",function(e){e.preventDefault();$("bfout").textContent="Looking…";fetch("/bridge/find?q="+encodeURIComponent($("bfq").value)).then(function(r){return r.text()}).then(function(t){$("bfout").textContent=t})});
 $("fhide").addEventListener("submit",function(e){e.preventDefault();$("hmsg").textContent="Saving…";$("hmsg").className="msg";post("/hide",{Brands:$("hbrands").value}).then(function(r){show($("hmsg"),r)})});
 $("fb").addEventListener("submit",function(e){e.preventDefault();$("bmsg").textContent="Testing…";$("bmsg").className="msg";post("/bridge",{Addr:$("baddr").value}).then(function(r){show($("bmsg"),r);loadPhones()})});
 $("fph").addEventListener("submit",function(e){e.preventDefault();post("/phones",{Op:"add",Name:$("pname").value}).then(function(r){show($("phmsg"),r);if(r.ok){$("pname").value="";pqr(r.qr,r.msg.replace(/^.* on /,"").replace(/\.$/,""))}loadPhones()})});

@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	version     = "2.7"
+	version     = "2.8"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -121,6 +121,7 @@ func main() {
 	mux.HandleFunc("/lock", localOnly(handleLock))
 	mux.HandleFunc("/pin", localOnly(pinned(handlePinChange)))
 	mux.HandleFunc("/kds/", handleKDS) // KDS app update for the screens on the Wi-Fi
+	mux.HandleFunc("/bridge/find", localOnly(pinned(handleBridgeFind)))
 	mux.HandleFunc("/hide", localOnly(pinned(handleHide)))
 	mux.HandleFunc("/bridge", localOnly(pinned(handleBridge)))
 	// shop Wi-Fi (other devices): scanner phones and the KDS rider screen
