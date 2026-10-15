@@ -409,51 +409,75 @@ func handleBridge(w http.ResponseWriter, r *http.Request) {
 	reply(w, true, fmt.Sprintf("Connected to Bridge Print: %d orders with a slot right now.", n))
 }
 
-// handleBridgeFind (hub page): where an order number appears in Bridge Print's last answer.
+// handleBridgeFind (hub page): where an order number appears in Bridge Print's last answers. With
+// only the last digits typed, the full number is taken from Petpooja's open orders; long (Ownly)
+// numbers are also looked for by their first 15 digits, which survive Bridge Print's rounding.
 func handleBridgeFind(w http.ResponseWriter, r *http.Request) {
 	q := digitsOnly(r.URL.Query().Get("q"))
+	full := q
+	if len(q) >= 4 && len(q) < 17 {
+		ppMu.Lock()
+		for _, k := range ppKots {
+			if p := digitsOnly(k.POID); len(p) > len(q) && strings.HasSuffix(p, q) {
+				full = p
+				break
+			}
+		}
+		ppMu.Unlock()
+	}
+	var b strings.Builder
+	if len(q) < 4 {
+		b.WriteString("Type the order number (at least the last 4 digits).")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = io.WriteString(w, b.String())
+		return
+	}
+	if full != q {
+		b.WriteString("Petpooja order: " + full + "\n")
+	}
 	brMu.Lock()
 	raw := string(brRaw)
 	slot := ""
-	for k, x := range brSeen {
-		if len(q) >= 4 && strings.HasSuffix(k, q) {
-			slot = k + " → slot " + x.slot + " (seen " + x.at.Format("15:04") + ")"
-			break
-		}
-	}
-	if slot == "" && len(q) >= 17 {
-		if s := roundedMatch(q); s != "" {
-			slot = q + " → slot " + s + " (Bridge Print has this number rounded)"
-		}
+	if x, ok := brSeen[full]; ok {
+		slot = "slot " + x.slot + " (seen " + x.at.Format("15:04") + ")"
+	} else if s := roundedMatch(full); s != "" {
+		slot = "slot " + s + " (Bridge Print has this number rounded)"
 	}
 	brMu.Unlock()
-	var b strings.Builder
-	if len(q) < 4 {
-		b.WriteString("Type the order number: the last 4+ digits, or the whole number for Ownly orders.")
-	} else if raw == "" {
+	if slot != "" {
+		b.WriteString("Matched: " + slot + "\n\n")
+	} else {
+		b.WriteString("Not matched to a slot.\n\n")
+	}
+	if raw == "" {
 		b.WriteString("Nothing received from Bridge Print yet.")
 	} else {
-		if slot != "" {
-			b.WriteString("Matched: " + slot + "\n\n")
-		} else {
-			b.WriteString("Not matched to a slot.\n\n")
+		keys := []string{full}
+		if len(full) >= 17 {
+			keys = append(keys, full[:15]) // the rounded form keeps the first 15 digits
 		}
-		n := 0
-		for i := 0; n < 4; n++ {
-			j := strings.Index(raw[i:], q)
-			if j < 0 {
+		shown := 0
+		for _, key := range keys {
+			for i := 0; shown < 4; {
+				j := strings.Index(raw[i:], key)
+				if j < 0 {
+					break
+				}
+				at := i + j
+				from, to := max(0, at-400), min(len(raw), at+len(full)+200)
+				b.WriteString("…" + raw[from:to] + "…\n\n")
+				shown++
+				i = at + len(full)
+			}
+			if shown > 0 {
 				break
 			}
-			at := i + j
-			from, to := max(0, at-400), min(len(raw), at+len(q)+200)
-			b.WriteString("…" + raw[from:to] + "…\n\n")
-			i = at + len(q)
 		}
-		if n == 0 {
+		if shown == 0 {
 			if slot != "" {
 				b.WriteString("Its print job has left Bridge Print's list; the hub keeps the slot it saw.")
 			} else {
-				b.WriteString("This number is not in Bridge Print's data now, and the hub hasn't seen a slot for it since it started.")
+				b.WriteString("Bridge Print's data has no number like this now (not even rounded), and the hub hasn't seen a slot for it: Bridge Print hasn't given this order a token.")
 			}
 		}
 	}

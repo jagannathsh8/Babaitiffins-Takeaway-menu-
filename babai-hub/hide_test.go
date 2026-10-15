@@ -137,3 +137,19 @@ func TestBridgeRoundedOwnlyIDs(t *testing.T) {
 		t.Fatal("swiggy")
 	}
 }
+
+func TestBridgeFindOwnly(t *testing.T) {
+	ppMu.Lock()
+	ppKots = []Kot{{ID: 9, Status: "1", POID: "1791982601318835770", Online: true}}
+	ppMu.Unlock()
+	brMu.Lock()
+	brRaw = []byte(`### /api/state` + "\n" + `{"jobs":[{"token":12,"orderId":1791982601318835700}]}`)
+	brSeen = map[string]brSeenSlot{"1791982601318835700": {"12", time.Now()}}
+	brMu.Unlock()
+	w := httptest.NewRecorder()
+	handleBridgeFind(w, httptest.NewRequest(http.MethodGet, "/bridge/find?q=5770", nil))
+	out := w.Body.String()
+	if !strings.Contains(out, "Petpooja order: 1791982601318835770") || !strings.Contains(out, "slot 12") || !strings.Contains(out, `"token":12`) {
+		t.Fatal(out)
+	}
+}
