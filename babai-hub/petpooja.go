@@ -214,6 +214,7 @@ func pollOnce(host string) error {
 	ppMu.Unlock()
 	onBoard(kots, now)
 	trackRiderReady(kots, now)
+	noteKotsForPrint(kots, now)
 	if stockDue {
 		if items, err := fetchStock(base, code); err == nil {
 			ppMu.Lock()

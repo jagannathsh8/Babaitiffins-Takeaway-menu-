@@ -28,9 +28,9 @@ func autostartEnabled() bool { return false }
 
 func setAutostart(on bool) error { return errors.New("start with Windows works on Windows only") }
 
-func ensureInstalled(port int) bool { return false }
+// platformMain: outside Windows the program is just the Console.
+func platformMain() bool { return false }
 
-func uninstall(port int) {}
+func hiddenCmd(name string, args ...string) *exec.Cmd { return exec.Command(name, args...) }
 
-// runUI: no tray outside Windows; the program just keeps serving.
-func runUI(port int) { select {} }
+func ocrAvailable() bool { return false }

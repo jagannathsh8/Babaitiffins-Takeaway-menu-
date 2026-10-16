@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Babai Console</title>
+<link rel="stylesheet" href="/console/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><b>Babai</b> Console <span id="where" class="mute"></span></div>
+  <div class="pills" id="pills"></div>
+  <button class="btn ghost sm" id="lockBtn" hidden>Lock</button>
+  <span class="clock" id="clock"></span>
+</header>
+<nav class="mtabs" role="tablist" aria-label="Areas">
+  <button class="mt" role="tab" data-area="bridge">Bridge Print</button>
+  <button class="mt" role="tab" data-area="hub">Hub <span class="lk" aria-label="PIN">🔒</span></button>
+  <button class="mt" role="tab" data-area="data">Data <span class="lk" aria-label="PIN">🔒</span></button>
+</nav>
+<div id="banner" class="banner" hidden></div>
+<div class="app">
+  <aside class="rail" id="rail" aria-label="Sections"></aside>
+  <main class="main" id="main"></main>
+  <iframe id="frame" class="frame" title="Section" hidden></iframe>
+</div>
+<script src="/console/qrcode.min.js"></script>
+<script src="/console/app.js"></script>
+</body>
+</html>

@@ -31,18 +31,19 @@ const (
 
 // ScanResult is what the phone shows.
 type ScanResult struct {
-	OK      bool   `json:"ok"`
-	Already bool   `json:"already,omitempty"` // was already Food Ready
-	N       int    `json:"n"`                 // KOTs marked now
-	Msg     string `json:"m"`
-	Brand   string `json:"b,omitempty"`
-	Order   string `json:"o,omitempty"` // full platform order ID
-	Last4   string `json:"l,omitempty"`
-	Slot    string `json:"s,omitempty"`
-	At      int64  `json:"t"`
-	Code    string `json:"-"`
-	Device  string `json:"-"`
-	Route   string `json:"-"` // "wifi" / "internet"
+	OK      bool    `json:"ok"`
+	Already bool    `json:"already,omitempty"` // was already Food Ready
+	N       int     `json:"n"`                 // KOTs marked now
+	Msg     string  `json:"m"`
+	Brand   string  `json:"b,omitempty"`
+	Order   string  `json:"o,omitempty"` // full platform order ID
+	Last4   string  `json:"l,omitempty"`
+	Slot    string  `json:"s,omitempty"`
+	At      int64   `json:"t"`
+	Code    string  `json:"-"`
+	Device  string  `json:"-"`
+	Route   string  `json:"-"` // "wifi" / "internet"
+	Kots    []int64 `json:"-"` // KOTs marked now
 }
 
 type scanLogEntry struct {
@@ -152,6 +153,9 @@ func markFromScan(id, code, device, route string) ScanResult {
 		lastCode, lastCodeAt, lastRes = d, now, res
 	}
 	res.At, res.Code, res.Device, res.Route = now.UnixMilli(), code, device, route
+	for _, id := range res.Kots {
+		noteReadyBy(id, "Scanner: "+firstNonEmpty(device, "phone"))
+	}
 	if id != "" {
 		scanByID[id], scanIDAt[id] = res, now
 	}
@@ -199,6 +203,7 @@ func markCode(code string, now time.Time) ScanResult {
 		}
 		marked++
 		noteMarkedReady(k.ID, now)
+		res.Kots = append(res.Kots, k.ID)
 	}
 	switch {
 	case marked > 0:

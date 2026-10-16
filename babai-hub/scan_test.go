@@ -382,7 +382,7 @@ func TestUpdate(t *testing.T) {
 	}
 	cfg = Config{Page: "https://babaidosa.netlify.app/"}
 	b, err := updateBase()
-	if err != nil || b.String() != "https://babaidosa.netlify.app/hub/" {
+	if err != nil || b.String() != "https://babaidosa.netlify.app/console/" {
 		t.Fatalf("base %v %v", b, err)
 	}
 	cfg = Config{Page: "http://x.example/"}
@@ -395,7 +395,7 @@ func TestUpdate(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(body) }))
 	defer srv.Close()
 	p, err := downloadChecked(srv.URL+"/babai-hub.exe", hex.EncodeToString(sum[:]), "2.2")
-	if err != nil || !strings.HasSuffix(p, "babai-hub-2.2.exe") {
+	if err != nil || !strings.HasSuffix(p, "babai-console-2.2.exe") {
 		t.Fatalf("download %q %v", p, err)
 	}
 	if _, err := downloadChecked(srv.URL+"/babai-hub.exe", strings.Repeat("0", 64), "2.3"); err == nil || !strings.Contains(err.Error(), "sha256") {

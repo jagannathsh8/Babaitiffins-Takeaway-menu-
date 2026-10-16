@@ -73,7 +73,9 @@ func bridgeLoop() {
 	for {
 		if !getConfig().Paused {
 			addr := bridgeAddr()
-			if addr == "" {
+			if localPrinting() && normAddr(getConfig().Bridge, bridgePort) == "" {
+				// this Console prints the KOTs itself: slots come straight from its own jobs
+			} else if addr == "" {
 				bridgeFind()
 			} else if err := bridgePoll(addr); err != nil {
 				brMu.Lock()
@@ -317,6 +319,9 @@ func slotFor(orderID string) string {
 	if len(d) < 4 {
 		return ""
 	}
+	if s := localSlot(d); s != "" {
+		return s // printed by this Console
+	}
 	brMu.Lock()
 	defer brMu.Unlock()
 	if time.Since(brOKAt) > time.Minute {
@@ -373,6 +378,10 @@ func bridgeStatus() map[string]any {
 		addr = brAuto
 	}
 	st := map[string]any{"addr": addr, "auto": auto, "note": brNote, "slots": len(brSlots)}
+	if localPrinting() && normAddr(getConfig().Bridge, bridgePort) == "" {
+		st["addr"], st["state"], st["ok"], st["note"] = "this PC", "this Console prints the KOTs (slots from its own prints)", true, "Bridge Print is built into this Console"
+		return st
+	}
 	switch {
 	case addr == "":
 		st["state"] = "not found yet"

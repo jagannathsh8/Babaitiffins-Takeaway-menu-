@@ -1,4 +1,11 @@
-// Babai Hub: a small program for any PC on the shop network.
+// Babai Console (formerly Babai Hub + Bridge Print): one program for any PC on the shop network.
+//
+// It runs as a Windows service (always on, restarts itself) and does two jobs:
+//   - Bridge Print: receives Petpooja's KOT prints, adds the token and prints them, with print
+//     rules and a fallback printer (pr_*.go), plus the Dispatch screen;
+//   - the Hub (below): reads Petpooja, feeds the customers' page, scanners and rider screens.
+//
+// The window (Edge in app mode, opened at login and reopened if closed) shows the Console page.
 //
 // It reads the live kitchen orders from the Petpooja billing station the same way the Petpooja
 // KDS app on the TV does (read-only), works out the dine-in dosa tokens exactly like the Order
@@ -26,7 +33,7 @@ import (
 )
 
 const (
-	version     = "2.12"
+	version     = "3.0"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -65,6 +72,14 @@ var (
 )
 
 func main() {
+	if platformMain() {
+		return // service, window, installer or uninstall (Windows)
+	}
+	runWorker()
+}
+
+// runWorker is the Console itself (started by the service, or directly with --run).
+func runWorker() {
 	dataDir = appDataDir()
 	_ = os.MkdirAll(filepath.Join(dataDir, "days"), 0o755)
 	setupLog()
@@ -76,36 +91,33 @@ func main() {
 	if port == 0 {
 		port = defaultPort
 	}
-	if hasArg("--uninstall") {
-		uninstall(port)
-		return
-	}
-	if ensureInstalled(port) {
-		return // the installed copy is starting
-	}
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	for i := 0; err != nil && i < 20 && hasArg("--restart"); i++ {
-		time.Sleep(500 * time.Millisecond) // the old copy is still closing
+	for i := 0; err != nil && i < 40; i++ {
+		time.Sleep(500 * time.Millisecond) // an old copy (or the old Babai Hub) is still closing
+		if i == 2 {
+			askOldHubToQuit(port)
+		}
 		ln, err = net.Listen("tcp", fmt.Sprintf(":%d", port))
 	}
 	if err != nil {
-		// Already running (or the port is taken): just show the page of the running hub.
-		log.Printf("port %d busy: %v", port, err)
-		openBrowser(fmt.Sprintf("http://localhost:%d/", port))
-		return
+		log.Fatalf("port %d busy: %v", port, err)
 	}
-	log.Printf("Babai Hub %s listening on :%d, data in %s", version, port, dataDir)
+	log.Printf("Babai Console %s listening on :%d, data in %s", version, port, dataDir)
 
+	startPrinting()
 	go cloudLoop()
 	go petpoojaLoop()
 	go bridgeLoop()
 	go updateLoop()
 	go kdsMirrorLoop()
+	go scannerMirrorLoop()
 	go scanQueueLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "babai-hub "+version) })
-	mux.HandleFunc("/", localOnly(pinned(handleHome)))
+	mux.HandleFunc("/", handleRoot)
+	mux.HandleFunc("/hub", localOnly(pinned(handleHome)))
+	consoleRoutes(mux)
 	mux.HandleFunc("/status.json", localOnly(pinned(handleStatus)))
 	mux.HandleFunc("/settings", localOnly(pinned(handleSettings)))
 	mux.HandleFunc("/test", localOnly(pinned(handleTest)))
@@ -141,15 +153,9 @@ func main() {
 		go func() { time.Sleep(300 * time.Millisecond); os.Exit(0) }() // a newer copy is taking over
 	}))
 
-	if !configured() || getConfig().Server == "" {
-		go func() {
-			time.Sleep(800 * time.Millisecond)
-			openBrowser(fmt.Sprintf("http://localhost:%d/", port))
-		}()
-	}
 	srv := &http.Server{Handler: mux, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second}
-	go func() { log.Fatal(srv.Serve(ln)) }()
-	runUI(port) // tray icon on Windows; blocks
+	go healthMark()
+	log.Fatal(srv.Serve(ln))
 }
 
 func hasArg(a string) bool {

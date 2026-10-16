@@ -1,13 +1,14 @@
 package main
 
-// Automatic updates. Once a day the hub reads <customer page>/hub/version.json, e.g.
+// Automatic updates. Once a day the Console reads <customer page>/console/version.json, e.g.
 //
-//	https://babaidosa.netlify.app/hub/version.json   {"v": "2.2", "url": "babai-hub.exe", "sha256": "..."}
+//	https://babaidosa.netlify.app/console/version.json   {"v": "3.1", "url": "babai-console.exe", "sha256": "..."}
 //
-// When it names a newer version, the exe is downloaded next to it, checked against the sha256,
-// and started between 3 and 5 at night (or at once with "Update now" on the page). The new exe
-// installs itself the usual way: it stops this hub, replaces it and starts; settings stay.
-// Can be switched off on the hub page.
+// When it names a newer version, the exe is downloaded into app\<version>\ and checked against
+// the sha256. It is switched to only between 3 and 5 at night, and only when no KOT has come in
+// for 5 minutes and nothing is waiting to print ("Update now" skips the hour, never the KOT
+// check). The service then runs the new version; if that doesn't run fine for a minute, the
+// service goes back to the old one by itself. Settings stay. Can be switched off.
 
 import (
 	"crypto/sha256"
@@ -20,9 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -89,7 +88,7 @@ func updateBase() (*url.URL, error) {
 		u.Path += "/"
 	}
 	u.RawQuery, u.Fragment = "", ""
-	return u.ResolveReference(&url.URL{Path: "hub/"}), nil
+	return u.ResolveReference(&url.URL{Path: "console/"}), nil
 }
 
 func updateLoop() {
@@ -104,17 +103,38 @@ func updateLoop() {
 			checkUpdate()
 		}
 		if ready && autoUpdateOn() && now.Hour() >= 3 && now.Hour() < 5 {
-			installUpdate()
+			installUpdate(false)
 		}
 		select {
-		case <-time.After(10 * time.Minute):
+		case <-time.After(5 * time.Minute):
 		case now := <-updWake:
 			checkUpdate()
 			if now {
-				installUpdate()
+				for i := 0; i < 60 && !installUpdate(true); i++ {
+					time.Sleep(10 * time.Second) // a KOT is printing: try again in a moment
+				}
 			}
 		}
 	}
+}
+
+// quietForUpdate: no KOT for 5 minutes (1 for "Update now") and nothing waiting to print.
+func quietForUpdate(manual bool) (bool, string) {
+	quiet := 5 * time.Minute
+	if manual {
+		quiet = time.Minute
+	}
+	prMu.Lock()
+	defer prMu.Unlock()
+	if !prLastKOT.IsZero() && time.Since(prLastKOT) < quiet {
+		return false, "waiting: KOTs are coming in"
+	}
+	for _, j := range prJobs {
+		if j.Status == "reading" || j.Status == "queued" || j.Status == "sending" {
+			return false, "waiting: a KOT is still printing"
+		}
+	}
+	return true, ""
 }
 
 func setUpdState(s string) {
@@ -187,7 +207,7 @@ func downloadChecked(u, sum, v string) (string, error) {
 	}
 	dir := filepath.Join(dataDir, "update")
 	_ = os.MkdirAll(dir, 0o755)
-	path := filepath.Join(dir, "babai-hub-"+strings.NewReplacer("/", "", "\\", "", "..", "").Replace(v)+".exe")
+	path := filepath.Join(dir, "babai-console-"+strings.NewReplacer("/", "", "\\", "", "..", "").Replace(v)+".exe")
 	tmp := path + ".part"
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -210,27 +230,65 @@ func downloadChecked(u, sum, v string) (string, error) {
 	return path, nil
 }
 
-// installUpdate starts the downloaded exe; it replaces this hub (see ensureInstalled).
-func installUpdate() {
+// installUpdate hands the downloaded version to the service (app\next.txt) and stops; the
+// service starts the new version and keeps it only if it runs fine. Returns false while busy.
+func installUpdate(manual bool) bool {
 	updMu.Lock()
 	path, v := updReady, updReadyV
 	updMu.Unlock()
 	if path == "" {
-		return
+		return true
 	}
-	if runtime.GOOS != "windows" {
-		setUpdState("version " + v + " downloaded (installs itself on Windows only)")
-		return
+	if ok, why := quietForUpdate(manual); !ok {
+		setUpdState("version " + v + " ready · " + why)
+		return false
 	}
-	log.Printf("installing update %s", v)
-	setUpdState("installing version " + v + "…")
-	if err := exec.Command(path, "--restart").Start(); err != nil {
-		setUpdState("couldn't start the update: " + err.Error())
-		return
+	if !supervised() {
+		setUpdState("version " + v + " downloaded (installs itself when Babai Console runs as the Windows service)")
+		return true
 	}
+	vdir := filepath.Join(dataDir, "app", strings.NewReplacer("/", "", "\\", "", "..", "").Replace(v))
+	if err := os.MkdirAll(vdir, 0o755); err != nil {
+		setUpdState("couldn't prepare the update: " + err.Error())
+		return true
+	}
+	if err := copyFileSimple(path, filepath.Join(vdir, "babai-console.exe")); err != nil {
+		setUpdState("couldn't prepare the update: " + err.Error())
+		return true
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "app", "next.txt"), []byte(v), 0o644); err != nil {
+		setUpdState("couldn't prepare the update: " + err.Error())
+		return true
+	}
+	log.Printf("switching to version %s", v)
+	setUpdState("switching to version " + v + "…")
+	saveOrdersMaybe(true)
+	go func() { time.Sleep(500 * time.Millisecond); os.Exit(3) }() // the service starts the new version
 	updMu.Lock()
 	updReady = ""
 	updMu.Unlock()
+	return true
+}
+
+func copyFileSimple(src, dst string) error {
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(dst, b)
+}
+
+// rollbackNote: the service went back to the old version (shown on the Updates page).
+func rollbackNote() string {
+	b, err := os.ReadFile(filepath.Join(dataDir, "app", "rollback.txt"))
+	if err != nil {
+		return ""
+	}
+	s := string(b)
+	if i := strings.Index(s, "|"); i >= 0 {
+		s = s[i+1:]
+	}
+	return s
 }
 
 // handleUpdate (hub page): GET status; POST {op: "check"|"now"|"on"|"off"}.
@@ -238,7 +296,7 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		kds := kdsStatus()
 		updMu.Lock()
-		st := map[string]any{"version": version, "state": updState, "on": autoUpdateOn(), "ready": updReadyV, "kds": kds}
+		st := map[string]any{"version": version, "state": updState, "on": autoUpdateOn(), "ready": updReadyV, "kds": kds, "rollback": rollbackNote(), "scanner": scannerStatus()}
 		if !updChecked.IsZero() {
 			st["checked"] = updChecked.UnixMilli()
 		}
@@ -265,6 +323,7 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 		reply(w, true, map[bool]string{true: "Automatic updates on.", false: "Automatic updates off."}[on])
 	case "check", "now":
 		go kdsCheck()
+		go scannerCheck()
 		select {
 		case updWake <- in.Op == "now":
 		default:

@@ -18,13 +18,34 @@ func fromOwnPage(r *http.Request) bool {
 }
 
 func handleHome(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+	if r.URL.Path != "/hub" {
 		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	io.WriteString(w, strings.Replace(homeHTML, "__RULES__", rulesJSON, 1))
+	page := strings.Replace(homeHTML, "__RULES__", rulesJSON, 1)
+	if show := r.URL.Query().Get("show"); show != "" {
+		// one part of this page inside the Console window: only the asked sections, light theme
+		var css strings.Builder
+		css.WriteString("<style>:root{--bg:#f3f5f8;--card:#fff;--ink:#16202b;--muted:#5e6b79;--line:#e2e7ed;--accent:#d97706;--ok:#15803d;--bad:#c81e1e;--warnbg:#fff7df}")
+		css.WriteString("header{display:none}body{padding:4px 16px 24px}.wrap{max-width:none}.grid{display:contents}.wrap>section,.wrap>.grid>section{display:none}button{color:#fff}button.ghost{color:var(--ink)}")
+		for _, id := range strings.Split(show, ",") {
+			id = strings.Map(func(r rune) rune {
+				if r >= 'a' && r <= 'z' {
+					return r
+				}
+				return -1
+			}, id)
+			if id != "" {
+				css.WriteString("#" + id + "{display:block!important}")
+			}
+		}
+		css.WriteString("</style></head>")
+		page = strings.Replace(page, "@media (prefers-color-scheme:dark)", "@media (prefers-color-scheme:none)", 1)
+		page = strings.Replace(page, "</head>", css.String(), 1)
+	}
+	io.WriteString(w, page)
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -272,7 +293,7 @@ a{color:var(--accent)}
 </style></head><body><div class="wrap">
 <header><h1><span>Babai</span> Hub</h1><div class="pill" id="pill"><span class="dot"></span><span id="pillText">Starting…</span></div></header>
 
-<section><h2>Right now</h2><div class="stats">
+<section id="now"><h2>Right now</h2><div class="stats">
 <div class="stat"><b id="sReady">–</b><span>dosa tokens ready</span></div>
 <div class="stat"><b id="sPrep">–</b><span>dosa tokens preparing</span></div>
 <div class="stat"><b id="sOpen">–</b><span>KOTs in the kitchen</span></div>
@@ -282,7 +303,7 @@ a{color:var(--accent)}
 </div><p class="hint" id="problems"></p></section>
 
 <div class="grid">
-<section><div class="step">Step 1</div><h2>Petpooja billing station</h2>
+<section id="pp"><div class="step">Step 1</div><h2>Petpooja billing station</h2>
 <form id="fp" autocomplete="off">
 <label for="outlet">Outlet name (exactly as on the bill, e.g. VTR, Sarjapur, HSR, JPN)</label>
 <input type="text" id="outlet" placeholder="VTR" maxlength="30">
@@ -298,7 +319,7 @@ a{color:var(--accent)}
 <div class="msg" id="pmsg" role="status"></div></form>
 </section>
 
-<section><div class="step">Step 2</div><h2>Firebase (free cloud database)</h2>
+<section id="fb"><div class="step">Step 2</div><h2>Firebase (free cloud database)</h2>
 <form id="f" autocomplete="off">
 <label for="db">Database address</label><input type="text" id="db" placeholder="babai-dosa-default-rtdb.asia-southeast1.firebasedatabase.app">
 <label for="secret">Database secret</label><input type="password" id="secret" placeholder="leave empty to keep the saved one">
@@ -310,15 +331,15 @@ a{color:var(--accent)}
 <p class="hint">Customers can read the outlet names, one token at a time, the dosa wait and the dish carousel. Everything else is private. The same rules, database and secret are used by every outlet. The hub also updates the rules by itself when it connects.</p>
 </section>
 
-<section><div class="step">Step 3</div><h2>QR code for customers</h2>
+<section id="qr"><div class="step">Step 3</div><h2>QR code for customers</h2>
 <div id="qrwrap" hidden><div id="qrbox"></div><div class="row"><a href="/poster" target="_blank"><button type="button">Open printable poster</button></a><a href="/customer-page"><button type="button" class="ghost">Download customer page</button></a></div>
 <p class="hint">Upload the downloaded index.html to Netlify (babaidosa → Deploys) once: then customers can also open babaidosa.netlify.app and type their token without scanning.</p>
 <p class="hint">Print it (Ctrl+P), stick it at the counter and on tables. Customers scan, type their token number and see their dosa live.</p></div>
 <p id="qrnone" class="hint">Appears after Step 2.</p>
 </section>
 
-<section><h2>This PC</h2>
-<p>Babai Hub starts by itself whenever this PC starts, and lives in the tray next to the clock (right-click the Babai icon for Petpooja IP, Pause / Resume, poster). To remove it: Windows Settings → Apps → Babai Hub → Uninstall.</p>
+<section id="pc"><h2>This PC</h2>
+<p>Babai Console runs as a Windows service: it starts with the PC (before anyone logs in) and restarts itself if it stops. To remove it: Windows Settings → Apps → Babai Console → Uninstall.</p>
 <div class="row"><button type="button" class="ghost" id="pauseBtn">Pause</button></div>
 <div class="msg" id="amsg" role="status"></div>
 <p class="hint">Cloud use this month (<span id="month"></span>): <span id="use"></span>. Firebase's free plan allows 10 GB downloaded a month and 1 GB stored.</p>
@@ -377,14 +398,14 @@ a{color:var(--accent)}
 <input type="file" id="prepfile" accept=".txt,.json"><div class="row"><button type="button" id="prepup">Upload</button></div><p id="prepmsg" class="msg"></p></details>
 </section>
 
-<section><h2>What Petpooja sent</h2>
+<section id="raw"><h2>What Petpooja sent</h2>
 <p class="hint" id="ppInfo">Nothing yet.</p>
 <div class="tbl"><table><thead><tr><th>Token</th><th>Table</th><th>Type</th><th>Status</th><th>Items</th></tr></thead><tbody id="kots"></tbody></table></div>
 <details><summary class="hint">Raw answer (send a photo of this if something looks wrong)</summary><pre id="raw"></pre></details>
 </section>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/console/qrcode.min.js"></script>
 <script>
 var $=function(i){return document.getElementById(i)},loaded=false,qrDone="";
 var OT={1:"Delivery",2:"Pick-up",3:"Dine-in"},ST={"9":"Food ready","10":"Dispatched","0":"Cancelled"};
@@ -483,7 +504,7 @@ $("prepup").addEventListener("click",function(){var f=$("prepfile").files[0];if(
  $("prepmsg").textContent="Uploading…";$("prepmsg").className="msg";var rd=new FileReader();rd.onload=function(){post("/prepdata",{Op:$("prepkind").value,Data:rd.result}).then(function(r){show($("prepmsg"),r);loadPrep()})};rd.readAsText(f)});
 loadPrep();setInterval(loadPrep,30000);
 var updOn=true;function loadUpd(){fetch("/update").then(function(r){return r.json()}).then(function(u){updOn=u.on;
- $("updst").textContent="This hub: version "+u.version+" \u2022 "+(u.on?"updates itself (checks once a day, installs at night)":"automatic updates are off")+" \u2022 "+u.state+"\nKDS app for the screens: "+(u.kds||"");
+ $("updst").textContent="Babai Console: version "+u.version+" \u2022 "+(u.on?"updates itself (checks once a day; switches between 3 and 5 am when no KOT has come for 5 min; goes back by itself if the new version has a problem)":"automatic updates are off")+" \u2022 "+u.state+(u.rollback?"\n"+u.rollback:"")+"\nKDS app for the screens: "+(u.kds||"")+"\nBabai Scanner app: "+(u.scanner||"");
  $("updToggle").textContent=u.on?"Turn off":"Turn on"})}
 $("updCheck").addEventListener("click",function(){post("/update",{Op:"check"}).then(function(r){show($("updmsg"),r);setTimeout(loadUpd,4000)})});
 $("updNow").addEventListener("click",function(){post("/update",{Op:"now"}).then(function(r){show($("updmsg"),r);setTimeout(loadUpd,8000)})});
@@ -525,6 +546,6 @@ li::before{content:counter(s);display:block;margin:0 auto 2mm;width:11mm;height:
 <p class="tip">Keep the page open while you wait.</p>
 <div class="url">__URL_TEXT__</div>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/console/qrcode.min.js"></script>
 <script>new QRCode(document.getElementById("qr"),{text:__URL_JSON__,width:600,height:600,correctLevel:QRCode.CorrectLevel.M});</script>
 </body></html>`
