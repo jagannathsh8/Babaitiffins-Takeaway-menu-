@@ -50,8 +50,10 @@ function now() { return Date.now() + offset; }
 
 // ---- frame: top bar, tabs, rail ---------------------------------------------------------------
 function renderRail() {
-  var html = "<h5>" + esc(AREAS[area].label) + "</h5>";
+  var open = LS.get("railOpen", true);
+  var html = '<button class="arrow" id="railArrow" aria-expanded="' + open + '" title="' + (open ? "Hide sections" : "Show sections") + '" aria-label="Sections">▼</button>';
   AREAS[area].items.forEach(function (it) {
+    if (!open && it[0] !== tab) return; // closed: only the open section
     var k = counts[it[0]];
     html += '<button class="tab" role="tab" data-tab="' + it[0] + '" aria-selected="' + (it[0] === tab) + '">' + esc(it[1]) +
       (k ? '<span class="k' + (it[0] === "alerts" ? " alert" : "") + '">' + k + "</span>" : "") + "</button>";
@@ -60,7 +62,9 @@ function renderRail() {
   document.querySelectorAll(".mt").forEach(function (b) { b.setAttribute("aria-selected", String(b.dataset.area === area)); });
 }
 $("rail").addEventListener("click", function (e) {
+  if (e.target.closest("#railArrow")) { LS.set("railOpen", !LS.get("railOpen", true)); renderRail(); return; }
   var b = e.target.closest(".tab"); if (!b) return;
+  if (!LS.get("railOpen", true) && b.dataset.tab === tab) { LS.set("railOpen", true); renderRail(); return; }
   tab = b.dataset.tab; LS.set("tab." + area, tab); render();
 });
 document.querySelector(".mtabs").addEventListener("click", function (e) {
