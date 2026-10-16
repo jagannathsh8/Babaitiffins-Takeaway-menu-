@@ -171,7 +171,7 @@ VIEWS.dispatch = {
     var tb = [1, 2, 3].map(function (t) { return '<button class="box" data-type="' + t + '" aria-pressed="' + (D.types.indexOf(t) >= 0) + '">' + typeName(t) + "</button>"; }).join("");
     return '<div class="bar"><div class="seg" role="group" aria-label="Show"><button data-mode="open" aria-pressed="' + (D.mode === "open") + '">Preparing</button><button data-mode="all" aria-pressed="' + (D.mode === "all") + '">All orders</button></div>' +
       tb + '<input type="search" id="dq" class="grow" placeholder="Search: last 4 digits of order ID, or KOT number" value="' + esc(D.q) + '" aria-label="Search">' +
-      '<button class="box" id="dsort" aria-pressed="' + (D.sort === "old") + '">Longest waiting first</button><span class="mute" id="dcount"></span></div><div id="dlist"></div>';
+      '<button class="box" id="dsort" aria-pressed="' + (D.sort === "old") + '">Longest waiting first</button><span class="mute" id="dcount"></span></div><p class="help">Shows the orders this PC prints, as set in Printers &amp; rules (e.g. a Delivery-only rule shows only deliveries).</p><div id="dlist"></div>';
   },
   init: function () {
     $("main").querySelectorAll("[data-mode]").forEach(function (b) { b.onclick = function () { D.mode = b.dataset.mode; LS.set("d.mode", D.mode); render(); }; });
