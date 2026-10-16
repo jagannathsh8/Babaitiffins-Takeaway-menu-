@@ -313,6 +313,15 @@ func TestDispatchShowsPrintsAndPetpoojaOrders(t *testing.T) {
 	// printed, but Petpooja's kitchen list never has it
 	j, _ := capture([]byte("Zomato : 8722626388\nKOT - 13\n"), "10.0.0.5", time.Now())
 	waitJob(t, j, "sent")
+	// Petpooja readable: only Petpooja's orders (the missed print shows without a token)
+	for _, o := range dispatchOrders(now.Add(-time.Hour), time.Now()) {
+		if o.PrintOnly {
+			t.Fatalf("print-only card while Petpooja is readable: %+v", o)
+		}
+	}
+	ppMu.Lock()
+	ppOKAt = time.Now().Add(-time.Minute) // Petpooja can't be read
+	ppMu.Unlock()
 	list := dispatchOrders(now.Add(-time.Hour), time.Now())
 	var fromPP, fromPrint *OrderRec
 	for i := range list {

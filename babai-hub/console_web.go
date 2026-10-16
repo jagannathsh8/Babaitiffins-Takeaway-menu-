@@ -234,10 +234,10 @@ func firstAlert(a []Alert) any {
 
 // ---- Dispatch ---------------------------------------------------------------------------
 
-// handleDispatch: every order in Petpooja's kitchen list (read by the Hub part), with the token of
-// its print (this Console's prints, or Bridge Print on another PC). Prints that Petpooja's list
-// doesn't have (order not sent to the kitchen list, Petpooja not reachable) are shown too, from
-// the print itself, so nothing goes missing from the screen.
+// handleDispatch: every order in Petpooja's kitchen list (read by the Hub part), exactly as
+// Petpooja has it, with the token of its print added (this Console's prints, or Bridge Print on
+// another PC). An order whose KOT never printed is shown all the same, without a token. Only
+// while Petpooja can't be read are the prints shown on their own.
 func handleDispatch(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().Add(-16 * time.Hour)
 	writeJSON(w, map[string]any{"orders": dispatchOrders(since, time.Now()), "now": time.Now().UnixMilli(), "skew": clockSkew(), "ppOK": ppFresh()})
@@ -257,6 +257,11 @@ func dispatchOrders(since, now time.Time) []OrderRec {
 			byID[d] = i
 		}
 	}
+	if ppFresh() {
+		sort.Slice(list, func(a, b int) bool { return list[a].Seen > list[b].Seen })
+		return list // Petpooja's list is the screen; prints only add their token
+	}
+	// Petpooja can't be read right now: show the prints so the counter isn't blind
 	prMu.Lock()
 	jobs := make([]Job, 0, len(prJobs))
 	for _, j := range prJobs {
