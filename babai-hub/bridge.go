@@ -211,8 +211,21 @@ func bridgeWalk(node any, out map[string]string, depth int) {
 			}
 		}
 		if order != "" && token != "" {
-			if _, ok := out[order]; !ok {
-				out[order] = token
+			// A Bridge Print job holds the number it read from the KOT (metadata.orderId) and the one
+			// from its Petpooja feed (petpooja.orderId); one of them can be wrong, so keep the slot
+			// under every number in this job.
+			orders := []string{order}
+			for _, x := range v {
+				if c, ok := x.(map[string]any); ok {
+					if o, _ := bridgeRead(c, true, "", ""); o != "" {
+						orders = append(orders, o)
+					}
+				}
+			}
+			for _, o := range orders {
+				if _, ok := out[o]; !ok {
+					out[o] = token
+				}
 			}
 			return
 		}

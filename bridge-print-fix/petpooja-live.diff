@@ -1,0 +1,8 @@
+5a6,8
+> // Babai: JSON.parse rounds integers above 2^53, so a 19-digit Ownly order ID 1791982601318835770
+> // became 1791982601318835700 and never matched its receipt. Quote long integers before parsing.
+> export function parseKeepingLongNumbers(text){return JSON.parse(String(text).replace(/([:\[,]\s*)(-?\d{16,})(?=\s*[,}\]])/g,'$1"$2"'));}
+24c27
+<       if(!response.ok)throw Error(`Petpooja returned HTTP ${response.status}`);const result=await response.json();if(String(result.error??'0')==='1')throw Error(clean(result.message)||'Petpooja rejected the request');
+---
+>       if(!response.ok)throw Error(`Petpooja returned HTTP ${response.status}`);const result=parseKeepingLongNumbers(await response.text());if(String(result.error??'0')==='1')throw Error(clean(result.message)||'Petpooja rejected the request');

@@ -153,3 +153,21 @@ func TestBridgeFindOwnly(t *testing.T) {
 		t.Fatal(out)
 	}
 }
+
+func TestBridgeJobBothOrderIDs(t *testing.T) {
+	// metadata.orderId read from the KOT (right) and petpooja.orderId rounded by Bridge Print's feed
+	body := []byte(`{"jobs":[{"token":31,"metadata":{"brand":"Ownly","orderId":"1791976083241811062"},"petpooja":{"orderId":"1791976083241811000","status":"preparing"}}]}`)
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var root any
+	if err := dec.Decode(&root); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ { // map order is random: must hold every time
+		m := map[string]string{}
+		bridgeWalk(root, m, 0)
+		if m["1791976083241811062"] != "31" {
+			t.Fatalf("run %d: %v", i, m)
+		}
+	}
+}

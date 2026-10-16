@@ -1,0 +1,24 @@
+103a104,126
+>   // Babai: OCR splits a long number when part of it is printed bold (Ownly KOTs print the last 4
+>   // digits bigger: "Ownly : 179197608324181 1062") and reads 0/1 as O/l. Accept "<Brand> : <digits with
+>   // spaces>" and clean the digits.
+>   const ocrDigits=value=>value.replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/[\s-]/g,'');
+>   if(!orderId){
+>     for(const line of lines.slice(0,18)){
+>       const m=line.match(/^\s*([A-Z][A-Z0-9 .&-]{1,23}?)\s*[:#;-]\s*([0-9OoIl|][0-9OoIl| -]{4,48}[0-9OoIl|])\s*$/i);
+>       if(!m||ignoredLabels.test(m[1].trim()))continue;
+>       const digits=ocrDigits(m[2]);
+>       if(/^\d{6,24}$/.test(digits)){orderId=digits;if(!brand)brand=m[1].trim().replace(/\s+/g,' ');break;}
+>     }
+>   }
+>   // The number printed under the KOT barcode is one plain line of digits: when it continues the number
+>   // read above (bold part cut off), or nothing was read, use it. 13+ digits so phone numbers never count.
+>   // A long number read with a few O / l in it (e.g. 179197608324l8l1O62) is that number.
+>   if(orderId&&/^[0-9OoIl|]{10,}$/.test(orderId)&&(orderId.match(/\d/g)||[]).length>=orderId.length*0.7)orderId=ocrDigits(orderId);
+>   const longIds=[...new Set(lines.map(line=>/^[0-9OoIl| -]+$/.test(line)?specialLongId(ocrDigits(line)):null).filter(v=>v&&v.length>=13))];
+>   if(orderId&&/^\d+$/.test(orderId)){
+>     const longer=longIds.filter(v=>v.length>orderId.length&&v.startsWith(orderId)).sort((a,b)=>b.length-a.length)[0];
+>     if(longer)orderId=longer;
+>   } else if(!orderId&&longIds.length===1){
+>     orderId=longIds[0];
+>   }
