@@ -164,7 +164,7 @@ function dmatch(o) {
   var q = D.q.replace(/\D/g, "");
   if (!q) return true;
   var id = String(o.orderId || "").replace(/\D/g, "");
-  return (id && id.slice(-q.length) === q) || String(o.kotNo || "") === q || String(o.token || "") === q;
+  return (id && id.slice(-q.length) === q) || String(o.kotNo || "") === q || String(otok(o) || "") === q;
 }
 VIEWS.dispatch = {
   html: function () {
@@ -186,10 +186,10 @@ VIEWS.dispatch = {
     $("dq").oninput = function () { D.q = this.value; drawDispatch(); };
     $("dlist").addEventListener("click", function (e) {
       var b = e.target.closest("[data-ready]"); if (!b) return;
-      var kot = +b.dataset.ready, card = b.closest(".dc");
+      var key = b.dataset.ready, card = b.closest(".dc");
       b.disabled = true; b.textContent = "Marking…";
-      post("/console/api/ready", { kot: kot }).then(function (r) {
-        if (r.ok) { D.hidden[kot] = Date.now(); if (card) { card.classList.add("gone"); setTimeout(drawDispatch, 260); } }
+      post("/console/api/ready", /^\d+$/.test(key) ? { kot: +key } : { job: key }).then(function (r) {
+        if (r.ok) { D.hidden[key] = Date.now(); if (card) { card.classList.add("gone"); setTimeout(drawDispatch, 260); } }
         else { b.disabled = false; b.textContent = "Food ready"; alert(r.msg); }
       });
     });
@@ -197,11 +197,13 @@ VIEWS.dispatch = {
   load: function () { getJ("/console/api/dispatch").then(function (d) { D.data = d; drawDispatch(); }).catch(function () {}); },
   every: 2000
 };
+function okey(o) { return o.kot ? String(o.kot) : o.job; }
+function otok(o) { return o.token || o.slot || ""; }
 function dispatchList() {
   var list = (D.data && D.data.orders || []).filter(function (o) {
     if (o.status === "cancelled" && D.mode === "open") return false;
-    if (D.types.length && D.types.indexOf(o.type) < 0) return false;
-    if (D.mode === "open" && (o.status !== "preparing" || D.hidden[o.kot])) return false;
+    if (D.types.length && !o.printOnly && D.types.indexOf(o.type) < 0) return false; // a print-only order has no known type: always shown
+    if (D.mode === "open" && (o.status !== "preparing" || D.hidden[okey(o)])) return false;
     return dmatch(o);
   });
   list.sort(function (a, b) { return D.sort === "old" ? t0(a) - t0(b) : t0(b) - t0(a); });
@@ -210,7 +212,7 @@ function dispatchList() {
 function drawDispatch() {
   var el = $("dlist"); if (!el || !D.data) return;
   var list = dispatchList();
-  counts.dispatch = (D.data.orders || []).filter(function (o) { return o.status === "preparing" && !D.hidden[o.kot]; }).length || "";
+  counts.dispatch = (D.data.orders || []).filter(function (o) { return o.status === "preparing" && !D.hidden[okey(o)]; }).length || "";
   renderRail();
   $("dcount").textContent = list.length + (D.mode === "open" ? " preparing" : " orders");
   if (!list.length) { el.innerHTML = '<p class="empty">' + (D.q ? "No order matches “" + esc(D.q) + "”." : D.mode === "open" ? "Nothing waiting. New orders appear here as soon as Petpooja has them." : "No orders yet today.") + "</p>"; return; }
@@ -218,11 +220,11 @@ function drawDispatch() {
   el.className = "dgrid";
   el.innerHTML = list.map(function (o) {
     var c = brandColor(o.brand, o.type), start = t0(o), items = (o.items || []).filter(function (i) { return i.s !== -9; });
-    return '<article class="dc" style="--c:' + c + '"><div class="t1"><div><div class="tk">' + (o.token || "–") + '</div><div class="bd">' + esc(o.brand || typeName(o.type)) + " · " + typeName(o.type) +
+    return '<article class="dc" style="--c:' + c + '"><div class="t1"><div><div class="tk">' + (otok(o) || "–") + '</div><div class="bd">' + esc(o.brand || typeName(o.type)) + " · " + (o.printOnly ? '<span class="chip warn" title="This print is not in Petpooja\'s kitchen list">not in Petpooja</span>' : typeName(o.type)) +
       '</div></div><span class="tm ' + tcls(now() - start) + '" data-t0="' + start + '">' + mmss(now() - start) + "</span></div>" +
       '<div class="ids"><span>Order <b title="' + esc(o.orderId) + '">' + esc(last(o.orderId, 8) || "–") + "</b></span><span>KOT <b>" + esc(o.kotNo || "–") + "</b> · punched <b>" + hm(o.punched || o.seen) + "</b></span></div>" +
       "<ul>" + items.map(function (i) { return "<li><span>" + (i.q || 1) + "×</span>" + esc(i.n) + "</li>"; }).join("") + "</ul>" +
-      '<div class="ft"><button class="btn g" data-ready="' + o.kot + '">Food ready</button></div></article>';
+      '<div class="ft"><button class="btn g" data-ready="' + esc(okey(o)) + '">Food ready</button></div></article>';
   }).join("");
 }
 function allOrdersTable(list) {
@@ -231,8 +233,8 @@ function allOrdersTable(list) {
   return '<div class="panel tw"><table><thead><tr><th>Token</th><th>Brand</th><th>Order ID</th><th>KOT</th><th>Type</th><th>Items</th><th>Punched</th><th>Printed</th><th>Food ready</th><th>Dispatched</th><th>Delivered</th><th>Status</th></tr></thead><tbody>' +
     list.map(function (o) {
       var items = (o.items || []).filter(function (i) { return i.s !== -9; }).map(function (i) { return (i.q || 1) + "× " + i.n; }).join(", ");
-      return "<tr><td>" + (o.token ? '<span class="tok">' + o.token + "</span>" : "–") + '</td><td><span class="dot" style="--c:' + brandColor(o.brand, o.type) + '"></span> ' + esc(o.brand || "–") +
-        '</td><td class="num" title="' + esc(o.orderId) + '">' + esc(last(o.orderId, 10) || "–") + '</td><td class="num">' + esc(o.kotNo || "–") + "</td><td>" + typeName(o.type) +
+      return "<tr><td>" + (otok(o) ? '<span class="tok">' + esc(otok(o)) + "</span>" : "–") + '</td><td><span class="dot" style="--c:' + brandColor(o.brand, o.type) + '"></span> ' + esc(o.brand || "–") +
+        '</td><td class="num" title="' + esc(o.orderId) + '">' + esc(last(o.orderId, 10) || "–") + '</td><td class="num">' + esc(o.kotNo || "–") + "</td><td>" + (o.printOnly ? '<span class="chip warn">not in Petpooja</span>' : typeName(o.type)) +
         '</td><td class="wrap">' + esc(items) + '</td><td class="num">' + hms(o.punched || o.seen) + '</td><td class="num">' + (o.printed ? hms(o.printed) + (o.printMs ? ' <span class="mute">' + o.printMs + " ms</span>" : "") : "–") +
         '</td><td class="num">' + (o.ready ? hms(o.ready) + ' <span class="mute">' + esc(o.readyBy || "") + "</span>" : "–") + '</td><td class="num">' + hms(o.dispatched) + '</td><td class="num">' + hms(o.delivered) +
         '</td><td><span class="chip ' + (st[o.status] || "") + '">' + esc(o.status) + "</span></td></tr>";

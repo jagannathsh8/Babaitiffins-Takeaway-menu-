@@ -234,12 +234,67 @@ func firstAlert(a []Alert) any {
 
 // ---- Dispatch ---------------------------------------------------------------------------
 
+// handleDispatch: every order in Petpooja's kitchen list (read by the Hub part), with the token of
+// its print (this Console's prints, or Bridge Print on another PC). Prints that Petpooja's list
+// doesn't have (order not sent to the kitchen list, Petpooja not reachable) are shown too, from
+// the print itself, so nothing goes missing from the screen.
 func handleDispatch(w http.ResponseWriter, r *http.Request) {
-	list := ordersSnapshot(time.Now().Add(-16 * time.Hour))
-	ppMu.Lock()
-	okAt := ppOKAt
-	ppMu.Unlock()
-	writeJSON(w, map[string]any{"orders": list, "now": time.Now().UnixMilli(), "skew": clockSkew(), "ppOK": !okAt.IsZero() && time.Since(okAt) < 30*time.Second})
+	since := time.Now().Add(-16 * time.Hour)
+	writeJSON(w, map[string]any{"orders": dispatchOrders(since, time.Now()), "now": time.Now().UnixMilli(), "skew": clockSkew(), "ppOK": ppFresh()})
+}
+
+const printOnlyKeep = 3 * time.Hour
+
+func dispatchOrders(since, now time.Time) []OrderRec {
+	list := ordersSnapshot(since)
+	byID := map[string]int{}
+	for i := range list {
+		o := &list[i]
+		if o.Token == 0 && o.OrderID != "" {
+			o.Slot = slotFor(o.OrderID)
+		}
+		if d := digitsOnly(o.OrderID); len(d) >= 6 {
+			byID[d] = i
+		}
+	}
+	prMu.Lock()
+	jobs := make([]Job, 0, len(prJobs))
+	for _, j := range prJobs {
+		jobs = append(jobs, *j)
+	}
+	prMu.Unlock()
+	for _, j := range jobs {
+		recv := time.UnixMilli(j.Recv)
+		if j.Kot != 0 || j.Recv == 0 || recv.Before(since) {
+			continue // shown as its Petpooja order
+		}
+		m := ReceiptMeta{}
+		if j.Metadata != nil {
+			m = *j.Metadata
+		}
+		if d := digitsOnly(m.OrderID); len(d) >= 6 {
+			if i, ok := byID[d]; ok { // the same order is in Petpooja's list: just its token
+				if list[i].Token == 0 {
+					list[i].Token = j.Token
+				}
+				continue
+			}
+		}
+		o := OrderRec{JobID: j.ID, Token: j.Token, OrderID: m.OrderID, Brand: firstNonEmpty(m.DisplayBrand, m.Brand, j.Customization.TokenLabel),
+			Punched: j.Recv, Seen: j.Recv, Printed: j.Recv + int64(j.PrintMs), PrintMs: j.PrintMs, Status: "preparing", PrintOnly: true}
+		if j.Petpooja != nil && j.Petpooja.Status == "ready" {
+			o.Status = "ready"
+		}
+		if j.ReadyAt > 0 {
+			o.Status, o.Ready, o.ReadyBy = "ready", j.ReadyAt, j.ReadyBy
+		}
+		if o.Status == "preparing" && now.Sub(recv) > printOnlyKeep {
+			continue // an old print that never showed up in Petpooja: off the screen after 3 h
+		}
+		list = append(list, o)
+	}
+	sort.Slice(list, func(a, b int) bool { return list[a].Seen > list[b].Seen })
+	return list
 }
 
 // handleConsoleReady: the Dispatch screen's "Food ready" (marks it in Petpooja, as the KDS does).
@@ -249,9 +304,32 @@ func handleConsoleReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Kot int64 `json:"kot"`
+		Kot int64  `json:"kot"`
+		Job string `json:"job"`
 	}
 	_ = json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&in)
+	if in.Kot == 0 && in.Job != "" {
+		// a print Petpooja's list doesn't have: marked on this screen (and the token TV)
+		prMu.Lock()
+		j := findJobLocked(in.Job)
+		if j != nil {
+			t := true
+			c := JobLive{}
+			if j.Petpooja != nil {
+				c = *j.Petpooja
+			}
+			c.Status, c.Active, c.ReadyAt = "ready", &t, nowISO()
+			j.Petpooja, j.ReadyAt, j.ReadyBy = &c, time.Now().UnixMilli(), "Console"
+			saveJobLocked(j)
+		}
+		prMu.Unlock()
+		if j == nil {
+			reply(w, false, "This print is no longer on this PC.")
+			return
+		}
+		reply(w, true, "Food ready (this order isn't in Petpooja's kitchen list, so it is marked here only).")
+		return
+	}
 	c := getConfig()
 	ppMu.Lock()
 	kots, okAt, code := ppKots, ppOKAt, syncCode

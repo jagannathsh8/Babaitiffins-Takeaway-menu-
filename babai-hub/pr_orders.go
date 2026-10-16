@@ -35,6 +35,8 @@ type OrderRec struct {
 	Delivered  int64    `json:"delivered,omitempty"`  // only when Petpooja reports it
 	Status     string   `json:"status"`               // preparing, ready, dispatched, cancelled
 	Brands     []string `json:"brands,omitempty"`
+	Slot       string   `json:"slot,omitempty"`      // token from Bridge Print elsewhere (or an older print)
+	PrintOnly  bool     `json:"printOnly,omitempty"` // a print Petpooja's kitchen list doesn't have
 
 	missing time.Time
 }

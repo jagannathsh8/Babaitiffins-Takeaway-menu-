@@ -293,3 +293,51 @@ func TestBridgePrintAPIUnchanged(t *testing.T) {
 		t.Fatalf("mobile lookup: %s", w.Body.String())
 	}
 }
+
+func TestDispatchShowsPrintsAndPetpoojaOrders(t *testing.T) {
+	_, pp, done := setup(t)
+	defer done()
+	fakePrinters(t, "Counter")
+	resetPrintState()
+	loadPrint()
+	prMu.Lock()
+	prSettings.PrinterName = "Counter"
+	prOpts.IdentifyWait = 300
+	prMu.Unlock()
+	now := time.Now()
+	// in Petpooja's list, its print missed
+	pp.set(onlineRow(700, 70, "1", "250951448160700", now.Add(-2*time.Minute), "Masala Dosa", 11, 1))
+	if err := pollOnce(cfg.Server); err != nil {
+		t.Fatal(err)
+	}
+	// printed, but Petpooja's kitchen list never has it
+	j, _ := capture([]byte("Zomato : 8722626388\nKOT - 13\n"), "10.0.0.5", time.Now())
+	waitJob(t, j, "sent")
+	list := dispatchOrders(now.Add(-time.Hour), time.Now())
+	var fromPP, fromPrint *OrderRec
+	for i := range list {
+		if list[i].Kot == 700 {
+			fromPP = &list[i]
+		}
+		if list[i].JobID == j.ID && list[i].PrintOnly {
+			fromPrint = &list[i]
+		}
+	}
+	if fromPP == nil || fromPP.Status != "preparing" || fromPP.Token != 0 {
+		t.Fatalf("Petpooja order without a print: %+v", fromPP)
+	}
+	if fromPrint == nil || fromPrint.Token != 1 || fromPrint.Brand != "Zomato" || fromPrint.OrderID != "8722626388" || fromPrint.Status != "preparing" {
+		t.Fatalf("print not in Petpooja: %+v", fromPrint)
+	}
+	// Food ready on the print-only card
+	b, _ := json.Marshal(map[string]string{"job": j.ID})
+	r := httptest.NewRequest(http.MethodPost, "/console/api/ready", bytes.NewReader(b))
+	r.Header.Set("X-Babai-Hub", "1")
+	w := httptest.NewRecorder()
+	handleConsoleReady(w, r)
+	for _, o := range dispatchOrders(now.Add(-time.Hour), time.Now()) {
+		if o.JobID == j.ID && (o.Status != "ready" || o.ReadyBy != "Console") {
+			t.Fatalf("not ready: %+v %s", o, w.Body.String())
+		}
+	}
+}

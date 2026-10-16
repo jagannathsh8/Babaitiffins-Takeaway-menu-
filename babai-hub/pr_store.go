@@ -123,7 +123,9 @@ type Job struct {
 	IdentMs   int        `json:"identMs,omitempty"`
 	PrintMs   int        `json:"printMs,omitempty"` // receive -> printer queue (first slip)
 	Outs      []PrintOut `json:"outs,omitempty"`
-	OCR       string     `json:"ocr,omitempty"` // what OCR read (order id), for checking
+	OCR       string     `json:"ocr,omitempty"`     // what OCR read (order id), for checking
+	ReadyAt   int64      `json:"readyAt,omitempty"` // Food ready on the Dispatch screen (prints not in Petpooja's list)
+	ReadyBy   string     `json:"readyBy,omitempty"`
 }
 
 var (
