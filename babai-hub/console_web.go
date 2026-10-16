@@ -246,18 +246,7 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 const printOnlyKeep = 3 * time.Hour
 
 func dispatchOrders(since, now time.Time) []OrderRec {
-	all := ordersSnapshot(since)
-	prMu.Lock()
-	ps, po := prSettings, prOpts
-	prMu.Unlock()
-	list := all[:0:0]
-	for _, o := range all {
-		// only the orders this PC prints (Printers & rules: e.g. Delivery only)
-		if printFilterOn(ps, po) && o.Token == 0 && !wouldPrint(OrderFacts{Known: true, OrderType: o.Type, Brands: o.Brands, Items: o.Items}, ps, po) {
-			continue
-		}
-		list = append(list, o)
-	}
+	list := ordersSnapshot(since) // every order in Petpooja's kitchen list, like the KDS
 	byID := map[string]int{}
 	for i := range list {
 		o := &list[i]

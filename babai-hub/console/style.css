@@ -123,3 +123,6 @@ td.wrap{white-space:normal;min-width:180px}
 .apps{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
 .qr{background:#fff;padding:6px;border:1px solid var(--line);border-radius:10px;display:inline-block}
 @media (max-width:760px){.app{grid-template-columns:1fr}.rail{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}.rail h5{display:none}.frame{grid-column:1}}
+.types{display:inline-flex;gap:4px}
+.box.sm{padding:3px 8px;font-size:12px;border-radius:6px}
+.box.sm b{font-family:var(--mono);font-weight:700}

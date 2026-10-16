@@ -350,35 +350,3 @@ func TestDispatchShowsPrintsAndPetpoojaOrders(t *testing.T) {
 		}
 	}
 }
-
-func TestDispatchFollowsPrintRules(t *testing.T) {
-	_, pp, done := setup(t)
-	defer done()
-	fakePrinters(t, "Counter")
-	resetPrintState()
-	loadPrint()
-	prMu.Lock()
-	prSettings.PrinterName = "Counter"
-	prOpts.Main = "never"
-	prOpts.Rules = []Rule{{Name: "Delivery", On: true, Types: []int{1}, Printer: "Counter", Token: true, Copies: 1}}
-	prMu.Unlock()
-	now := time.Now()
-	pick := strings.Replace(onlineRow(801, 81, "1", "", now, "Pongal", 13, 1), `"order_type":1`, `"order_type":2`, 1)
-	pp.set(onlineRow(800, 80, "1", "250951448160800", now, "Masala Dosa", 11, 1), pick)
-	if err := pollOnce(cfg.Server); err != nil {
-		t.Fatal(err)
-	}
-	var kots []int64
-	for _, o := range dispatchOrders(now.Add(-time.Hour), time.Now()) {
-		kots = append(kots, o.Kot)
-	}
-	if len(kots) != 1 || kots[0] != 800 {
-		t.Fatalf("only the delivery order should show: %v", kots)
-	}
-	prMu.Lock()
-	prOpts.Main = "always"
-	prMu.Unlock()
-	if n := len(dispatchOrders(now.Add(-time.Hour), time.Now())); n != 2 {
-		t.Fatalf("main printer prints everything: want 2, got %d", n)
-	}
-}

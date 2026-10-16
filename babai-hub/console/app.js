@@ -157,7 +157,7 @@ if (/[?&]w=1/.test(location.search)) {
 }
 
 // ---- Dispatch ----------------------------------------------------------------------------------
-var D = { mode: LS.get("d.mode", "open"), types: LS.get("d.types", [1, 2]), sort: LS.get("d.sort", "old"), q: "", data: null, hidden: {} };
+var D = { mode: LS.get("d.mode", "open"), types: LS.get("d.types3", [1, 2, 3]), sort: LS.get("d.sort", "old"), q: "", data: null, hidden: {} };
 function t0(o) { var sk = (D.data && D.data.skew) || 0; return o.punched ? o.punched + sk : o.seen; }
 function tcls(ms) { var m = ms / 60000; return m >= 30 ? "dr" : m >= 15 ? "r" : m >= 10 ? "y" : ""; }
 function dmatch(o) {
@@ -168,10 +168,10 @@ function dmatch(o) {
 }
 VIEWS.dispatch = {
   html: function () {
-    var tb = [1, 2, 3].map(function (t) { return '<button class="box" data-type="' + t + '" aria-pressed="' + (D.types.indexOf(t) >= 0) + '">' + typeName(t) + "</button>"; }).join("");
+    var tb = '<span class="types" role="group" aria-label="Order type">' + [1, 2, 3].map(function (t) { return '<button class="box sm" data-type="' + t + '" aria-pressed="' + (D.types.indexOf(t) >= 0) + '">' + typeName(t) + ' <b data-tc="' + t + '"></b></button>'; }).join("") + "</span>";
     return '<div class="bar"><div class="seg" role="group" aria-label="Show"><button data-mode="open" aria-pressed="' + (D.mode === "open") + '">Preparing</button><button data-mode="all" aria-pressed="' + (D.mode === "all") + '">All orders</button></div>' +
       tb + '<input type="search" id="dq" class="grow" placeholder="Search: last 4 digits of order ID, or KOT number" value="' + esc(D.q) + '" aria-label="Search">' +
-      '<button class="box" id="dsort" aria-pressed="' + (D.sort === "old") + '">Longest waiting first</button><span class="mute" id="dcount"></span></div><p class="help">Shows the orders this PC prints, as set in Printers &amp; rules (e.g. a Delivery-only rule shows only deliveries).</p><div id="dlist"></div>';
+      '<button class="box" id="dsort" aria-pressed="' + (D.sort === "old") + '">Longest waiting first</button><span class="mute" id="dcount"></span></div><div id="dlist"></div>';
   },
   init: function () {
     $("main").querySelectorAll("[data-mode]").forEach(function (b) { b.onclick = function () { D.mode = b.dataset.mode; LS.set("d.mode", D.mode); render(); }; });
@@ -179,7 +179,7 @@ VIEWS.dispatch = {
       b.onclick = function () {
         var t = +b.dataset.type, i = D.types.indexOf(t);
         if (i >= 0) D.types.splice(i, 1); else D.types.push(t);
-        LS.set("d.types", D.types); b.setAttribute("aria-pressed", String(i < 0)); drawDispatch();
+        LS.set("d.types3", D.types); b.setAttribute("aria-pressed", String(i < 0)); drawDispatch();
       };
     });
     $("dsort").onclick = function () { D.sort = D.sort === "old" ? "new" : "old"; LS.set("d.sort", D.sort); this.setAttribute("aria-pressed", String(D.sort === "old")); drawDispatch(); };
@@ -215,6 +215,10 @@ function drawDispatch() {
   counts.dispatch = (D.data.orders || []).filter(function (o) { return o.status === "preparing" && !D.hidden[okey(o)]; }).length || "";
   renderRail();
   $("dcount").textContent = list.length + (D.mode === "open" ? " preparing" : " orders");
+  [1, 2, 3].forEach(function (t) { // how many are preparing per order type
+    var n = (D.data.orders || []).filter(function (o) { return o.type === t && o.status === "preparing" && !D.hidden[okey(o)]; }).length, e = document.querySelector('[data-tc="' + t + '"]');
+    if (e) e.textContent = n || "";
+  });
   if (!list.length) { el.innerHTML = '<p class="empty">' + (D.q ? "No order matches “" + esc(D.q) + "”." : D.mode === "open" ? "Nothing waiting. New orders appear here as soon as Petpooja has them." : "No orders yet today.") + "</p>"; return; }
   if (D.mode === "all") { el.innerHTML = allOrdersTable(list); return; }
   el.className = "dgrid";

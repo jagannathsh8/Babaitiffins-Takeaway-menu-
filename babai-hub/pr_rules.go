@@ -305,32 +305,3 @@ func slipBrand(k *Kot) string {
 	}
 	return ""
 }
-
-// wouldPrint: does this PC print a KOT for this order (rules + main printer)? The Dispatch
-// screen shows only these orders, so it follows Printers & rules (e.g. only Delivery).
-func wouldPrint(f OrderFacts, s PrintSettings, o PrintOptions) bool {
-	matched, skip := false, false
-	for _, r := range o.Rules {
-		ok, items := matchRule(r, f)
-		if !ok {
-			continue
-		}
-		matched = true
-		if r.Action == "skip" {
-			skip = true
-			continue
-		}
-		if r.Printer != "" && (r.Part != "items" || len(items) > 0) {
-			return true
-		}
-	}
-	if skip || !mainSet(s) {
-		return false
-	}
-	return o.Main == "always" || o.Main == "" || (o.Main == "unmatched" && !matched)
-}
-
-// printFilterOn: the Dispatch screen follows the print setup only once it is set up.
-func printFilterOn(s PrintSettings, o PrintOptions) bool {
-	return o.Enabled && (mainSet(s) || len(o.Rules) > 0)
-}
