@@ -486,3 +486,24 @@ func localSlot(d string) string {
 	}
 	return ""
 }
+
+// slotForKot: the token of a KOT: the print linked to it, else by its order number.
+func slotForKot(id int64, poid string) string {
+	prMu.Lock()
+	for i := len(prJobs) - 1; i >= 0; i-- {
+		if prJobs[i].Kot == id {
+			t := prJobs[i].Token
+			prMu.Unlock()
+			return itoa(t)
+		}
+	}
+	prMu.Unlock()
+	ordMu.Lock()
+	if o := orders[id]; o != nil && o.Token > 0 {
+		t := o.Token
+		ordMu.Unlock()
+		return itoa(t)
+	}
+	ordMu.Unlock()
+	return slotFor(poid)
+}

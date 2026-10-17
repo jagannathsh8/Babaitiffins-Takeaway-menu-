@@ -129,6 +129,11 @@ func tryMatch(j *Job, slip *ReceiptMeta, waiting []*Job) *matchResult {
 			k := best[0]
 			return &matchResult{&k, "ocr"}
 		}
+		if len(best) == 0 {
+			if k := nearID(d, slip.Brand); k != nil {
+				return &matchResult{k, "ocr"}
+			}
+		}
 		return nil // its KOT isn't in Petpooja's list (yet): never guess another one
 	}
 	recv := time.UnixMilli(j.Recv)
@@ -366,10 +371,10 @@ func lateIdentify(j *Job, ocrDone chan ReceiptMeta) {
 	}
 }
 
-// lateLink: keeps looking for the KOT of a printed slip's order number for two minutes.
+// lateLink: keeps looking for the KOT of a printed slip's order number for ten minutes.
 func lateLink(j *Job, orderID string) {
 	slip := &ReceiptMeta{OrderID: orderID}
-	for end := time.Now().Add(2 * time.Minute); time.Now().Before(end); time.Sleep(2 * time.Second) {
+	for end := time.Now().Add(10 * time.Minute); time.Now().Before(end); time.Sleep(2 * time.Second) {
 		mkMu.Lock()
 		res := tryMatch(j, slip, nil)
 		if res != nil {
@@ -385,4 +390,37 @@ func lateLink(j *Job, orderID string) {
 			return
 		}
 	}
+}
+
+// nearID (mkMu held): OCR misread a digit or two of a long order number (Ownly prints part of
+// it bold). The one KOT of the same kind whose number differs in at most 2 digits, or whose
+// last 4 digits (the ones staff and scanners use) are the same, is that order.
+func nearID(d, brand string) *Kot {
+	var hits []Kot
+	for _, k := range mkKots {
+		p := digitsOnly(k.POID)
+		if len(p) < 8 || !slipFits(brand, k) {
+			continue
+		}
+		same := false
+		if len(p) == len(d) {
+			diff := 0
+			for i := range p {
+				if p[i] != d[i] {
+					diff++
+				}
+			}
+			same = diff <= 2
+		}
+		if !same && len(d) >= 8 && p[len(p)-4:] == d[len(d)-4:] && (len(p) == len(d) || p[:4] == d[:4]) {
+			same = true
+		}
+		if same {
+			hits = append(hits, k)
+		}
+	}
+	if len(hits) == 1 {
+		return &hits[0]
+	}
+	return nil
 }

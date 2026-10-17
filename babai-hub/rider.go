@@ -120,7 +120,7 @@ func riderOrders(kots []Kot) []riderOrder {
 		if !isRiderOrder(k) || k.Status == "0" || k.Status == "10" || kotHidden(k) {
 			continue
 		}
-		o := riderOrder{ID: k.ID, Platform: brandOf(k), Order: k.POID, Slot: slotFor(k.POID), Created: k.Created}
+		o := riderOrder{ID: k.ID, Platform: brandOf(k), Order: k.POID, Slot: slotForKot(k.ID, k.POID), Created: k.Created}
 		if o.Order == "" {
 			o.Order = strconv.FormatInt(k.ID, 10)
 		}

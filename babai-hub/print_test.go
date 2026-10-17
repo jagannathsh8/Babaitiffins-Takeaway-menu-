@@ -393,3 +393,33 @@ func TestPrintNeverTakesAnotherNewKOT(t *testing.T) {
 		t.Fatalf("pick-up slip took KOT %d (%+v)", j2.Kot, j2.Metadata)
 	}
 }
+
+func TestOwnlyMisreadStillFindsItsKOT(t *testing.T) {
+	_, pp, done := setup(t)
+	defer done()
+	fakePrinters(t, "Counter")
+	resetPrintState()
+	loadPrint()
+	prMu.Lock()
+	prSettings.PrinterName = "Counter"
+	prOpts.IdentifyWait = 400
+	prMu.Unlock()
+	pp.set()
+	if err := pollOnce(cfg.Server); err != nil {
+		t.Fatal(err)
+	}
+	ownly := strings.Replace(onlineRow(950, 95, "1", "1792217946190158774", time.Now(), "Idli", 12, 1), `"o_u_id":"6736"`, `"o_u_id":"","online_order_user_name":"Ownly"`, 1)
+	pp.set(ownly)
+	// OCR read two digits wrong
+	j, _ := capture([]byte("Ownly : 1792217946180158874\nKOT - 95\nDelivery\n"), "10.0.0.5", time.Now())
+	waitJob(t, j, "sent")
+	prMu.Lock()
+	kot := j.Kot
+	prMu.Unlock()
+	if kot != 950 {
+		t.Fatalf("Ownly slip not linked to its KOT (got %d)", kot)
+	}
+	if s := slotForKot(950, "1792217946190158774"); s != "1" {
+		t.Fatalf("rider slot %q", s)
+	}
+}
