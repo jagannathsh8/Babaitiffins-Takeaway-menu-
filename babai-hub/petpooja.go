@@ -325,14 +325,46 @@ func fetchSyncCode(base, host string) (string, error) {
 	return code, nil
 }
 
+// fetchKots reads the kitchen list. The billing PC sends at most 300 item rows, oldest first, so
+// when dine-in KOTs are left open in Petpooja the newest (online) orders fall off the end and
+// vanish from the rider screen. Then delivery and pick-up are read again on their own and added.
 func fetchKots(base, code string) ([]Row, []byte, error) {
+	rows, raw, err := fetchKotTypes(base, code, orderTypesAll)
+	if err != nil || len(rows) < kotRowCap-5 {
+		return rows, raw, err
+	}
+	for _, types := range []string{"1,2", "1"} {
+		more, _, err := fetchKotTypes(base, code, types)
+		if err != nil {
+			break
+		}
+		// these KOTs come whole from the shorter list
+		ids := map[int64]bool{}
+		for _, r := range more {
+			ids[r.ID.Int()] = true
+		}
+		kept := rows[:0:0]
+		for _, r := range rows {
+			if !ids[r.ID.Int()] {
+				kept = append(kept, r)
+			}
+		}
+		rows = append(kept, more...)
+		if len(more) < kotRowCap-5 {
+			break // this list was complete
+		}
+	}
+	return rows, raw, nil
+}
+
+func fetchKotTypes(base, code, types string) ([]Row, []byte, error) {
 	req := map[string]any{
 		"intra_server_version": intraVersion,
 		"is_addon_combo":       0,
 		"sync_code":            code,
 		"category_ids":         "-1",
 		"kot_ids":              []int64{},
-		"order_type":           orderTypesAll,
+		"order_type":           types,
 		"release_kot_on":       releaseOnDispat,
 		"user":                 userJSON,
 		"clientIdentifier":     clientID,

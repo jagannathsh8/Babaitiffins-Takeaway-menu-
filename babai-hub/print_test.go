@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -421,5 +422,57 @@ func TestOwnlyMisreadStillFindsItsKOT(t *testing.T) {
 	}
 	if s := slotForKot(950, "1792217946190158774"); s != "1" {
 		t.Fatalf("rider slot %q", s)
+	}
+}
+
+// capPetpooja answers like the billing PC: at most 300 rows, oldest first, by order type.
+type capPetpooja struct{ rows []map[string]any }
+
+func (p *capPetpooja) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var body map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	switch r.URL.Path {
+	case "/petpooja_server/kiosk_get_default_data":
+		w.Write([]byte(`{"data":{"sync_code":"S"}}`))
+	case "/petpooja_server/get_kot_data_for_kitchen_view":
+		types, _ := body["order_type"].(string)
+		var out []map[string]any
+		for _, row := range p.rows {
+			if strings.Contains(types, fmt.Sprint(row["order_type"])) && len(out) < 300 {
+				out = append(out, row)
+			}
+		}
+		b, _ := json.Marshal(map[string]any{"data": out})
+		w.Write(b)
+	default:
+		w.Write([]byte(`{}`))
+	}
+}
+
+func TestOnlineOrdersNotLostBehindOldDineInKOTs(t *testing.T) {
+	_, _, done := setup(t)
+	defer done()
+	cp := &capPetpooja{}
+	old := time.Now().Add(-48 * time.Hour).Format("2006-01-02 15:04:05")
+	for i := 0; i < 400; i++ { // 400 old dine-in KOTs left open
+		cp.rows = append(cp.rows, map[string]any{"id": 1000 + i, "order_type": 3, "kot_status": "1", "created": old, "name": "Idli", "status": 1})
+	}
+	cp.rows = append(cp.rows, map[string]any{"id": 5000, "order_type": 1, "kot_status": "1", "created": time.Now().Format("2006-01-02 15:04:05"),
+		"p_o_id": "251185952139584", "o_u_id": "6736", "name": "Masala Dosa", "status": 1})
+	srv := httptest.NewServer(cp)
+	defer srv.Close()
+	cfg.Server = strings.TrimPrefix(srv.URL, "http://")
+	resetPetpooja()
+	if err := pollOnce(cfg.Server); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, o := range riderOrders(ppKots) {
+		if o.ID == 5000 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the Swiggy order fell off the capped kitchen list")
 	}
 }
