@@ -246,7 +246,16 @@ func handleDispatch(w http.ResponseWriter, r *http.Request) {
 const printOnlyKeep = 3 * time.Hour
 
 func dispatchOrders(since, now time.Time) []OrderRec {
-	list := ordersSnapshot(since) // every order in Petpooja's kitchen list, like the KDS
+	// every order in Petpooja's kitchen list, like the KDS; KOTs punched more than 12 h ago
+	// (dine-in KOTs Petpooja keeps listing) are left out
+	skew := clockSkew()
+	var list []OrderRec
+	for _, o := range ordersSnapshot(since) {
+		if o.Punched > 0 && now.Sub(time.UnixMilli(o.Punched+skew)) > 12*time.Hour {
+			continue
+		}
+		list = append(list, o)
+	}
 	byID := map[string]int{}
 	for i := range list {
 		o := &list[i]

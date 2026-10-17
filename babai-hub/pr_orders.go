@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -49,24 +50,27 @@ var (
 	ordLoaded   bool
 	readyByMap  = map[int64]string{} // KOT -> who marked it, until the next Petpooja read shows it
 	skewSamples []int64
+	skewNow     atomic.Int64
 )
 
 // clockSkew: ms to add to Petpooja's KOT times to get this PC's time (timers on Dispatch).
 // Only differences beyond 2 minutes count as a clock difference; a KOT is seen a few seconds
 // after it is punched anyway.
-func clockSkew() int64 {
-	ordMu.Lock()
-	defer ordMu.Unlock()
+func clockSkew() int64 { return skewNow.Load() }
+
+// updateSkew (ordMu held) works out the clock difference from the samples.
+func updateSkewLocked() {
 	if len(skewSamples) < 3 {
-		return 0
+		skewNow.Store(0)
+		return
 	}
 	s := append([]int64(nil), skewSamples...)
 	sort.Slice(s, func(a, b int) bool { return s[a] < s[b] })
 	m := s[len(s)/2]
 	if m > -120_000 && m < 120_000 {
-		return 0
+		m = 0
 	}
-	return m
+	skewNow.Store(m)
 }
 
 func mkPrimedNow() bool {
@@ -155,6 +159,7 @@ func recFor(k *Kot, now time.Time) *OrderRec {
 			if len(skewSamples) > 25 {
 				skewSamples = skewSamples[1:]
 			}
+			updateSkewLocked()
 		}
 	}
 	o.KotNo, o.OrderID, o.Type, o.Table, o.Punched = k.Token, k.POID, k.OrderType, k.Table, k.Created

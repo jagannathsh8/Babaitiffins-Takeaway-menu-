@@ -350,3 +350,46 @@ func TestDispatchShowsPrintsAndPetpoojaOrders(t *testing.T) {
 		}
 	}
 }
+
+func TestPrintNeverTakesAnotherNewKOT(t *testing.T) {
+	_, pp, done := setup(t)
+	defer done()
+	dir := fakePrinters(t, "Counter")
+	resetPrintState()
+	loadPrint()
+	prMu.Lock()
+	prSettings.PrinterName = "Counter"
+	prOpts.IdentifyWait = 400
+	prMu.Unlock()
+	now := time.Now()
+	pp.set(onlineRow(900, 90, "1", "250000000000900", now.Add(-10*time.Minute), "Pongal", 13, 1))
+	if err := pollOnce(cfg.Server); err != nil {
+		t.Fatal(err)
+	}
+	dine := strings.Replace(row(901, 91, 3, "1", now, "Masala Dosa", "Dosa", 1, 1), `"p_o_id":""`, `"p_o_id":""`, 1)
+	swiggy := onlineRow(902, 1217, "1", "251185952139584", now, "Idli (2 Pcs)", 12, 1)
+	// a dine-in KOT (printed in the kitchen, not here) appears first; the Swiggy KOT a moment later
+	pp.set(onlineRow(900, 90, "1", "250000000000900", now.Add(-10*time.Minute), "Pongal", 13, 1), dine)
+	j, _ := capture([]byte("17/10/26 11:23\nKOT - 1217\nSwiggy : 251185952139584\nDelivery\n"), "10.0.0.5", time.Now())
+	time.Sleep(150 * time.Millisecond)
+	pp.set(onlineRow(900, 90, "1", "250000000000900", now.Add(-10*time.Minute), "Pongal", 13, 1), dine, swiggy)
+	waitJob(t, j, "sent")
+	prMu.Lock()
+	kot, brand := j.Kot, j.Metadata.Brand
+	prMu.Unlock()
+	if kot != 902 || brand != "Swiggy" {
+		t.Fatalf("matched KOT %d (%s), want the Swiggy KOT 902", kot, brand)
+	}
+	if out := printed(t, dir, "Counter"); len(out) != 1 || !bytes.Contains(out[0], []byte("Swiggy 1\n")) {
+		t.Fatalf("slip: %q", out)
+	}
+	// a pick-up slip while only a dine-in KOT is new: not matched, printed as the slip says
+	pp.set(dine, swiggy, strings.Replace(row(903, 92, 3, "1", time.Now(), "Vada", "Vada", 1, 1), "", "", 0))
+	j2, _ := capture([]byte("Pick up\nKOT - 92\n"), "10.0.0.5", time.Now())
+	waitJob(t, j2, "sent")
+	prMu.Lock()
+	defer prMu.Unlock()
+	if j2.Kot != 0 || j2.Metadata.Brand != "Pick up" {
+		t.Fatalf("pick-up slip took KOT %d (%+v)", j2.Kot, j2.Metadata)
+	}
+}

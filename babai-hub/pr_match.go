@@ -97,8 +97,18 @@ func kotByID(id int64) *Kot {
 }
 
 // tryMatch (mkMu held): the KOT for job j, or nil when still unsure.
-func tryMatch(j *Job, ocrID string, waiting []*Job) *matchResult {
-	if d := digitsOnly(ocrID); len(d) >= 6 {
+//
+// The order number read off the slip (text or OCR) decides when there is one. Only when the
+// slip has been read and has no order number (pick up, dine in) is the KOT matched by timing:
+// a KOT that has just appeared, punched around the time of the print, of the same kind as the
+// slip says (Swiggy / Zomato / Pick up …), with no print yet. Never by timing alone before the
+// slip is read: not every KOT prints here (dine-in KOTs may print in the kitchen), so "the newest
+// KOT" can be someone else's.
+func tryMatch(j *Job, slip *ReceiptMeta, waiting []*Job) *matchResult {
+	if slip == nil {
+		return nil
+	}
+	if d := digitsOnly(slip.OrderID); len(d) >= 6 {
 		best, bestN := []Kot(nil), 0
 		for _, k := range mkKots {
 			p := digitsOnly(k.POID)
@@ -119,16 +129,28 @@ func tryMatch(j *Job, ocrID string, waiting []*Job) *matchResult {
 			k := best[0]
 			return &matchResult{&k, "ocr"}
 		}
+		return nil // its KOT isn't in Petpooja's list (yet): never guess another one
 	}
 	recv := time.UnixMilli(j.Recv)
+	skew := time.Duration(clockSkew()) * time.Millisecond
 	var cands []Kot
 	for _, k := range mkKots {
 		if _, linked := mkLinked[k.ID]; linked || k.Status == "0" {
 			continue
 		}
-		if t, ok := mkFirst[k.ID]; ok && t.After(recv.Add(-newKotWindow)) {
-			cands = append(cands, k)
+		t, ok := mkFirst[k.ID]
+		if !ok || !t.After(recv.Add(-newKotWindow)) {
+			continue
 		}
+		if k.Created > 0 {
+			if d := time.UnixMilli(k.Created).Add(skew).Sub(recv); d < -5*time.Minute || d > 2*time.Minute {
+				continue // punched long before (or after) this print: an old KOT showing up again
+			}
+		}
+		if !slipFits(slip.Brand, k) {
+			continue
+		}
+		cands = append(cands, k)
 	}
 	if len(cands) == 0 {
 		return nil
@@ -139,21 +161,44 @@ func tryMatch(j *Job, ocrID string, waiting []*Job) *matchResult {
 		}
 		return cands[a].ID < cands[b].ID
 	})
-	// prints still waiting for their order, oldest first
+	// prints still waiting for their order (of the same kind), oldest first
+	var same []*Job
+	for _, w := range waiting {
+		if w.ID == j.ID || w.slipBrand == slip.Brand {
+			same = append(same, w)
+		}
+	}
 	pos := -1
-	for i, w := range waiting {
+	for i, w := range same {
 		if w.ID == j.ID {
 			pos = i
 		}
 	}
-	if pos < 0 {
+	if pos < 0 || len(cands) != len(same) {
 		return nil
 	}
-	if len(cands) == len(waiting) {
-		k := cands[pos]
-		return &matchResult{&k, "petpooja"}
+	k := cands[pos]
+	return &matchResult{&k, "petpooja"}
+}
+
+// slipFits: the KOT is of the kind the slip says ("" = the slip didn't say).
+func slipFits(brand string, k Kot) bool {
+	b := strings.ToLower(strings.TrimSpace(brand))
+	if b == "" {
+		return true
 	}
-	return nil
+	names := strings.ToLower(brandOf(k) + " " + k.Platform + " " + k.Channel)
+	switch b {
+	case "pick up":
+		return k.OrderType == 2
+	case "dine in":
+		return k.OrderType == 3
+	case "self service":
+		return strings.Contains(names, "self")
+	case "swiggy":
+		return strings.Contains(names, "swiggy") || strings.Contains(names, "toing")
+	}
+	return strings.Contains(names, b) || (k.OrderType == 1 && !k.Online && b == "delivery")
 }
 
 var (
@@ -194,12 +239,15 @@ func waitingSnapshot() []*Job {
 // identify finds the order for a print within wait. OCR (if any) runs alongside.
 func identify(j *Job, raw []byte, wait time.Duration) (*Kot, ReceiptMeta, string) {
 	start := time.Now()
+	images, text, _ := decodeReceipt(raw)
+	textMeta := parseReceiptText(text)
+	if len(images) > 0 {
+		wait += 1500 * time.Millisecond // the slip is a picture: time for Windows OCR to read it
+	}
 	deadline := start.Add(wait)
 	addWaiting(j)
 	defer dropWaiting(j)
 
-	images, text, _ := decodeReceipt(raw)
-	textMeta := parseReceiptText(text)
 	ocrDone := make(chan ReceiptMeta, 1)
 	if len(images) > 0 {
 		go func() {
@@ -236,11 +284,7 @@ func identify(j *Job, raw []byte, wait time.Duration) (*Kot, ReceiptMeta, string
 	var ocr *ReceiptMeta
 	for {
 		mkMu.Lock()
-		ocrID := ""
-		if ocr != nil {
-			ocrID = ocr.OrderID
-		}
-		res := tryMatch(j, ocrID, waitingSnapshot())
+		res := tryMatch(j, ocr, waitingSnapshot())
 		if res != nil {
 			mkLinked[res.kot.ID] = j.ID
 		}
@@ -268,6 +312,9 @@ func identify(j *Job, raw []byte, wait time.Duration) (*Kot, ReceiptMeta, string
 		case m := <-ocrDone:
 			ocr = &m
 			ocrDone = nil
+			mkMu.Lock()
+			j.slipBrand = m.Brand
+			mkMu.Unlock()
 			if !ppFresh() {
 				left = 0 // no Petpooja list to wait for: print with what OCR read
 			}
@@ -287,6 +334,9 @@ func identify(j *Job, raw []byte, wait time.Duration) (*Kot, ReceiptMeta, string
 	}
 	if ocr != nil {
 		j.OCR = ocr.OrderID
+		if digitsOnly(ocr.OrderID) != "" {
+			go lateLink(j, ocr.OrderID) // its KOT may still reach Petpooja's list
+		}
 		return nil, *ocr, firstNonEmpty(ocr.Method, "ocr")
 	}
 	go lateIdentify(j, ocrDone)
@@ -310,16 +360,29 @@ func lateIdentify(j *Job, ocrDone chan ReceiptMeta) {
 		}
 		prMu.Unlock()
 		if m.OrderID != "" {
-			mkMu.Lock()
-			res := tryMatch(j, m.OrderID, nil)
-			if res != nil {
-				mkLinked[res.kot.ID] = j.ID
-			}
-			mkMu.Unlock()
-			if res != nil {
-				linkJob(j, res.kot, "ocr")
-			}
+			lateLink(j, m.OrderID)
 		}
 	case <-time.After(30 * time.Second):
+	}
+}
+
+// lateLink: keeps looking for the KOT of a printed slip's order number for two minutes.
+func lateLink(j *Job, orderID string) {
+	slip := &ReceiptMeta{OrderID: orderID}
+	for end := time.Now().Add(2 * time.Minute); time.Now().Before(end); time.Sleep(2 * time.Second) {
+		mkMu.Lock()
+		res := tryMatch(j, slip, nil)
+		if res != nil {
+			if _, taken := mkLinked[res.kot.ID]; taken {
+				res = nil
+			} else {
+				mkLinked[res.kot.ID] = j.ID
+			}
+		}
+		mkMu.Unlock()
+		if res != nil {
+			linkJob(j, res.kot, "ocr")
+			return
+		}
 	}
 }
