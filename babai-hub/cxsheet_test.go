@@ -28,7 +28,7 @@ func TestCXSheetSendsKitchenTimesOnce(t *testing.T) {
 	ordLoaded = true
 	orders = map[int64]*OrderRec{
 		1: {Kot: 1, OrderID: "251265509181492", Channel: "Swiggy", Punched: p, Seen: p + 2000, Token: 41, Printed: p + 3000, PrintMs: 1200,
-			Ready: p + 9*60000, Dispatched: p + 30*60000, Status: "dispatched", Items: []KItem{{N: "Idli"}, {N: "Vada"}}},
+			Ready: p + 9*60000, Dispatched: p + 30*60000, Status: "dispatched", Items: []KItem{{N: "Idli", Q: 2}, {N: "Vada", Q: 1}}},
 		2: {Kot: 2, OrderID: "8736920371", Channel: "Zomato", Punched: p, Seen: p, Status: "preparing"},
 		3: {Kot: 3, OrderID: "", Table: "4", Punched: p, Seen: p, Status: "preparing"},                 // dine in: no order ID
 		4: {Kot: 4, OrderID: "8736920999", Punched: p, Seen: p, Status: "cancelled"},                   // cancelled
@@ -60,7 +60,7 @@ func TestCXSheetSendsKitchenTimesOnce(t *testing.T) {
 			sw = r
 		}
 	}
-	if sw.ID != "251265509181492" || sw.Outlet != "VTR" || sw.KptMin != 9 || sw.WaitMin != 21 || sw.Slot != "41" || sw.Items != 2 || sw.PrintSec != 1.2 {
+	if sw.ID != "251265509181492" || sw.Outlet != "VTR" || sw.KptMin != 9 || sw.WaitMin != 21 || sw.Slot != "41" || sw.Items != 2 || sw.Names != "2 x Idli, 1 x Vada" || sw.PrintSec != 1.2 {
 		t.Fatalf("row %+v", sw)
 	}
 	// nothing changed: nothing sent, even when asked

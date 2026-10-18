@@ -50,6 +50,7 @@ type CXRow struct {
 	Token      int     `json:"token,omitempty"`
 	Slot       string  `json:"slot,omitempty"`
 	Items      int     `json:"items"`
+	Names      string  `json:"names,omitempty"` // "2 x Idli, 1 x Vada" (matches Swiggy complaints, whose order ID differs)
 	Punched    int64   `json:"punched,omitempty"`
 	Printed    int64   `json:"printed,omitempty"`
 	Ready      int64   `json:"ready,omitempty"`
@@ -88,6 +89,13 @@ func cxRow(o OrderRec, outlet string) *CXRow {
 	r := &CXRow{ID: id, Outlet: outlet, Channel: o.Channel, Brand: o.Brand, Type: o.Type, Kot: o.Kot, Token: o.Token,
 		Slot: o.Slot, Items: len(o.Items), Punched: start, Printed: o.Printed, Ready: o.Ready, ReadyBy: o.ReadyBy,
 		Dispatched: o.Dispatched, Delivered: o.Delivered, Status: o.Status}
+	var names []string
+	for _, it := range o.Items {
+		if n := strings.TrimSpace(it.N); n != "" {
+			names = append(names, fmt.Sprintf("%g x %s", it.Q, n))
+		}
+	}
+	r.Names = strings.Join(names, ", ")
 	if r.Slot == "" && o.Token > 0 {
 		r.Slot = fmt.Sprint(o.Token)
 	}

@@ -71,14 +71,46 @@ td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowra
 .pend{color:var(--mute)}
 .note{font-size:12.5px;color:var(--mute);margin:6px 0 0}
 .empty{color:var(--mute);padding:18px 0;text-align:center}
-#orders tr.o{cursor:pointer}
-#orders tr.o:hover td{background:var(--bg)}
-#orders td.sum{max-width:520px;min-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#orders tr.open td.sum{white-space:normal}
 .cust{white-space:nowrap}
 .tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .tools label{font-size:13px;color:var(--ink2);display:flex;gap:6px;align-items:center}
-@media (max-width:560px){.br{grid-template-columns:110px 1fr 36px}.f{flex:1 1 44%}.f select,.f input{width:100%}}
+.big{display:flex;flex-direction:column;gap:10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.kpi{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.kpi .l{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--mute);font-weight:700}
+.kpi .v{font:600 22px var(--mono);font-variant-numeric:tabular-nums;margin-top:1px}
+.kpi .v small{font-size:13px;color:var(--ink2)}
+.kpi .s{font-size:12px;color:var(--ink2);font-variant-numeric:tabular-nums}
+.kpi.bad{box-shadow:inset 3px 0 0 var(--bad)}
+h3.sec{margin:6px 0 0;font-size:13px;letter-spacing:.6px;text-transform:uppercase;color:var(--mute)}
+table.brands td,table.brands th{padding:5px 8px;white-space:nowrap}
+table.brands tr.out td{background:var(--bg);border-top:2px solid var(--line)}
+table.brands tr.tot td{border-top:2px solid var(--ink2)}
+table.brands .ind{padding-left:14px;color:var(--ink2)}
+.sub{color:var(--mute);font-size:12px;font-weight:400}
+.badtxt{color:var(--bad);font-weight:700}
+.ccards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.cc{border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px}
+.cc .ct{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.cc .cn{font:600 20px var(--mono)}
+.cc .cl{margin-top:2px}
+.line{margin:0;font-size:13px;color:var(--ink2)}
+.ord{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.ord.prob{box-shadow:inset 3px 0 0 var(--bad)}
+.oh{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;font-size:13px}
+.oh .when{font:600 13px var(--mono)}
+.mono{font-family:var(--mono);font-size:12.5px}
+.star{font-weight:800}.star.s1,.star.s2{color:var(--bad)}.star.s3{color:var(--warn)}.star.s4,.star.s5{color:var(--good)}
+.ob{display:flex;gap:12px;margin-top:6px;align-items:flex-start}
+.ob .main{flex:1;min-width:0;font-size:13px;display:flex;flex-direction:column;gap:3px}
+.q{background:var(--bg);border-radius:6px;padding:4px 8px}
+.tl{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:2px}
+.tl .ar{color:var(--mute)}
+.chip2{font-style:normal;font:600 12px var(--mono);border-radius:6px;padding:1px 6px;background:var(--goodbg);color:var(--good)}
+.chip2.warn{background:var(--warnbg);color:var(--warn)}.chip2.bad{background:var(--badbg);color:var(--bad)}
+.ph{flex:none;font-size:12px}
+.ph img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block}
+@media (max-width:560px){.ob{flex-direction:column}.ph img{width:100%;height:auto;max-height:240px}.br{grid-template-columns:110px 1fr 36px}.f{flex:1 1 44%}.f select,.f input{width:100%}}
 </style>
 </head>
 <body>
@@ -114,35 +146,29 @@ td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowra
   <button class="btn" id="reset" type="button">Reset filters</button>
 </div>
 
-<div class="tiles" id="tiles"></div>
-
-<div class="grid2">
-  <section class="card"><div class="hd"><h2 id="trendTitle">Ratings over time</h2><span id="trendSub"></span></div><div id="trend"></div></section>
-  <section class="card"><div class="hd"><h2>By meal time</h2><span>Breakfast 7–12 · Lunch 12–4 · Snacks 4–7 · Dinner 7 pm on</span></div><div class="legend"><span><i style="background:var(--c1)"></i>Complaints</span><span><i style="background:var(--c2)"></i>Low ratings (1–3★)</span></div><div id="meals"></div><p class="note" id="mealNote"></p></section>
-</div>
-<section class="card"><div class="hd"><h2>Outlets</h2><span>ratings, complaints and kitchen times for the filters above</span></div><div class="tw" id="outlets"></div></section>
-<div class="grid2">
-  <section class="card"><div class="hd"><h2>Complaints by type and outlet</h2><span id="ctSub"></span></div><div class="legend" id="tlegend"></div><div id="ctype"></div></section>
-  <section class="card"><div class="hd"><h2>Likely cause</h2><span>complaints and 1–3★ ratings</span></div><div id="causes" class="bars"></div><p class="note" id="causeNote"></p></section>
-</div>
-<div class="grid2">
-  <section class="card"><div class="hd"><h2>Who complained</h2><span>from the platforms' 90-day history</span></div><div id="custs" class="bars"></div><p class="note">New = first order with us in 90 days · Repeat = 2–5 · Regular = 6 or more. Flagged = many issues for few orders, or a brand-new platform account.</p></section>
-  <section class="card"><div class="hd"><h2>Items named in complaints</h2><span>most often missing or wrong</span></div><div id="items" class="bars"></div></section>
-</div>
+<section class="card big" aria-label="Summary">
+  <div class="kpis" id="kpis"></div>
+  <h3 class="sec">By outlet and platform</h3>
+  <div class="tw" id="brands"></div>
+  <h3 class="sec">Complaints</h3>
+  <div class="ccards" id="ccards"></div>
+  <p class="line" id="who"></p>
+  <p class="line" id="meals"></p>
+</section>
 
 <section class="card">
   <div class="hd"><h2>Order by order</h2><span id="osub"></span></div>
   <div class="tools"><label><input type="checkbox" id="fProb" checked> Only problem orders (1–3★ or a complaint)</label><button class="btn" id="csv" type="button">Download CSV</button></div>
-  <div class="tw"><table id="orders"><thead><tr><th>When</th><th>Outlet</th><th>Platform</th><th>Order</th><th>Rating</th><th>Complaint</th><th>Customer</th><th>KPT</th><th>Rider wait</th><th>Slot</th><th>Everything about the order (tap to open)</th></tr></thead><tbody></tbody></table></div>
-  <p style="text-align:center;margin:10px 0 0"><button class="btn" id="more" type="button" hidden>Show 50 more</button></p>
-  <p class="note">KPT = punched to food ready. Rider wait = food ready to picked up. Both come from the Babai Console at each outlet; "–" means that outlet's Console isn't linked yet. Customer names and phone numbers are never shown.</p>
+  <div id="orders"></div>
+  <p style="text-align:center;margin:10px 0 0"><button class="btn" id="more" type="button" hidden>Show 30 more</button></p>
+  <p class="note">KPT = punched to food ready. RWT (rider wait) = food ready to picked up. Both come from the Babai Console at each outlet; "–" means no Console time for that order yet. P80 = 8 in 10 orders were at or under this. Customer names and phone numbers are never shown.</p>
 </section>
 </div>
 <div class="tip" id="tip" hidden></div>
 
 <script>
 var SNAP = null; // the published preview puts a copy of the data here; in the sheet the page reads it live
-var ORDERS = [], UPDATED = null, LIVE = !!(window.google && google.script && google.script.run), shown = 50;
+var ORDERS = [], UPDATED = null, LIVE = !!(window.google && google.script && google.script.run), shown = 30;
 var SRC_KEY = "babai.cx.src", SRC = ""; // outside the sheet (Netlify): the web app link, kept on this device
 var F_IDS = ["fDate", "fFrom", "fTo", "fOutlet", "fPlat", "fRate", "fComp", "fMeal", "fCust", "fFind", "fProb"];
 var STORE = "babai.cx.filters";
@@ -244,171 +270,154 @@ document.addEventListener("mousemove", function (e) {
   tip.innerHTML = esc(t.getAttribute("data-tip")); tip.hidden = false;
   tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = (e.clientY + 14) + "px";
 });
-function bars(id, list, color, empty) {
-  if (!list.length) { $(id).innerHTML = '<p class="empty">' + (empty || "Nothing for these filters.") + "</p>"; return; }
-  var mx = list[0][1];
-  $(id).innerHTML = list.map(function (r) {
-    return '<div class="br" data-tip="' + esc(r[0] + ": " + r[1]) + '"><span class="nm">' + esc(r[0]) + '</span><div class="tr"><div class="t" style="width:' + (r[1] / mx * 100) + "%;background:" + (r[2] || color) + '"></div></div><span class="n">' + r[1] + "</span></div>";
-  }).join("");
-}
 function count(list, f) {
   var m = {}; list.forEach(function (o) { [].concat(f(o)).forEach(function (k) { if (k) m[k] = (m[k] || 0) + 1; }); });
   return Object.keys(m).map(function (k) { return [k, m[k]]; }).sort(function (a, b) { return b[1] - a[1]; });
 }
-function tile(l, v, s, alert) { return '<div class="tile' + (alert ? " alert" : "") + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="s">' + s + "</div></div>"; }
+function avg(a) { if (!a.length) return null; var s = 0; a.forEach(function (x) { s += x; }); return s / a.length; }
+function p80(a) { if (!a.length) return null; a = a.slice().sort(function (x, y) { return x - y; }); return a[Math.max(0, Math.ceil(a.length * 0.8) - 1)]; }
+function nums(list, f) { return list.map(f).filter(function (x) { return x != null && x !== ""; }).map(Number); }
+function nOrd(n) { return n + (n === 1 ? " order" : " orders"); }
+function m1(x) { return x == null ? "–" : (Math.round(x * 10) / 10) + "m"; }
+function pct(a, b) { return b ? Math.round(100 * a / b) + "%" : "–"; }
+function rupees(n) { return "₹" + fmt(n); }
+
+// all the numbers for one group of orders
+function stats(list) {
+  var st = {n: 0, sum: 0, dist: [0, 0, 0, 0, 0, 0], low: 0, comp: 0, open: 0, both: 0, bothDist: {}, refund: 0, refundN: 0, kpt: [], rwt: []};
+  list.forEach(function (o) {
+    if (o.rating != null) { st.n++; st.sum += o.rating; st.dist[o.rating]++; if (o.rating <= 3) st.low++; }
+    if (o.complaint) {
+      st.comp++; if (/OPEN|UNRESOLVED/.test(o.status)) st.open++;
+      if (o.refund) { st.refund += o.refund; st.refundN++; }
+      if (o.rating != null) { st.both++; st.bothDist[o.rating] = (st.bothDist[o.rating] || 0) + 1; }
+    }
+    if (o.kpt != null) st.kpt.push(o.kpt); if (o.wait != null) st.rwt.push(o.wait);
+  });
+  st.avg = st.n ? st.sum / st.n : null;
+  return st;
+}
+function bucket(d) { return [1, 2, 3, 4, 5].filter(function (s) { return d[s]; }).map(function (s) { return d[s] + " at " + s + "★"; }).join(", "); }
+function kpi(label, big, lines, cls) {
+  return '<div class="kpi' + (cls ? " " + cls : "") + '"><div class="l">' + label + '</div><div class="v">' + big + "</div>" + lines.map(function (x) { return '<div class="s">' + x + "</div>"; }).join("") + "</div>";
+}
+function timeCell(a) { return a.length ? "<b>" + m1(avg(a)) + "</b> avg · " + m1(p80(a)) + ' P80<div class="sub">' + a.length + " orders</div>" : '<span class="pend">–</span>'; }
 
 function render() {
   var all = filtered(true), rows = filtered(false);
   F_IDS.forEach(function (k) { var e = $(k); if (e.tagName === "SELECT" || e.type === "search") e.classList.toggle("on", !!e.value && !(k === "fDate" && e.value === "today")); });
   $("customBox").classList.toggle("show", $("fDate").value === "custom");
-  var rated = all.filter(function (o) { return o.rating != null; }), comp = all.filter(function (o) { return o.complaint; });
-  var low = rated.filter(isLow), sum = 0; rated.forEach(function (o) { sum += o.rating; });
-  var both = all.filter(function (o) { return o.complaint && o.rating != null; });
-  var refund = 0; comp.forEach(function (o) { refund += o.refund || 0; });
-  var kpt = med(all.map(function (o) { return o.kpt; }).filter(function (x) { return x != null; }));
-  var wait = med(all.map(function (o) { return o.wait; }).filter(function (x) { return x != null; }));
-  var linked = all.filter(function (o) { return o.console; }).length;
-  var open = comp.filter(function (o) { return /OPEN|UNRESOLVED/.test(o.status); }).length;
-  $("tiles").innerHTML =
-    tile("Ratings", fmt(rated.length), rated.length ? (sum / rated.length).toFixed(2) + "★ average" : "none") +
-    tile("Low 1–3★", fmt(low.length), rated.length ? (100 * low.length / rated.length).toFixed(1) + "% of ratings" : "–", low.length) +
-    tile("Complaints", fmt(comp.length), open + " open or unresolved", comp.length) +
-    tile("Rated and complained", fmt(both.length), both.filter(isLow).length + " of them 1–3★") +
-    tile("Refunds asked", "₹" + fmt(refund), "recommended on complaints") +
-    tile("KPT (median)", kpt == null ? "–" : kpt.toFixed(1) + "m", linked ? "punched → food ready · " + linked + " orders" : "Console not linked for these") +
-    tile("Rider wait (median)", wait == null ? "–" : wait.toFixed(1) + "m", "food ready → picked up");
-  trend(rated, comp); meals(all); outlets(all); ctype(comp); causes(all);
-  bars("custs", count(comp, function (o) { return [o.ctype && o.ctype + " customer", /^Check/.test(o.check || "") ? "Flagged: " + o.check.replace("Check: ", "") : "", /^Genuine/.test(o.check || "") ? "Platform said genuine" : ""]; }), "var(--c3)", "No complaints for these filters.");
-  bars("items", count(comp, function (o) { return (o.item || "").split(/\s*,\s*/).map(function (x) { return x.replace(/^\d+\s*x\s*/i, ""); }); }).slice(0, 10), "var(--c2)", "No items named.");
-  table(rows);
-}
-
-function trend(rated, comp) {
-  var by = {}, days;
-  rated.forEach(function (o) { var b = by[o.day] || (by[o.day] = {n: 0, s: 0, l: 0, c: 0}); b.n++; b.s += o.rating; if (o.rating <= 3) b.l++; });
-  comp.forEach(function (o) { var b = by[o.day] || (by[o.day] = {n: 0, s: 0, l: 0, c: 0}); b.c++; });
-  days = Object.keys(by).sort();
-  if (days.length < 2) {
-    $("trendTitle").textContent = "Ratings for the day"; $("trendSub").textContent = "";
-    var dist = [1, 2, 3, 4, 5].map(function (s) { return [s + "★", rated.filter(function (o) { return o.rating === s; }).length, s <= 3 ? "var(--bad)" : "var(--seq)"]; }).reverse();
-    $("trend").innerHTML = '<div class="bars" id="dist"></div>'; var mx = Math.max.apply(null, dist.map(function (d) { return d[1]; })) || 1;
-    $("dist").innerHTML = dist.map(function (r) { return '<div class="br" data-tip="' + r[0] + ": " + r[1] + '"><span class="nm">' + r[0] + '</span><div class="tr"><div class="t" style="width:' + (r[1] / mx * 100) + "%;background:" + r[2] + '"></div></div><span class="n">' + r[1] + "</span></div>"; }).join("");
-    return;
-  }
-  $("trendTitle").textContent = "Ratings over time"; $("trendSub").textContent = "line = average ★ · bars = 1–3★ count";
-  var W = 560, H = 150, p = {l: 30, r: 10, t: 10, b: 20}, n = days.length;
-  var avgs = days.map(function (d) { return by[d].n ? by[d].s / by[d].n : null; }), vals = avgs.filter(function (x) { return x != null; });
-  var mn = Math.min(4, Math.floor(Math.min.apply(null, vals) * 5) / 5), mx2 = 5;
-  var x = function (i) { return p.l + i * (W - p.l - p.r) / (n - 1); }, y = function (v) { return p.t + (mx2 - v) / (mx2 - mn) * (H - p.t - p.b); };
-  var g = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Average rating per day">';
-  for (var v = mn; v <= mx2 + 1e-9; v += (mx2 - mn) / 4) g += '<line x1="' + p.l + '" x2="' + (W - p.r) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)"/><text x="' + (p.l - 4) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + v.toFixed(1) + "</text>";
-  var path = ""; avgs.forEach(function (a, i) { if (a != null) path += (path ? "L" : "M") + x(i) + " " + y(a); });
-  g += '<path d="' + path + '" fill="none" stroke="var(--seq)" stroke-width="2"/>';
-  var step = Math.ceil(n / 8);
-  days.forEach(function (d, i) {
-    var a = avgs[i], b = by[d];
-    if (a != null) g += '<circle cx="' + x(i) + '" cy="' + y(a) + '" r="3" fill="var(--panel)" stroke="var(--seq)" stroke-width="2"/>';
-    if ((i % step === 0 && n - 1 - i >= step / 2) || i === n - 1) g += '<text x="' + x(i) + '" y="' + (H - 4) + '" text-anchor="middle">' + dShort(d) + "</text>";
-    g += '<rect class="hit" x="' + (x(i) - 10) + '" y="0" width="20" height="' + H + '" data-tip="' + dShort(d) + " · " + (a == null ? "no ratings" : a.toFixed(2) + "★ from " + b.n) + " · " + b.l + " at 1–3★ · " + b.c + ' complaints"/>';
+  var st = stats(all);
+  $("kpis").innerHTML =
+    kpi("Ratings", st.n ? fmt(st.n) + ' <small>' + st.avg.toFixed(2) + "★</small>" : "0", [st.n ? [5, 4, 3, 2, 1].map(function (s) { return s + "★ " + st.dist[s]; }).join(" · ") : "no ratings"]) +
+    kpi("Low rated 1–3★", fmt(st.low), [pct(st.low, st.n) + " of ratings"], st.low ? "bad" : "") +
+    kpi("Complaints", fmt(st.comp), [st.open + " open or unresolved"], st.comp ? "bad" : "") +
+    kpi("Rated and complained", fmt(st.both), [st.both ? bucket(st.bothDist) : "none"]) +
+    kpi("Refunds", rupees(st.refund), [st.refundN + " complaints with a refund"]) +
+    kpi("KPT", st.kpt.length ? m1(avg(st.kpt)) + ' <small>avg</small>' : "–", [st.kpt.length ? "P80 " + m1(p80(st.kpt)) + " · " + nOrd(st.kpt.length) : "no Console times"]) +
+    kpi("Rider wait (RWT)", st.rwt.length ? m1(avg(st.rwt)) + ' <small>avg</small>' : "–", [st.rwt.length ? "P80 " + m1(p80(st.rwt)) + " · " + nOrd(st.rwt.length) : "no Console times"]);
+  brands(all, st); ccards(all);
+  var comp = all.filter(function (o) { return o.complaint; });
+  var who = count(comp, function (o) { return o.ctype; }), flag = comp.filter(function (o) { return /^Check/.test(o.check || ""); }).length, gen = comp.filter(function (o) { return /^Genuine/.test(o.check || ""); }).length;
+  $("who").innerHTML = comp.length ? "<b>Who complained:</b> " + who.map(function (w) { return w[1] + " " + esc(w[0]).toLowerCase(); }).join(" · ") + " · " + gen + " checked genuine by the platform · " + (flag ? '<span class="badtxt">' + flag + " flagged to check</span>" : "none flagged") : "";
+  var ml = ["Breakfast", "Lunch", "Snacks", "Dinner"].map(function (m) {
+    var g = all.filter(function (o) { return o.meal === m; }), c = g.filter(function (o) { return o.complaint; }).length, l = g.filter(isLow).length;
+    return "<b>" + m + "</b> " + c + " complaint" + (c === 1 ? "" : "s") + ", " + l + " low";
   });
-  g += "</svg>";
-  var lm = Math.max.apply(null, days.map(function (d) { return by[d].l; })) || 1, bh = 50, bw = Math.max(3, (W - p.l - p.r) / n - 4);
-  g += '<svg viewBox="0 0 ' + W + " " + (bh + 14) + '" role="img" aria-label="1 to 3 star ratings per day">';
-  days.forEach(function (d, i) { var h = Math.max(2, by[d].l / lm * bh); g += '<rect x="' + (x(i) - bw / 2) + '" y="' + (bh - h) + '" width="' + bw + '" height="' + h + '" rx="3" fill="var(--bad)" opacity=".75" data-tip="' + dShort(d) + " · " + by[d].l + ' at 1–3★"/>'; });
-  $("trend").innerHTML = g + '<text x="' + p.l + '" y="' + (bh + 12) + '">1–3★ per day (most ' + lm + ")</text></svg>";
+  $("meals").innerHTML = "<b>By meal time:</b> " + ml.join(" · ");
+  orders(rows);
 }
 
-var MEALS = ["Breakfast", "Lunch", "Snacks", "Dinner"];
-function meals(all) {
-  var c = {}, l = {}, unknown = 0;
-  all.forEach(function (o) { if (!o.meal) { if (o.complaint || isLow(o)) unknown++; return; } if (o.complaint) c[o.meal] = (c[o.meal] || 0) + 1; if (isLow(o)) l[o.meal] = (l[o.meal] || 0) + 1; });
-  var mx = Math.max.apply(null, MEALS.map(function (m) { return Math.max(c[m] || 0, l[m] || 0); })) || 1, W = 560, rh = 34, lab = 80;
-  var g = '<svg viewBox="0 0 ' + W + " " + (MEALS.length * rh) + '" role="img" aria-label="Complaints and low ratings by meal time">';
-  MEALS.forEach(function (m, i) {
-    var y = i * rh, a = c[m] || 0, b = l[m] || 0, w = W - lab - 40;
-    g += '<text x="0" y="' + (y + 18) + '" style="fill:var(--ink2);font-weight:600">' + m + "</text>";
-    g += '<rect x="' + lab + '" y="' + (y + 4) + '" width="' + Math.max(a ? 2 : 0, a / mx * w) + '" height="11" rx="3" fill="var(--c1)" data-tip="' + m + ": " + a + ' complaints"/><text class="val" x="' + (lab + a / mx * w + 4) + '" y="' + (y + 14) + '">' + a + "</text>";
-    g += '<rect x="' + lab + '" y="' + (y + 17) + '" width="' + Math.max(b ? 2 : 0, b / mx * w) + '" height="11" rx="3" fill="var(--c2)" data-tip="' + m + ": " + b + ' low ratings"/><text class="val" x="' + (lab + b / mx * w + 4) + '" y="' + (y + 27) + '">' + b + "</text>";
-  });
-  $("meals").innerHTML = g + "</svg>";
-  $("mealNote").textContent = unknown ? unknown + " problem orders have no order time yet (ratings carry only the date until the outlet's Console is linked)." : "";
-}
-
-function outlets(all) {
+// outlet rows with their platforms under them, then the total
+function brands(all, total) {
   var by = {};
-  all.forEach(function (o) {
-    var b = by[o.outlet] || (by[o.outlet] = {n: 0, s: 0, l: 0, c: 0, k: [], w: [], plat: {}});
-    if (o.rating != null) { b.n++; b.s += o.rating; if (o.rating <= 3) b.l++; var pp = b.plat[o.platform] || (b.plat[o.platform] = {n: 0, s: 0}); pp.n++; pp.s += o.rating; }
-    if (o.complaint) b.c++;
-    if (o.kpt != null) b.k.push(o.kpt); if (o.wait != null) b.w.push(o.wait);
+  all.forEach(function (o) { var k = o.outlet || "?"; (by[k] = by[k] || {}); (by[k][o.platform] = by[k][o.platform] || []).push(o); });
+  var outs = Object.keys(by).sort();
+  if (!outs.length) { $("brands").innerHTML = '<p class="empty">No orders for these filters.</p>'; return; }
+  function row(name, list, cls, s) {
+    s = s || stats(list);
+    return '<tr class="' + cls + '"><td>' + name + '</td><td class="n">' + (s.n || "–") + '</td><td class="n">' + (s.avg == null ? "–" : "<b>" + s.avg.toFixed(2) + "</b>") + '</td><td class="n dist">' + (s.n ? [5, 4, 3, 2, 1].map(function (x) { return s.dist[x]; }).join(" / ") : "–") +
+      '</td><td class="n">' + (s.low ? '<span class="badtxt">' + s.low + "</span> <span class=\"sub\">" + pct(s.low, s.n) + "</span>" : "0") + '</td><td class="n">' + (s.comp ? '<span class="badtxt">' + s.comp + "</span>" : "0") +
+      '</td><td>' + (s.both ? s.both + ' <span class="sub">' + bucket(s.bothDist) + "</span>" : '<span class="pend">0</span>') + '</td><td class="n">' + (s.refund ? rupees(s.refund) : "–") +
+      '</td><td class="n">' + timeCell(s.kpt) + '</td><td class="n">' + timeCell(s.rwt) + "</td></tr>";
+  }
+  var h = '<table class="brands"><thead><tr><th>Outlet / platform</th><th>Ratings</th><th>Avg</th><th>5★ / 4★ / 3★ / 2★ / 1★</th><th>Low 1–3★</th><th>Complaints</th><th>Rated + complained</th><th>Refund</th><th>KPT</th><th>Rider wait</th></tr></thead><tbody>';
+  outs.forEach(function (k) {
+    var mine = []; Object.keys(by[k]).forEach(function (p) { mine = mine.concat(by[k][p]); });
+    h += row("<b>" + esc(k) + "</b>", mine, "out");
+    Object.keys(by[k]).sort().forEach(function (p) { h += row('<span class="ind">' + esc(p) + "</span>", by[k][p], "plat"); });
   });
-  var names = Object.keys(by).sort(function (a, b) { return (by[a].n ? by[a].s / by[a].n : 9) - (by[b].n ? by[b].s / by[b].n : 9); });
-  if (!names.length) { $("outlets").innerHTML = '<p class="empty">No orders for these filters.</p>'; return; }
-  $("outlets").innerHTML = "<table><thead><tr><th>Outlet</th><th>Ratings</th><th>Average</th><th>1–3★</th><th>Share 1–3★</th><th>Complaints</th><th>KPT (median)</th><th>Rider wait (median)</th></tr></thead><tbody>" +
-    names.map(function (k) {
-      var b = by[k], sh = b.n ? 100 * b.l / b.n : 0, km = med(b.k), wm = med(b.w);
-      return "<tr><td><b>" + esc(k) + '</b><div class="pend" style="font-size:12px">' + Object.keys(b.plat).sort().map(function (p) { return esc(p) + " " + (b.plat[p].s / b.plat[p].n).toFixed(2) + "★"; }).join(" · ") + '</div></td><td class="n">' + b.n + '</td><td class="n"><b>' + (b.n ? (b.s / b.n).toFixed(2) : "–") + '</b></td><td class="n">' + b.l +
-        '</td><td><div class="br" style="grid-template-columns:1fr 50px"><div class="tr"><div class="t" style="width:' + Math.min(100, sh * 3) + '%;background:var(--bad)"></div></div><span class="n">' + sh.toFixed(1) + '%</span></div></td><td class="n">' + b.c +
-        '</td><td class="n">' + (km == null ? '<span class="pend">–</span>' : km.toFixed(1) + " min") + '</td><td class="n">' + (wm == null ? '<span class="pend">–</span>' : wm.toFixed(1) + " min") + "</td></tr>";
-    }).join("") + "</tbody></table>";
+  if (outs.length > 1) h += row("<b>Total</b>", all, "tot", total);
+  $("brands").innerHTML = h + "</tbody></table>";
 }
 
-var TYPES = [["MISSING", "Missing item", "var(--c1)"], ["WRONG ITEM", "Wrong item", "var(--c2)"], ["QUALITY / TASTE", "Quality / taste", "var(--c3)"], ["PACKAGING", "Packaging", "var(--c4)"], ["OTHER", "Other", "var(--c5)"]];
-function ctype(comp) {
-  $("tlegend").innerHTML = TYPES.map(function (t) { return '<span><i style="background:' + t[2] + '"></i>' + t[1] + "</span>"; }).join("");
-  $("ctSub").textContent = comp.length + " complaints";
-  if (!comp.length) { $("ctype").innerHTML = '<p class="empty">No complaints for these filters.</p>'; return; }
-  var by = {}; comp.forEach(function (o) { var b = by[o.outlet] || (by[o.outlet] = {}); var t = TYPES.some(function (x) { return x[0] === o.complaint; }) ? o.complaint : "OTHER"; b[t] = (b[t] || 0) + 1; });
-  function sum(o) { var s = 0; for (var k in o) s += o[k]; return s; }
-  var outs = Object.keys(by).sort(function (a, b) { return sum(by[b]) - sum(by[a]); }), mx = sum(by[outs[0]]), W = 560, rh = 30, p = 60;
-  var g = '<svg viewBox="0 0 ' + W + " " + (outs.length * rh + 4) + '" role="img" aria-label="Complaints by type and outlet">';
-  outs.forEach(function (o, i) {
-    var x = p, y = i * rh + 4;
-    g += '<text x="0" y="' + (y + 15) + '" style="fill:var(--ink2);font-weight:600">' + esc(o) + "</text>";
-    TYPES.forEach(function (t) { var v = by[o][t[0]] || 0; if (!v) return; var w = v / mx * (W - p - 40); g += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(1, w - 2) + '" height="20" rx="2" fill="' + t[2] + '" data-tip="' + esc(o) + " · " + t[1] + ": " + v + '"/>'; x += w; });
-    g += '<text class="val" x="' + (x + 4) + '" y="' + (y + 15) + '">' + sum(by[o]) + "</text>";
-  });
-  $("ctype").innerHTML = g + "</svg>";
-}
-function causes(all) {
-  var prob = all.filter(function (o) { return o.cause && (o.complaint || isLow(o)); });
-  var silent = prob.filter(function (o) { return o.cause === "No comment given"; }).length;
-  bars("causes", count(prob.filter(function (o) { return o.cause !== "No comment given"; }), function (o) { return o.cause.split(/,\s*(?=[A-Z])/); }).slice(0, 9), "var(--bad)", "No comments to read for these filters.");
-  $("causeNote").textContent = "From the complaint type and the customer's words. One order can count in two groups." + (silent ? " " + silent + " low ratings came with no comment." : "");
+var TYPES = [["MISSING", "Missing item"], ["WRONG ITEM", "Wrong item"], ["QUALITY / TASTE", "Quality / taste"], ["PACKAGING", "Packaging"], ["OTHER", "Other"]];
+function ccards(all) {
+  var comp = all.filter(function (o) { return o.complaint; });
+  if (!comp.length) { $("ccards").innerHTML = '<p class="empty">No complaints for these filters.</p>'; return; }
+  $("ccards").innerHTML = TYPES.map(function (t) {
+    var g = comp.filter(function (o) { return (TYPES.some(function (x) { return x[0] === o.complaint; }) ? o.complaint : "OTHER") === t[0]; });
+    if (!g.length) return "";
+    var items = count(g, function (o) { return (o.item || "").split(/\s*,\s*/).map(function (x) { return x.replace(/^\d+(\.\d+)?\s*x\s*/i, ""); }); }).slice(0, 3);
+    var outs = count(g, function (o) { return o.outlet; }), cause = count(g, function (o) { return o.cause; })[0];
+    var refund = 0; g.forEach(function (o) { refund += o.refund || 0; });
+    var open = g.filter(function (o) { return /OPEN|UNRESOLVED/.test(o.status); }).length;
+    var kp = nums(g, function (o) { return o.kpt; });
+    return '<div class="cc"><div class="ct"><span class="tag ' + (TAG[t[0]] || "o") + '">' + t[1] + '</span><span class="cn">' + g.length + '</span><span class="sub">' + pct(g.length, comp.length) + " of complaints</span></div>" +
+      '<div class="cl"><b>Outlets:</b> ' + outs.map(function (x) { return esc(x[0]) + " " + x[1]; }).join(" · ") + "</div>" +
+      (items.length ? '<div class="cl"><b>Items:</b> ' + items.map(function (x) { return esc(x[0]) + (x[1] > 1 ? " ×" + x[1] : ""); }).join(", ") + "</div>" : "") +
+      (cause ? '<div class="cl"><b>Likely cause:</b> ' + esc(cause[0]) + "</div>" : "") +
+      '<div class="cl sub">' + open + " open · " + (refund ? rupees(refund) + " refund" : "no refund") + (kp.length ? " · KPT avg " + m1(avg(kp)) : "") + "</div></div>";
+  }).join("");
 }
 
 var TAG = {"MISSING": "miss", "WRONG ITEM": "wrong", "QUALITY / TASTE": "q"};
-function stars(n) { return n == null ? '<span class="pend">–</span>' : '<b style="color:' + (n <= 2 ? "var(--bad)" : n === 3 ? "var(--warn)" : "var(--good)") + '">' + n + "★</b>"; }
-function table(rows) {
+function stars(n) { return n == null ? "" : '<span class="star s' + n + '">' + n + "★</span>"; }
+function slow(v, warn, bad) { return v == null ? "" : v >= bad ? " bad" : v >= warn ? " warn" : ""; }
+function orders(rows) {
   $("osub").textContent = fmt(rows.length) + " orders" + (rows.length > shown ? " · newest " + shown + " shown" : "");
-  if (!rows.length) { $("orders").tBodies[0].innerHTML = '<tr><td colspan="11" class="empty">No orders for these filters. Try another date.</td></tr>'; $("more").hidden = true; return; }
-  $("orders").tBodies[0].innerHTML = rows.slice(0, shown).map(function (o) {
+  if (!rows.length) { $("orders").innerHTML = '<p class="empty">No orders for these filters. Try another date.</p>'; $("more").hidden = true; return; }
+  $("orders").innerHTML = rows.slice(0, shown).map(function (o) {
     var chk = o.check ? '<span class="tag ' + (/^Check/.test(o.check) ? "chk" : "gen") + '">' + esc(o.check) + "</span>" : "";
-    return '<tr class="o" tabindex="0"><td class="n">' + esc(dShort(o.day)) + (o.time ? " " + esc(o.time) : "") + "</td><td>" + esc(o.outlet) + "</td><td>" + esc(o.platform) + '</td><td class="n" title="' + esc(o.id) + '">…' + esc(o.id.slice(-7)) + '</td><td class="n">' + stars(o.rating) +
-      "</td><td>" + (o.complaint ? '<span class="tag ' + (TAG[o.complaint] || "o") + '">' + esc(o.complaint) + "</span>" : '<span class="pend">–</span>') +
-      '</td><td class="cust">' + (o.ctype ? esc(o.ctype) + " " + chk : '<span class="pend">–</span>') +
-      '</td><td class="n">' + (o.kpt == null ? '<span class="pend">–</span>' : o.kpt + "m") + '</td><td class="n">' + (o.wait == null ? '<span class="pend">–</span>' : o.wait + "m") + '</td><td class="n">' + (o.slot ? esc(o.slot) : '<span class="pend">–</span>') +
-      '</td><td class="sum" title="' + esc(o.summary) + '">' + esc(o.summary) + "</td></tr>";
+    var said = [];
+    if (o.text) said.push('<div class="q"><b>Complaint:</b> “' + esc(o.text) + "”</div>");
+    if (o.feedback && o.feedback !== o.text) said.push('<div class="q"><b>Rating comment:</b> “' + esc(o.feedback) + "”</div>");
+    var kitchen = o.console
+      ? '<div class="tl"><span>Punched <b>' + esc(o.punched || "–") + '</b></span><span class="ar">→</span><span>Ready <b>' + esc(o.ready || "–") + '</b> <i class="chip2' + slow(o.kpt, 12, 15) + '">KPT ' + m1(o.kpt) + '</i></span><span class="ar">→</span><span>Picked <b>' + esc(o.picked || "–") + '</b> <i class="chip2' + slow(o.wait, 8, 12) + '">RWT ' + m1(o.wait) + "</i></span>" +
+        (o.slot ? '<span>Slot <b>' + esc(o.slot) + "</b></span>" : "") + (o.readyBy ? '<span class="sub">ready marked by ' + esc(o.readyBy) + "</span>" : "") + (o.delivery != null ? '<span class="sub">delivered ' + m1(o.delivery) + " after pickup</span>" : "") + "</div>"
+      : '<div class="tl sub">No Console times for this order yet</div>';
+    var ids = '<span class="mono">' + esc(o.id) + "</span>" + (o.sid ? ' <span class="sub">(Swiggy complaint ID ' + esc(o.sid) + ")</span>" : "") + (o.cid ? ' <span class="sub">(kitchen order ' + esc(o.cid) + ", matched on " + esc(o.linked) + ")</span>" : "");
+    return '<article class="ord' + (o.complaint || isLow(o) ? " prob" : "") + '">' +
+      '<div class="oh"><span class="when">' + esc(dShort(o.day)) + (o.time ? " " + esc(o.time) : "") + "</span>" + (o.meal ? '<span class="sub">' + esc(o.meal) + "</span>" : "") +
+      "<b>" + esc(o.outlet) + "</b><span>" + esc(o.platform) + "</span>" + ids + stars(o.rating) +
+      (o.complaint ? '<span class="tag ' + (TAG[o.complaint] || "o") + '">' + esc(o.complaint) + "</span>" : "") + (o.status ? '<span class="sub">' + esc(o.status) + "</span>" : "") + "</div>" +
+      '<div class="ob"><div class="main">' +
+      (o.items ? '<div class="it"><b>Items:</b> ' + esc(o.items) + (o.value ? ' <span class="sub">· bill ' + rupees(o.value) + "</span>" : "") + "</div>" : "") +
+      (o.item ? '<div class="it"><b>Problem item:</b> ' + esc(o.item) + "</div>" : "") +
+      said.join("") +
+      (o.customer ? '<div class="it"><b>Customer:</b> ' + esc(o.customer) + " " + chk + "</div>" : "") +
+      (o.cause || o.refund ? '<div class="it">' + (o.cause ? "<b>Likely cause:</b> " + esc(o.cause) : "") + (o.refund ? (o.cause ? " · " : "") + "<b>Refund:</b> " + rupees(o.refund) : "") + "</div>" : "") +
+      kitchen + "</div>" +
+      (o.photoUrl ? '<a class="ph" href="' + esc(o.photoUrl) + '" target="_blank" rel="noopener"><img src="' + esc(o.photoUrl) + '" alt="Complaint photo" loading="lazy" onerror="this.replaceWith(document.createTextNode(\'Open photo\'))"></a>' : o.photo ? '<span class="ph sub">photo on the platform</span>' : "") +
+      "</div></article>";
   }).join("");
   $("more").hidden = rows.length <= shown;
 }
-$("orders").addEventListener("click", function (e) { var tr = e.target.closest("tr.o"); if (tr) tr.classList.toggle("open"); });
-$("orders").addEventListener("keydown", function (e) { if (e.key === "Enter") { var tr = e.target.closest("tr.o"); if (tr) tr.classList.toggle("open"); } });
-$("more").onclick = function () { shown += 50; table(filtered(false)); };
+$("more").onclick = function () { shown += 30; orders(filtered(false)); };
 
 $("csv").onclick = function () {
-  var cols = ["day", "time", "meal", "outlet", "platform", "id", "rating", "feedback", "complaint", "item", "text", "status", "refund", "kind", "ctype", "customer", "check", "cause", "kpt", "wait", "slot", "readyBy", "picked", "summary"];
+  var cols = ["day", "time", "meal", "outlet", "platform", "id", "sid", "cid", "rating", "feedback", "complaint", "item", "items", "text", "status", "refund", "value", "kind", "ctype", "customer", "check", "cause", "punched", "ready", "picked", "kpt", "wait", "slot", "readyBy", "photoUrl", "summary"];
   var q = function (v) { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
   var csv = cols.join(",") + "\n" + filtered(false).map(function (o) { return cols.map(function (c) { return q(o[c]); }).join(","); }).join("\n");
   var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], {type: "text/csv"}));
   a.download = "babai-orders-" + range().join("_to_").replace(/0000|9999/g, "all") + ".csv"; document.body.appendChild(a); a.click(); a.remove();
 };
 
-F_IDS.forEach(function (k) { $(k).addEventListener(k === "fFind" ? "input" : "change", function () { shown = 50; saveF(); render(); }); });
+F_IDS.forEach(function (k) { $(k).addEventListener(k === "fFind" ? "input" : "change", function () { shown = 30; saveF(); render(); }); });
 $("reset").onclick = function () {
   try { localStorage.removeItem(STORE); } catch (e) {}
   F_IDS.forEach(function (k) { var e = $(k); if (e.type === "checkbox") e.checked = true; else e.value = k === "fDate" ? "today" : ""; });
-  shown = 50; render();
+  shown = 30; render();
 };
 $("refresh").onclick = load;
 restoreF();

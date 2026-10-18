@@ -117,7 +117,7 @@ function doGet(e) {
 // ---- order times from the Babai Consoles -------------------------------------------------------
 
 var CCOLS = ['Order_ID', 'KOT', 'Outlet', 'Channel', 'Brand', 'Slot', 'Items', 'Punched', 'Printed', 'Food ready',
-  'Ready by', 'Picked up', 'Delivered', 'Status', 'KPT min', 'Rider wait min', 'Print sec', 'Updated'];
+  'Ready by', 'Picked up', 'Delivered', 'Status', 'KPT min', 'Rider wait min', 'Print sec', 'Updated', 'Item names'];
 
 /**
  * One doPost for the sheet. A Babai Console sends {key, orders:[...]}; anything else is the
@@ -160,6 +160,8 @@ function consolePost_(body) {
       sh.getRange('A:A').setNumberFormat('@');
     }
     var data = sh.getDataRange().getValues(), at = {};
+    data[0] = CCOLS.slice(); // header, also on tabs made before a column was added
+    data = data.map(function (r) { while (r.length < CCOLS.length) r.push(''); return r.slice(0, CCOLS.length); });
     for (var i = 1; i < data.length; i++) at[id_(data[i][0]) + '|' + data[i][1]] = i;
     var d = function (ms) { return ms ? new Date(ms) : ''; };
     var now = new Date();
@@ -168,7 +170,7 @@ function consolePost_(body) {
       if (!/\d{6}/.test(id)) return;
       var row = [id, o.kot || '', String(o.outlet || ''), String(o.channel || ''), String(o.brand || ''), String(o.slot || ''), o.items || '',
         d(o.punched), d(o.printed), d(o.ready), String(o.readyBy || ''), d(o.dispatched), d(o.delivered), String(o.status || ''),
-        o.kptMin || '', o.waitMin || '', o.printSec || '', now];
+        o.kptMin || '', o.waitMin || '', o.printSec || '', now, String(o.names || '')];
       var k = id + '|' + (o.kot || '');
       if (at[k] != null) data[at[k]] = row; else { at[k] = data.length; data.push(row); }
     });
@@ -177,6 +179,7 @@ function consolePost_(body) {
     data = [data[0]].concat(data.slice(1).filter(function (r) { return !(r[7] instanceof Date) || r[7].getTime() >= cut; }));
     sh.getRange(2, 1, Math.max(sh.getLastRow() - 1, 1), CCOLS.length).clearContent();
     sh.getRange(1, 1, data.length, CCOLS.length).setValues(data);
+    sh.getRange(1, 1, 1, CCOLS.length).setFontWeight('bold');
     return out({ok: true, n: list.length});
   } finally {
     lock.releaseLock();
@@ -309,8 +312,8 @@ function orders_() {
 
   var c = rows_(COMPLAINTS);
   if (c) {
-    var hc = head_(c);
-    c.slice(1).forEach(function (x) {
+    var hc = head_(c), links = links_(COMPLAINTS, hc.image_urls, c.length);
+    c.slice(1).forEach(function (x, ci) {
       var id = id_(x[hc.order_id]), p = String(x[hc.platform] || '').trim();
       if (!id || !p) return;
       var o = get(p.charAt(0).toUpperCase() + p.slice(1).toLowerCase(), id);
@@ -325,6 +328,7 @@ function orders_() {
       o.refund = num_(/([\d.]+)/, x[hc.recommended_refund]);
       o.value = num_(/([\d.]+)/, x[hc.item_total]);
       o.photo = !!x[hc.image_urls];
+      o.photoUrl = links[ci + 1] || (/^https?:\/\//.test(String(x[hc.image_urls])) ? String(x[hc.image_urls]).split(/[\s,|]+/)[0] : '');
       // Customer history (numbers only; the name column is only checked for the PREMIUM badge).
       var cnt = String(x[hc.customer_order_count_90d] || '');
       o.n90 = num_(/Ordered (\d+) times/, cnt);
@@ -354,14 +358,19 @@ function orders_() {
       if (deliv instanceof Date && (!t.deliv || deliv > t.deliv)) t.deliv = deliv;
       if (!t.slot && x[hk.Slot] !== '') t.slot = String(x[hk.Slot]);
       if (!t.outlet) t.outlet = String(x[hk.Outlet] || '');
+      if (!t.channel) t.channel = String(x[hk.Channel] || '');
+      var nm = hk['Item names'] != null ? String(x[hk['Item names']] || '') : '';
+      if (nm) t.names = t.names ? t.names + ', ' + nm : nm;
     });
   }
+  linkSwiggy_(byKey, keys, kt);
   var mins = function (a, b) {
     return a instanceof Date && b instanceof Date && b >= a && b - a < 4 * 36e5 ? Math.round((b - a) / 6e3) / 10 : null;
   };
 
-  var list = keys.map(function (key) {
-    var o = byKey[key], t = kt[o.id] || {};
+  var hm = function (d) { return d instanceof Date ? Utilities.formatDate(d, TZ, 'HH:mm') : ''; };
+  var list = keys.filter(function (key) { return !byKey[key].gone; }).map(function (key) {
+    var o = byKey[key], t = kt[o.cid || o.id] || {};
     var exact = o.ordered || t.punched || null; // order time: the platform's, else when the KOT was punched
     var when = exact || o.rdate;
     var hour = exact ? +Utilities.formatDate(exact, TZ, 'H') : null;
@@ -376,19 +385,78 @@ function orders_() {
       outlet: o.outlet || '', platform: o.platform, id: o.id,
       rating: o.rating == null ? null : o.rating, feedback: o.feedback || '',
       complaint: o.type || '', item: o.item || '', text: o.text || '', status: o.status || '',
-      refund: o.refund, value: o.value, photo: !!o.photo,
+      refund: o.refund, value: o.value, photo: !!o.photo, photoUrl: o.photoUrl || '', items: o.items || t.names || '',
+      cid: o.cid || '', sid: o.shortId || '', linked: o.cid || o.shortId ? 'outlet, time and items' : '',
       kind: o.type && o.rating != null ? 'Rated and complained' : o.type ? 'Complaint only' : 'Rating only',
       ctype: cu.type || '', customer: cu.label, check: cu.check,
       cause: (o.type || low) ? cause_(o.type, said) : '',
       kpt: mins(t.punched, t.ready), wait: mins(t.ready, t.picked), delivery: mins(t.picked, t.deliv),
       slot: t.slot || '', readyBy: t.readyBy || '', console: !!t.punched,
-      picked: t.picked ? Utilities.formatDate(t.picked, TZ, 'HH:mm') : ''
+      punched: hm(t.punched), ready: hm(t.ready), picked: hm(t.picked)
     };
-    out.summary = summary_(out, o.items);
+    out.summary = summary_(out, out.items);
     return out;
   });
   list.sort(function (a, b) { return b.at - a.at; });
   return list;
+}
+
+// Link URLs of a column (the sheet shows "Open complaint image" with the link behind it).
+function links_(name, col, n) {
+  var out = [];
+  if (col == null) return out;
+  try {
+    var sh = SpreadsheetApp.getActive().getSheetByName(name);
+    var rich = sh.getRange(1, col + 1, n, 1).getRichTextValues();
+    var f = sh.getRange(1, col + 1, n, 1).getFormulas();
+    for (var i = 0; i < n; i++) {
+      var u = rich[i] && rich[i][0] && rich[i][0].getLinkUrl();
+      if (!u && rich[i] && rich[i][0]) rich[i][0].getRuns().forEach(function (r) { u = u || r.getLinkUrl(); });
+      if (!u && f[i] && f[i][0]) { var m = String(f[i][0]).match(/HYPERLINK\(\s*"([^"]+)"/i); if (m) u = m[1]; }
+      out.push(u || '');
+    }
+  } catch (e) {}
+  return out;
+}
+
+function dishes_(s) {
+  return String(s || '').split(/\s*,\s*(?=\d+(?:\.\d+)?\s*x\s)/i).map(function (x) {
+    return x.replace(/\(\+[^)]*\)+/g, '').replace(/^\d+(?:\.\d+)?\s*x\s*/i, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }).filter(String);
+}
+
+/**
+ * Swiggy complaints carry Swiggy's short order ID, the Console (Petpooja) the long one. Link a
+ * complaint to the Console order of the same outlet punched within 3 min before to 15 min after
+ * the order time, with the most dishes in common. When that order was also rated, the two rows
+ * become one.
+ */
+function linkSwiggy_(byKey, keys, kt) {
+  var cand = Object.keys(kt).filter(function (id) { return kt[id].punched && /swiggy/i.test(kt[id].channel || ''); });
+  if (!cand.length) return;
+  keys.forEach(function (key) {
+    var o = byKey[key];
+    if (o.platform !== 'Swiggy' || !o.type || !o.ordered || kt[o.id]) return;
+    var want = dishes_(o.items), best = null, bestScore = 0, bestGap = 1e15;
+    cand.forEach(function (id) {
+      var t = kt[id], gap = t.punched - o.ordered;
+      if (gap < -3 * 6e4 || gap > 15 * 6e4) return;
+      if (t.outlet && o.outlet && t.outlet.split(' ')[0].toUpperCase() !== o.outlet.toUpperCase()) return;
+      var have = dishes_(t.names), score = 0;
+      want.forEach(function (d) { if (have.indexOf(d) >= 0) score++; });
+      if (!want.length || !have.length) score = 0.5; // nothing to compare: time alone, only when it is the one order
+      if (score > bestScore || (score === bestScore && Math.abs(gap) < bestGap)) { best = id; bestScore = score; bestGap = Math.abs(gap); }
+    });
+    if (!best || bestScore < 1 && cand.filter(function (id) { var g = kt[id].punched - o.ordered; return g >= -18e4 && g <= 9e5; }).length > 1) return;
+    var rated = byKey['Swiggy|' + best];
+    if (rated && !rated.type) { // the same order was rated: one row
+      ['ordered', 'type', 'items', 'item', 'text', 'status', 'refund', 'value', 'photo', 'photoUrl', 'n90', 'pn', 'v90', 'i90', 'prem', 'verdict'].forEach(function (f) { rated[f] = o[f]; });
+      rated.shortId = o.id;
+      o.gone = true;
+    } else {
+      o.cid = best;
+    }
+  });
 }
 
 // One line that says everything about the order.
