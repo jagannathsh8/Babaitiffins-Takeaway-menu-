@@ -35,7 +35,7 @@ function last(s, n) { s = String(s || ""); return s.length > n ? "…" + s.slice
 var AREAS = {
   bridge: { label: "Bridge Print", items: [["overview", "Overview"], ["dispatch", "Dispatch"], ["rules", "Printers & rules"], ["timing", "Print timing"], ["alerts", "Alerts"], ["apps", "Apps"]] },
   hub: { label: "Hub", items: [["status", "Status"], ["petpooja", "Petpooja & Firebase"], ["scanners", "Scanners & rider"], ["customers", "Customers' page"], ["pc", "This PC & updates"]] },
-  data: { label: "Data", items: [["metrics", "Metrics"], ["prep", "Prep Live"], ["planner", "Indent planner"], ["sources", "Connections"]] }
+  data: { label: "Data", items: [["metrics", "Metrics"], ["prep", "Prep Live"], ["planner", "Indent planner"], ["cxsheet", "Ratings sheet"], ["sources", "Connections"]] }
 };
 var HUBFRAME = { status: "now,qr", petpooja: "pp,fb,raw", scanners: "scanners", customers: "qr,dishes", prep: "prep" };
 var S = null, offset = 0, area = LS.get("area", "bridge"), tab = null, loop = null, counts = {};
@@ -499,6 +499,25 @@ VIEWS.planner = {
       (d.sources || []).forEach(function (s) { if (s.name === "Indent planner") { $("plst").textContent = "Planner: " + s.state; $("plst").className = "msg " + (s.ok ? "ok" : ""); } });
     }).catch(function () {});
   }
+};
+VIEWS.cxsheet = {
+  html: function () {
+    return '<div class="panel"><div class="hd"><h2>Ratings sheet</h2><span class="sub">Order times for the ratings &amp; complaints dashboard</span></div>' +
+      '<p class="help">Every 15 minutes this PC sends each online order\'s times to the CX METRICS Google Sheet: punched, printed, food ready (KPT), picked up (rider wait), delivered and the slot. The sheet joins them with ratings and complaints on the order ID. Only times and order IDs are sent, never customer details.</p>' +
+      '<label class="help" for="cxu">Web app link (from the sheet: Extensions › Apps Script › Deploy)</label><input id="cxu" type="url" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;margin:4px 0 10px">' +
+      '<label class="help" for="cxk">Key (shown by setup() in the sheet\'s Apps Script)</label><input id="cxk" type="password" autocomplete="off" style="width:100%;margin:4px 0 10px">' +
+      '<p><button class="btn p" id="cxs">Save</button> <button class="btn" id="cxn">Send now</button></p><p class="msg" id="cxm"></p><p class="msg" id="cxst"></p></div>';
+  },
+  init: function () {
+    function msg(r) { $("cxm").textContent = r.msg; $("cxm").className = "msg " + (r.ok ? "ok" : "bad"); setTimeout(VIEWS.cxsheet.load, 3000); }
+    $("cxs").onclick = function () { post("/console/api/cxsheet", { url: $("cxu").value, key: $("cxk").value }).then(function (r) { $("cxk").value = ""; msg(r); }); };
+    $("cxn").onclick = function () { post("/console/api/cxsheet", { op: "send" }).then(msg); };
+    getJ("/console/api/cxsheet").then(function (d) { $("cxu").value = d.url || ""; $("cxk").placeholder = d.keySet ? "saved (type to change)" : ""; }).catch(function () {});
+  },
+  load: function () {
+    getJ("/console/api/cxsheet").then(function (d) { var e = $("cxst"); if (!e) return; e.textContent = "Sheet: " + d.state; e.className = "msg " + (d.ok ? "ok" : ""); }).catch(function () {});
+  },
+  every: 15000
 };
 
 loadState().then(render);

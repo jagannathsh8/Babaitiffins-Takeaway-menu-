@@ -55,6 +55,7 @@ func consoleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/console/api/metrics", localOnly(pinnedAPI(handleMetrics)))
 	mux.HandleFunc("/console/api/window", localOnly(pinnedAPI(handleWindowSetting)))
 	mux.HandleFunc("/console/api/sources", localOnly(pinnedAPI(handleSources)))
+	mux.HandleFunc("/console/api/cxsheet", localOnly(pinnedAPI(handleCXSheet)))
 }
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
@@ -722,11 +723,13 @@ func handleSources(w http.ResponseWriter, r *http.Request) {
 		OK     bool   `json:"ok"`
 		Detail string `json:"detail"`
 	}
+	cxSt, cxOK := cxStatus()
 	list := []src{
 		{"Petpooja (shop network)", "Kitchen orders, items, Food Ready; open orders for the token TV", map[bool]string{true: fmt.Sprintf("connected · read %d s ago", ago), false: "not connected"}[ago >= 0 && ago < 30], ago >= 0 && ago < 30, c.Server},
 		{"Petpooja KOT prints", "Every KOT print, given a token (port 9100)", map[bool]string{true: "receiving", false: "not receiving"}[localPrinting()], localPrinting(), "this PC, port 9100"},
 		{"Firebase", "Customers' dosa page, scanner phones over the internet, planner sales", map[bool]string{true: "connected", false: "not set up"}[configured() && cloudOK()], configured() && cloudOK(), strings.TrimPrefix(c.DB, "https://")},
 		{"Indent planner", "Sales by hour sent for the planner (babaidosa.netlify.app/indent)", planStatus(), strings.HasPrefix(planStatus(), "sent"), ""},
+		{"Ratings sheet", "Order times (KPT, rider wait) for the CX METRICS sheet, every 15 min", cxSt, cxOK, ""},
 		{"Order records on this PC", "Punched, printed, ready, dispatched for every KOT (kept 120 days)", fmt.Sprintf("%d days saved", files), true, filepath.Join(printDir(), "orders")},
 	}
 	writeJSON(w, map[string]any{"sources": list})

@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Babai Ratings &amp; Complaints</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: filter bar (sticky), summary tiles, why-it-happened charts, then one line per order. */
+:root{
+  --bg:#f4f5f7;--panel:#fff;--line:#e3e6ea;--ink:#16202b;--ink2:#46525e;--mute:#6b7682;
+  --acc:#c2410c;--seq:#2f6f8f;--seqlight:#cfe1ea;
+  --good:#15803d;--goodbg:#e7f5ec;--warn:#a16207;--warnbg:#fdf3dc;--bad:#b91c1c;--badbg:#fbe9e9;
+  --c1:#2f6f8f;--c2:#d4882c;--c3:#7a5bbf;--c4:#3f9a6b;--c5:#9aa3ad;
+  --ui:"Archivo","Segoe UI",system-ui,sans-serif;--mono:"IBM Plex Mono",Consolas,monospace;color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#11151a;--panel:#1a2027;--line:#2c343d;--ink:#e9edf1;--ink2:#c1c9d1;--mute:#97a2ad;--acc:#fb8a4c;--seq:#6fb0cf;--seqlight:#23414f;--good:#4ac27b;--goodbg:#14301f;--warn:#e0b04a;--warnbg:#33290f;--bad:#f07171;--badbg:#3a1818;--c1:#6fb0cf;--c2:#e3a352;--c3:#a68ae6;--c4:#5fc28e;--c5:#7d8790;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#11151a;--panel:#1a2027;--line:#2c343d;--ink:#e9edf1;--ink2:#c1c9d1;--mute:#97a2ad;--acc:#fb8a4c;--seq:#6fb0cf;--seqlight:#23414f;--good:#4ac27b;--goodbg:#14301f;--warn:#e0b04a;--warnbg:#33290f;--bad:#f07171;--badbg:#3a1818;--c1:#6fb0cf;--c2:#e3a352;--c3:#a68ae6;--c4:#5fc28e;--c5:#7d8790;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--ui)}
+.page{max-width:1320px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 16px}
+h1{margin:0;font-size:clamp(20px,3vw,28px);font-weight:800;letter-spacing:-.3px}
+h1 span{color:var(--acc)}
+.sub{color:var(--mute);margin:2px 0 0;font-size:13px}
+.live{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chip{font-size:12px;font-weight:600;border-radius:999px;padding:4px 10px;display:inline-flex;gap:6px;align-items:center;background:var(--panel);border:1px solid var(--line);color:var(--ink2)}
+.chip.ok{background:var(--goodbg);color:var(--good);border-color:transparent}.chip.no{background:var(--warnbg);color:var(--warn);border-color:transparent}
+button{font:inherit}
+.btn{cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 12px;font-weight:600;font-size:13px}
+.btn:hover{border-color:var(--ink2)}
+.btn:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.filters{position:sticky;top:0;z-index:4;background:var(--bg);padding:8px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;border-bottom:1px solid var(--line)}
+.f{display:flex;flex-direction:column;gap:2px}
+.f label{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--mute);font-weight:700}
+select,input[type=date],input[type=search]{font:600 13px var(--ui);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-height:34px}
+select.on,input.on{border-color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc)}
+.f.custom{display:none}.f.custom.show{display:flex}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.tile .l{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--mute);font-weight:700}
+.tile .v{font:600 24px var(--mono);margin-top:2px;font-variant-numeric:tabular-nums}
+.tile .s{font-size:12px;color:var(--mute)}
+.tile.alert{box-shadow:inset 3px 0 0 var(--bad)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.card h2{margin:0;font-size:15px}
+.hd{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}
+.hd span{margin-left:auto;color:var(--mute);font-size:12.5px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-bottom:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+svg{display:block;width:100%;height:auto;overflow:visible}
+svg text{fill:var(--mute);font:11px var(--ui)}
+svg .val{fill:var(--ink2);font:600 11px var(--mono)}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--panel);font-size:12.5px;padding:6px 9px;border-radius:7px;z-index:9;max-width:280px}
+.hit{fill:transparent}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--mute);font-weight:700;white-space:nowrap;position:sticky;top:0;background:var(--panel)}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bars{display:flex;flex-direction:column;gap:6px}
+.br{display:grid;grid-template-columns:170px 1fr 44px;gap:8px;align-items:center;font-size:13px}
+.br .tr{background:var(--bg);border-radius:4px;overflow:hidden}
+.br .t{height:14px;border-radius:0 4px 4px 0;background:var(--seq)}
+.br .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.br .n{font:600 12px var(--mono);text-align:right}
+.tag{font-size:11px;font-weight:700;border-radius:6px;padding:2px 6px;white-space:nowrap;display:inline-block}
+.tag.miss{background:var(--badbg);color:var(--bad)}.tag.wrong{background:var(--warnbg);color:var(--warn)}.tag.q{background:var(--seqlight);color:var(--seq)}.tag.o{background:var(--bg);color:var(--ink2)}
+.tag.chk{background:var(--warnbg);color:var(--warn)}.tag.gen{background:var(--goodbg);color:var(--good)}
+.pend{color:var(--mute)}
+.note{font-size:12.5px;color:var(--mute);margin:6px 0 0}
+.empty{color:var(--mute);padding:18px 0;text-align:center}
+#orders tr.o{cursor:pointer}
+#orders tr.o:hover td{background:var(--bg)}
+#orders td.sum{max-width:520px;min-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#orders tr.open td.sum{white-space:normal}
+.cust{white-space:nowrap}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.tools label{font-size:13px;color:var(--ink2);display:flex;gap:6px;align-items:center}
+@media (max-width:560px){.br{grid-template-columns:110px 1fr 36px}.f{flex:1 1 44%}.f select,.f input{width:100%}}
+</style>
+</head>
+<body>
+<div class="page">
+<header>
+  <div><h1><span>Babai</span> Ratings &amp; Complaints</h1><p class="sub">Every order with its rating, complaint, customer history and kitchen times (Babai Console) in one line.</p></div>
+  <div class="live"><span class="chip" id="src">Loading…</span><button class="btn" id="refresh" type="button">Refresh</button></div>
+</header>
+
+<div class="filters" role="group" aria-label="Filters">
+  <div class="f"><label for="fDate">Date</label><select id="fDate">
+    <option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7">Last 7 days</option>
+    <option value="30">Last 30 days</option><option value="month">This month</option><option value="all">All dates</option><option value="custom">Pick dates…</option></select></div>
+  <div class="f custom" id="customBox"><label for="fFrom">From – to</label><span style="display:flex;gap:4px"><input type="date" id="fFrom" aria-label="From"><input type="date" id="fTo" aria-label="To"></span></div>
+  <div class="f"><label for="fOutlet">Outlet</label><select id="fOutlet"><option value="">All outlets</option></select></div>
+  <div class="f"><label for="fPlat">Platform</label><select id="fPlat"><option value="">All platforms</option></select></div>
+  <div class="f"><label for="fRate">Rating</label><select id="fRate">
+    <option value="">All ratings</option><option value="low">Low (1–3★)</option><option value="1">1★</option><option value="2">2★</option><option value="3">3★</option><option value="4">4★</option><option value="5">5★</option><option value="none">No rating</option></select></div>
+  <div class="f"><label for="fComp">Complaint</label><select id="fComp">
+    <option value="">All orders</option><option value="any">Any complaint</option><option value="none">No complaint</option>
+    <option value="MISSING">Missing item</option><option value="WRONG ITEM">Wrong item</option><option value="QUALITY / TASTE">Quality / taste</option><option value="PACKAGING">Packaging</option><option value="OTHER">Other</option></select></div>
+  <div class="f"><label for="fMeal">Meal time</label><select id="fMeal">
+    <option value="">All day</option><option>Breakfast</option><option>Lunch</option><option>Snacks</option><option>Dinner</option><option value="unknown">Time not known</option></select></div>
+  <div class="f"><label for="fCust">Customer</label><select id="fCust">
+    <option value="">All customers</option><option>New</option><option>Repeat</option><option>Regular</option><option value="check">Flagged to check</option></select></div>
+  <div class="f"><label for="fFind">Order ID</label><input type="search" id="fFind" placeholder="last digits" inputmode="numeric" size="11"></div>
+  <button class="btn" id="reset" type="button">Reset filters</button>
+</div>
+
+<div class="tiles" id="tiles"></div>
+
+<div class="grid2">
+  <section class="card"><div class="hd"><h2 id="trendTitle">Ratings over time</h2><span id="trendSub"></span></div><div id="trend"></div></section>
+  <section class="card"><div class="hd"><h2>By meal time</h2><span>Breakfast 7–12 · Lunch 12–4 · Snacks 4–7 · Dinner 7 pm on</span></div><div class="legend"><span><i style="background:var(--c1)"></i>Complaints</span><span><i style="background:var(--c2)"></i>Low ratings (1–3★)</span></div><div id="meals"></div><p class="note" id="mealNote"></p></section>
+</div>
+<section class="card"><div class="hd"><h2>Outlets</h2><span>ratings, complaints and kitchen times for the filters above</span></div><div class="tw" id="outlets"></div></section>
+<div class="grid2">
+  <section class="card"><div class="hd"><h2>Complaints by type and outlet</h2><span id="ctSub"></span></div><div class="legend" id="tlegend"></div><div id="ctype"></div></section>
+  <section class="card"><div class="hd"><h2>Likely cause</h2><span>complaints and 1–3★ ratings</span></div><div id="causes" class="bars"></div><p class="note" id="causeNote"></p></section>
+</div>
+<div class="grid2">
+  <section class="card"><div class="hd"><h2>Who complained</h2><span>from the platforms' 90-day history</span></div><div id="custs" class="bars"></div><p class="note">New = first order with us in 90 days · Repeat = 2–5 · Regular = 6 or more. Flagged = many issues for few orders, or a brand-new platform account.</p></section>
+  <section class="card"><div class="hd"><h2>Items named in complaints</h2><span>most often missing or wrong</span></div><div id="items" class="bars"></div></section>
+</div>
+
+<section class="card">
+  <div class="hd"><h2>Order by order</h2><span id="osub"></span></div>
+  <div class="tools"><label><input type="checkbox" id="fProb" checked> Only problem orders (1–3★ or a complaint)</label><button class="btn" id="csv" type="button">Download CSV</button></div>
+  <div class="tw"><table id="orders"><thead><tr><th>When</th><th>Outlet</th><th>Platform</th><th>Order</th><th>Rating</th><th>Complaint</th><th>Customer</th><th>KPT</th><th>Rider wait</th><th>Slot</th><th>Everything about the order (tap to open)</th></tr></thead><tbody></tbody></table></div>
+  <p style="text-align:center;margin:10px 0 0"><button class="btn" id="more" type="button" hidden>Show 50 more</button></p>
+  <p class="note">KPT = punched to food ready. Rider wait = food ready to picked up. Both come from the Babai Console at each outlet; "–" means that outlet's Console isn't linked yet. Customer names and phone numbers are never shown.</p>
+</section>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+var SNAP = null; // the published preview puts a copy of the data here; in the sheet the page reads it live
+var ORDERS = [], UPDATED = null, LIVE = !!(window.google && google.script && google.script.run), shown = 50;
+var F_IDS = ["fDate", "fFrom", "fTo", "fOutlet", "fPlat", "fRate", "fComp", "fMeal", "fCust", "fFind", "fProb"];
+var STORE = "babai.cx.filters";
+
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]; }); }
+function fmt(n) { return Math.round(n).toLocaleString("en-IN"); }
+function med(a) { if (!a.length) return null; a = a.slice().sort(function (x, y) { return x - y; }); var m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; }
+function ymd(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+function dShort(s) { var d = new Date(s + "T00:00:00"); return d.getDate() + " " + "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ")[d.getMonth()]; }
+
+// ---- data: live from the sheet (Apps Script), or the copy in this page ----
+function load() {
+  if (LIVE) {
+    $("src").className = "chip"; $("src").textContent = "Reading the sheet…";
+    google.script.run.withSuccessHandler(got).withFailureHandler(function (e) {
+      $("src").className = "chip no"; $("src").textContent = "Couldn't read the sheet: " + (e && e.message || e);
+    }).getData();
+  } else if (SNAP) got(SNAP);
+}
+function got(d) {
+  ORDERS = d.orders || []; UPDATED = new Date(d.updated);
+  var t = ("0" + UPDATED.getHours()).slice(-2) + ":" + ("0" + UPDATED.getMinutes()).slice(-2);
+  $("src").className = "chip ok";
+  $("src").textContent = LIVE ? "● Live from CX METRICS · updated " + t + " · refreshes every 5 min" : "● Preview copy of CX METRICS (" + dShort(ymd(UPDATED)) + ", " + t + ")";
+  fillChoices(); render();
+}
+
+// ---- filters: remembered on this device ----
+function saveF() {
+  var o = {}; F_IDS.forEach(function (k) { var e = $(k); o[k] = e.type === "checkbox" ? e.checked : e.value; });
+  try { localStorage.setItem(STORE, JSON.stringify(o)); } catch (e) {}
+}
+function restoreF() {
+  var o = null; try { o = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) {}
+  if (!o) return;
+  F_IDS.forEach(function (k) { var e = $(k); if (!e || o[k] == null) return; if (e.type === "checkbox") e.checked = !!o[k]; else e.value = o[k]; });
+}
+function fillChoices() {
+  [["fOutlet", "outlet"], ["fPlat", "platform"]].forEach(function (p) {
+    var sel = $(p[0]), keep = sel.value, seen = {};
+    ORDERS.forEach(function (o) { if (o[p[1]]) seen[o[p[1]]] = 1; });
+    try { var saved = JSON.parse(localStorage.getItem(STORE) || "{}")[p[0]]; if (saved) keep = saved; } catch (e) {}
+    sel.innerHTML = sel.options[0].outerHTML + Object.keys(seen).sort().map(function (v) { return "<option>" + esc(v) + "</option>"; }).join("");
+    sel.value = seen[keep] ? keep : "";
+  });
+}
+function range() {
+  var v = $("fDate").value, now = new Date(), today = ymd(now), d = new Date(now);
+  if (v === "today") return [today, today];
+  if (v === "yesterday") { d.setDate(d.getDate() - 1); return [ymd(d), ymd(d)]; }
+  if (v === "7" || v === "30") { d.setDate(d.getDate() - (+v - 1)); return [ymd(d), today]; }
+  if (v === "month") return [today.slice(0, 8) + "01", today];
+  if (v === "custom") return [$("fFrom").value || "0000", $("fTo").value || "9999"];
+  return ["0000", "9999"];
+}
+function isLow(o) { return o.rating != null && o.rating <= 3; }
+function filtered(skipProblem) {
+  var r = range(), out = $("fOutlet").value, pl = $("fPlat").value, ra = $("fRate").value, co = $("fComp").value,
+    me = $("fMeal").value, cu = $("fCust").value, q = $("fFind").value.replace(/\D/g, ""), prob = !skipProblem && $("fProb").checked;
+  return ORDERS.filter(function (o) {
+    if (o.day < r[0] || o.day > r[1]) return false;
+    if (out && o.outlet !== out) return false;
+    if (pl && o.platform !== pl) return false;
+    if (ra === "low" ? !isLow(o) : ra === "none" ? o.rating != null : ra && o.rating !== +ra) return false;
+    if (co === "any" ? !o.complaint : co === "none" ? !!o.complaint : co && o.complaint !== co) return false;
+    if (me === "unknown" ? !!o.meal : me && o.meal !== me) return false;
+    if (cu === "check" ? !/^Check/.test(o.check || "") : cu && o.ctype !== cu) return false;
+    if (q && o.id.indexOf(q) < 0) return false;
+    if (prob && !(o.complaint || isLow(o))) return false;
+    return true;
+  });
+}
+
+// ---- drawing ----
+var tip = $("tip");
+document.addEventListener("mousemove", function (e) {
+  var t = e.target.closest && e.target.closest("[data-tip]");
+  if (!t) { tip.hidden = true; return; }
+  tip.innerHTML = esc(t.getAttribute("data-tip")); tip.hidden = false;
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = (e.clientY + 14) + "px";
+});
+function bars(id, list, color, empty) {
+  if (!list.length) { $(id).innerHTML = '<p class="empty">' + (empty || "Nothing for these filters.") + "</p>"; return; }
+  var mx = list[0][1];
+  $(id).innerHTML = list.map(function (r) {
+    return '<div class="br" data-tip="' + esc(r[0] + ": " + r[1]) + '"><span class="nm">' + esc(r[0]) + '</span><div class="tr"><div class="t" style="width:' + (r[1] / mx * 100) + "%;background:" + (r[2] || color) + '"></div></div><span class="n">' + r[1] + "</span></div>";
+  }).join("");
+}
+function count(list, f) {
+  var m = {}; list.forEach(function (o) { [].concat(f(o)).forEach(function (k) { if (k) m[k] = (m[k] || 0) + 1; }); });
+  return Object.keys(m).map(function (k) { return [k, m[k]]; }).sort(function (a, b) { return b[1] - a[1]; });
+}
+function tile(l, v, s, alert) { return '<div class="tile' + (alert ? " alert" : "") + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="s">' + s + "</div></div>"; }
+
+function render() {
+  var all = filtered(true), rows = filtered(false);
+  F_IDS.forEach(function (k) { var e = $(k); if (e.tagName === "SELECT" || e.type === "search") e.classList.toggle("on", !!e.value && !(k === "fDate" && e.value === "today")); });
+  $("customBox").classList.toggle("show", $("fDate").value === "custom");
+  var rated = all.filter(function (o) { return o.rating != null; }), comp = all.filter(function (o) { return o.complaint; });
+  var low = rated.filter(isLow), sum = 0; rated.forEach(function (o) { sum += o.rating; });
+  var both = all.filter(function (o) { return o.complaint && o.rating != null; });
+  var refund = 0; comp.forEach(function (o) { refund += o.refund || 0; });
+  var kpt = med(all.map(function (o) { return o.kpt; }).filter(function (x) { return x != null; }));
+  var wait = med(all.map(function (o) { return o.wait; }).filter(function (x) { return x != null; }));
+  var linked = all.filter(function (o) { return o.console; }).length;
+  var open = comp.filter(function (o) { return /OPEN|UNRESOLVED/.test(o.status); }).length;
+  $("tiles").innerHTML =
+    tile("Ratings", fmt(rated.length), rated.length ? (sum / rated.length).toFixed(2) + "★ average" : "none") +
+    tile("Low 1–3★", fmt(low.length), rated.length ? (100 * low.length / rated.length).toFixed(1) + "% of ratings" : "–", low.length) +
+    tile("Complaints", fmt(comp.length), open + " open or unresolved", comp.length) +
+    tile("Rated and complained", fmt(both.length), both.filter(isLow).length + " of them 1–3★") +
+    tile("Refunds asked", "₹" + fmt(refund), "recommended on complaints") +
+    tile("KPT (median)", kpt == null ? "–" : kpt.toFixed(1) + "m", linked ? "punched → food ready · " + linked + " orders" : "Console not linked for these") +
+    tile("Rider wait (median)", wait == null ? "–" : wait.toFixed(1) + "m", "food ready → picked up");
+  trend(rated, comp); meals(all); outlets(all); ctype(comp); causes(all);
+  bars("custs", count(comp, function (o) { return [o.ctype && o.ctype + " customer", /^Check/.test(o.check || "") ? "Flagged: " + o.check.replace("Check: ", "") : "", /^Genuine/.test(o.check || "") ? "Platform said genuine" : ""]; }), "var(--c3)", "No complaints for these filters.");
+  bars("items", count(comp, function (o) { return (o.item || "").split(/\s*,\s*/).map(function (x) { return x.replace(/^\d+\s*x\s*/i, ""); }); }).slice(0, 10), "var(--c2)", "No items named.");
+  table(rows);
+}
+
+function trend(rated, comp) {
+  var by = {}, days;
+  rated.forEach(function (o) { var b = by[o.day] || (by[o.day] = {n: 0, s: 0, l: 0, c: 0}); b.n++; b.s += o.rating; if (o.rating <= 3) b.l++; });
+  comp.forEach(function (o) { var b = by[o.day] || (by[o.day] = {n: 0, s: 0, l: 0, c: 0}); b.c++; });
+  days = Object.keys(by).sort();
+  if (days.length < 2) {
+    $("trendTitle").textContent = "Ratings for the day"; $("trendSub").textContent = "";
+    var dist = [1, 2, 3, 4, 5].map(function (s) { return [s + "★", rated.filter(function (o) { return o.rating === s; }).length, s <= 3 ? "var(--bad)" : "var(--seq)"]; }).reverse();
+    $("trend").innerHTML = '<div class="bars" id="dist"></div>'; var mx = Math.max.apply(null, dist.map(function (d) { return d[1]; })) || 1;
+    $("dist").innerHTML = dist.map(function (r) { return '<div class="br" data-tip="' + r[0] + ": " + r[1] + '"><span class="nm">' + r[0] + '</span><div class="tr"><div class="t" style="width:' + (r[1] / mx * 100) + "%;background:" + r[2] + '"></div></div><span class="n">' + r[1] + "</span></div>"; }).join("");
+    return;
+  }
+  $("trendTitle").textContent = "Ratings over time"; $("trendSub").textContent = "line = average ★ · bars = 1–3★ count";
+  var W = 560, H = 150, p = {l: 30, r: 10, t: 10, b: 20}, n = days.length;
+  var avgs = days.map(function (d) { return by[d].n ? by[d].s / by[d].n : null; }), vals = avgs.filter(function (x) { return x != null; });
+  var mn = Math.min(4, Math.floor(Math.min.apply(null, vals) * 5) / 5), mx2 = 5;
+  var x = function (i) { return p.l + i * (W - p.l - p.r) / (n - 1); }, y = function (v) { return p.t + (mx2 - v) / (mx2 - mn) * (H - p.t - p.b); };
+  var g = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Average rating per day">';
+  for (var v = mn; v <= mx2 + 1e-9; v += (mx2 - mn) / 4) g += '<line x1="' + p.l + '" x2="' + (W - p.r) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)"/><text x="' + (p.l - 4) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + v.toFixed(1) + "</text>";
+  var path = ""; avgs.forEach(function (a, i) { if (a != null) path += (path ? "L" : "M") + x(i) + " " + y(a); });
+  g += '<path d="' + path + '" fill="none" stroke="var(--seq)" stroke-width="2"/>';
+  var step = Math.ceil(n / 8);
+  days.forEach(function (d, i) {
+    var a = avgs[i], b = by[d];
+    if (a != null) g += '<circle cx="' + x(i) + '" cy="' + y(a) + '" r="3" fill="var(--panel)" stroke="var(--seq)" stroke-width="2"/>';
+    if ((i % step === 0 && n - 1 - i >= step / 2) || i === n - 1) g += '<text x="' + x(i) + '" y="' + (H - 4) + '" text-anchor="middle">' + dShort(d) + "</text>";
+    g += '<rect class="hit" x="' + (x(i) - 10) + '" y="0" width="20" height="' + H + '" data-tip="' + dShort(d) + " · " + (a == null ? "no ratings" : a.toFixed(2) + "★ from " + b.n) + " · " + b.l + " at 1–3★ · " + b.c + ' complaints"/>';
+  });
+  g += "</svg>";
+  var lm = Math.max.apply(null, days.map(function (d) { return by[d].l; })) || 1, bh = 50, bw = Math.max(3, (W - p.l - p.r) / n - 4);
+  g += '<svg viewBox="0 0 ' + W + " " + (bh + 14) + '" role="img" aria-label="1 to 3 star ratings per day">';
+  days.forEach(function (d, i) { var h = Math.max(2, by[d].l / lm * bh); g += '<rect x="' + (x(i) - bw / 2) + '" y="' + (bh - h) + '" width="' + bw + '" height="' + h + '" rx="3" fill="var(--bad)" opacity=".75" data-tip="' + dShort(d) + " · " + by[d].l + ' at 1–3★"/>'; });
+  $("trend").innerHTML = g + '<text x="' + p.l + '" y="' + (bh + 12) + '">1–3★ per day (most ' + lm + ")</text></svg>";
+}
+
+var MEALS = ["Breakfast", "Lunch", "Snacks", "Dinner"];
+function meals(all) {
+  var c = {}, l = {}, unknown = 0;
+  all.forEach(function (o) { if (!o.meal) { if (o.complaint || isLow(o)) unknown++; return; } if (o.complaint) c[o.meal] = (c[o.meal] || 0) + 1; if (isLow(o)) l[o.meal] = (l[o.meal] || 0) + 1; });
+  var mx = Math.max.apply(null, MEALS.map(function (m) { return Math.max(c[m] || 0, l[m] || 0); })) || 1, W = 560, rh = 34, lab = 80;
+  var g = '<svg viewBox="0 0 ' + W + " " + (MEALS.length * rh) + '" role="img" aria-label="Complaints and low ratings by meal time">';
+  MEALS.forEach(function (m, i) {
+    var y = i * rh, a = c[m] || 0, b = l[m] || 0, w = W - lab - 40;
+    g += '<text x="0" y="' + (y + 18) + '" style="fill:var(--ink2);font-weight:600">' + m + "</text>";
+    g += '<rect x="' + lab + '" y="' + (y + 4) + '" width="' + Math.max(a ? 2 : 0, a / mx * w) + '" height="11" rx="3" fill="var(--c1)" data-tip="' + m + ": " + a + ' complaints"/><text class="val" x="' + (lab + a / mx * w + 4) + '" y="' + (y + 14) + '">' + a + "</text>";
+    g += '<rect x="' + lab + '" y="' + (y + 17) + '" width="' + Math.max(b ? 2 : 0, b / mx * w) + '" height="11" rx="3" fill="var(--c2)" data-tip="' + m + ": " + b + ' low ratings"/><text class="val" x="' + (lab + b / mx * w + 4) + '" y="' + (y + 27) + '">' + b + "</text>";
+  });
+  $("meals").innerHTML = g + "</svg>";
+  $("mealNote").textContent = unknown ? unknown + " problem orders have no order time yet (ratings carry only the date until the outlet's Console is linked)." : "";
+}
+
+function outlets(all) {
+  var by = {};
+  all.forEach(function (o) {
+    var b = by[o.outlet] || (by[o.outlet] = {n: 0, s: 0, l: 0, c: 0, k: [], w: [], plat: {}});
+    if (o.rating != null) { b.n++; b.s += o.rating; if (o.rating <= 3) b.l++; var pp = b.plat[o.platform] || (b.plat[o.platform] = {n: 0, s: 0}); pp.n++; pp.s += o.rating; }
+    if (o.complaint) b.c++;
+    if (o.kpt != null) b.k.push(o.kpt); if (o.wait != null) b.w.push(o.wait);
+  });
+  var names = Object.keys(by).sort(function (a, b) { return (by[a].n ? by[a].s / by[a].n : 9) - (by[b].n ? by[b].s / by[b].n : 9); });
+  if (!names.length) { $("outlets").innerHTML = '<p class="empty">No orders for these filters.</p>'; return; }
+  $("outlets").innerHTML = "<table><thead><tr><th>Outlet</th><th>Ratings</th><th>Average</th><th>1–3★</th><th>Share 1–3★</th><th>Complaints</th><th>KPT (median)</th><th>Rider wait (median)</th></tr></thead><tbody>" +
+    names.map(function (k) {
+      var b = by[k], sh = b.n ? 100 * b.l / b.n : 0, km = med(b.k), wm = med(b.w);
+      return "<tr><td><b>" + esc(k) + '</b><div class="pend" style="font-size:12px">' + Object.keys(b.plat).sort().map(function (p) { return esc(p) + " " + (b.plat[p].s / b.plat[p].n).toFixed(2) + "★"; }).join(" · ") + '</div></td><td class="n">' + b.n + '</td><td class="n"><b>' + (b.n ? (b.s / b.n).toFixed(2) : "–") + '</b></td><td class="n">' + b.l +
+        '</td><td><div class="br" style="grid-template-columns:1fr 50px"><div class="tr"><div class="t" style="width:' + Math.min(100, sh * 3) + '%;background:var(--bad)"></div></div><span class="n">' + sh.toFixed(1) + '%</span></div></td><td class="n">' + b.c +
+        '</td><td class="n">' + (km == null ? '<span class="pend">–</span>' : km.toFixed(1) + " min") + '</td><td class="n">' + (wm == null ? '<span class="pend">–</span>' : wm.toFixed(1) + " min") + "</td></tr>";
+    }).join("") + "</tbody></table>";
+}
+
+var TYPES = [["MISSING", "Missing item", "var(--c1)"], ["WRONG ITEM", "Wrong item", "var(--c2)"], ["QUALITY / TASTE", "Quality / taste", "var(--c3)"], ["PACKAGING", "Packaging", "var(--c4)"], ["OTHER", "Other", "var(--c5)"]];
+function ctype(comp) {
+  $("tlegend").innerHTML = TYPES.map(function (t) { return '<span><i style="background:' + t[2] + '"></i>' + t[1] + "</span>"; }).join("");
+  $("ctSub").textContent = comp.length + " complaints";
+  if (!comp.length) { $("ctype").innerHTML = '<p class="empty">No complaints for these filters.</p>'; return; }
+  var by = {}; comp.forEach(function (o) { var b = by[o.outlet] || (by[o.outlet] = {}); var t = TYPES.some(function (x) { return x[0] === o.complaint; }) ? o.complaint : "OTHER"; b[t] = (b[t] || 0) + 1; });
+  function sum(o) { var s = 0; for (var k in o) s += o[k]; return s; }
+  var outs = Object.keys(by).sort(function (a, b) { return sum(by[b]) - sum(by[a]); }), mx = sum(by[outs[0]]), W = 560, rh = 30, p = 60;
+  var g = '<svg viewBox="0 0 ' + W + " " + (outs.length * rh + 4) + '" role="img" aria-label="Complaints by type and outlet">';
+  outs.forEach(function (o, i) {
+    var x = p, y = i * rh + 4;
+    g += '<text x="0" y="' + (y + 15) + '" style="fill:var(--ink2);font-weight:600">' + esc(o) + "</text>";
+    TYPES.forEach(function (t) { var v = by[o][t[0]] || 0; if (!v) return; var w = v / mx * (W - p - 40); g += '<rect x="' + x + '" y="' + y + '" width="' + Math.max(1, w - 2) + '" height="20" rx="2" fill="' + t[2] + '" data-tip="' + esc(o) + " · " + t[1] + ": " + v + '"/>'; x += w; });
+    g += '<text class="val" x="' + (x + 4) + '" y="' + (y + 15) + '">' + sum(by[o]) + "</text>";
+  });
+  $("ctype").innerHTML = g + "</svg>";
+}
+function causes(all) {
+  var prob = all.filter(function (o) { return o.cause && (o.complaint || isLow(o)); });
+  var silent = prob.filter(function (o) { return o.cause === "No comment given"; }).length;
+  bars("causes", count(prob.filter(function (o) { return o.cause !== "No comment given"; }), function (o) { return o.cause.split(/,\s*(?=[A-Z])/); }).slice(0, 9), "var(--bad)", "No comments to read for these filters.");
+  $("causeNote").textContent = "From the complaint type and the customer's words. One order can count in two groups." + (silent ? " " + silent + " low ratings came with no comment." : "");
+}
+
+var TAG = {"MISSING": "miss", "WRONG ITEM": "wrong", "QUALITY / TASTE": "q"};
+function stars(n) { return n == null ? '<span class="pend">–</span>' : '<b style="color:' + (n <= 2 ? "var(--bad)" : n === 3 ? "var(--warn)" : "var(--good)") + '">' + n + "★</b>"; }
+function table(rows) {
+  $("osub").textContent = fmt(rows.length) + " orders" + (rows.length > shown ? " · newest " + shown + " shown" : "");
+  if (!rows.length) { $("orders").tBodies[0].innerHTML = '<tr><td colspan="11" class="empty">No orders for these filters. Try another date.</td></tr>'; $("more").hidden = true; return; }
+  $("orders").tBodies[0].innerHTML = rows.slice(0, shown).map(function (o) {
+    var chk = o.check ? '<span class="tag ' + (/^Check/.test(o.check) ? "chk" : "gen") + '">' + esc(o.check) + "</span>" : "";
+    return '<tr class="o" tabindex="0"><td class="n">' + esc(dShort(o.day)) + (o.time ? " " + esc(o.time) : "") + "</td><td>" + esc(o.outlet) + "</td><td>" + esc(o.platform) + '</td><td class="n" title="' + esc(o.id) + '">…' + esc(o.id.slice(-7)) + '</td><td class="n">' + stars(o.rating) +
+      "</td><td>" + (o.complaint ? '<span class="tag ' + (TAG[o.complaint] || "o") + '">' + esc(o.complaint) + "</span>" : '<span class="pend">–</span>') +
+      '</td><td class="cust">' + (o.ctype ? esc(o.ctype) + " " + chk : '<span class="pend">–</span>') +
+      '</td><td class="n">' + (o.kpt == null ? '<span class="pend">–</span>' : o.kpt + "m") + '</td><td class="n">' + (o.wait == null ? '<span class="pend">–</span>' : o.wait + "m") + '</td><td class="n">' + (o.slot ? esc(o.slot) : '<span class="pend">–</span>') +
+      '</td><td class="sum" title="' + esc(o.summary) + '">' + esc(o.summary) + "</td></tr>";
+  }).join("");
+  $("more").hidden = rows.length <= shown;
+}
+$("orders").addEventListener("click", function (e) { var tr = e.target.closest("tr.o"); if (tr) tr.classList.toggle("open"); });
+$("orders").addEventListener("keydown", function (e) { if (e.key === "Enter") { var tr = e.target.closest("tr.o"); if (tr) tr.classList.toggle("open"); } });
+$("more").onclick = function () { shown += 50; table(filtered(false)); };
+
+$("csv").onclick = function () {
+  var cols = ["day", "time", "meal", "outlet", "platform", "id", "rating", "feedback", "complaint", "item", "text", "status", "refund", "kind", "ctype", "customer", "check", "cause", "kpt", "wait", "slot", "readyBy", "picked", "summary"];
+  var q = function (v) { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  var csv = cols.join(",") + "\n" + filtered(false).map(function (o) { return cols.map(function (c) { return q(o[c]); }).join(","); }).join("\n");
+  var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], {type: "text/csv"}));
+  a.download = "babai-orders-" + range().join("_to_").replace(/0000|9999/g, "all") + ".csv"; document.body.appendChild(a); a.click(); a.remove();
+};
+
+F_IDS.forEach(function (k) { $(k).addEventListener(k === "fFind" ? "input" : "change", function () { shown = 50; saveF(); render(); }); });
+$("reset").onclick = function () {
+  try { localStorage.removeItem(STORE); } catch (e) {}
+  F_IDS.forEach(function (k) { var e = $(k); if (e.type === "checkbox") e.checked = true; else e.value = k === "fDate" ? "today" : ""; });
+  shown = 50; render();
+};
+$("refresh").onclick = load;
+restoreF();
+load();
+if (LIVE) setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>

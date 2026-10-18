@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "3.0"
+	version     = "3.1"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -56,6 +56,8 @@ type Config struct {
 	AutoUpdate   *bool    `json:"autoUpdate,omitempty"` // nil = on
 	HideBrands   []string `json:"hideBrands,omitempty"` // brands kept off the rider screen
 	HideSet      bool     `json:"hideSet,omitempty"`    // false = the default (Go Self Service)
+	CXURL        string   `json:"cxUrl,omitempty"`      // ratings sheet web app (Data > Ratings sheet)
+	CXKey        string   `json:"cxKey,omitempty"`      // its key
 }
 
 // Phone is one paired Babai Scanner phone. Key: its private pairing key (in the QR code).
@@ -112,6 +114,7 @@ func runWorker() {
 	go kdsMirrorLoop()
 	go scannerMirrorLoop()
 	go scanQueueLoop()
+	go cxLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "babai-hub "+version) })
