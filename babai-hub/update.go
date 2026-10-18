@@ -110,19 +110,20 @@ func updateLoop() {
 		case now := <-updWake:
 			checkUpdate()
 			if now {
-				for i := 0; i < 60 && !installUpdate(true); i++ {
-					time.Sleep(10 * time.Second) // a KOT is printing: try again in a moment
+				for i := 0; i < 900 && !installUpdate(true); i++ {
+					time.Sleep(time.Second) // a KOT is printing: switch in the next quiet moment (up to 15 min)
 				}
 			}
 		}
 	}
 }
 
-// quietForUpdate: no KOT for 5 minutes (1 for "Update now") and nothing waiting to print.
+// quietForUpdate: no KOT for 5 minutes (8 seconds for "Update now": the switch itself takes about
+// 2 seconds) and nothing waiting to print.
 func quietForUpdate(manual bool) (bool, string) {
 	quiet := 5 * time.Minute
 	if manual {
-		quiet = time.Minute
+		quiet = 8 * time.Second
 	}
 	prMu.Lock()
 	defer prMu.Unlock()
@@ -224,7 +225,7 @@ func downloadChecked(u, sum, v string) (string, error) {
 		os.Remove(tmp)
 		return "", errors.New("the file doesn't match its sha256 (not installed)")
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := renameRetry(tmp, path); err != nil {
 		return "", err
 	}
 	return path, nil

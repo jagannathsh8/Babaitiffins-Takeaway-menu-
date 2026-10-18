@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "3.2"
+	version     = "3.3"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -292,20 +292,28 @@ func writeFileAtomic(path string, b []byte) error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	// Windows refuses to replace a file another program has open (often the antivirus scanning
-	// it right after a write): try again for a few seconds, then write over the file in place.
-	var err error
-	for i := 0; i < 8; i++ {
-		if err = os.Rename(tmp, path); err == nil {
-			return nil
-		}
-		time.Sleep(time.Duration(50<<i) * time.Millisecond / 4)
+	err := renameRetry(tmp, path)
+	if err == nil {
+		return nil
 	}
-	if werr := os.WriteFile(path, b, 0o600); werr != nil {
+	if werr := os.WriteFile(path, b, 0o600); werr != nil { // still held: write over it in place
 		return err
 	}
 	_ = os.Remove(tmp)
 	return nil
+}
+
+// renameRetry: Windows refuses to replace a file another program has open (often the antivirus
+// scanning it right after a write), so try again for about 3 seconds.
+func renameRetry(from, to string) error {
+	var err error
+	for i := 0; i < 8; i++ {
+		if err = os.Rename(from, to); err == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(50<<i) * time.Millisecond / 4)
+	}
+	return err
 }
 
 func setupLog() {
