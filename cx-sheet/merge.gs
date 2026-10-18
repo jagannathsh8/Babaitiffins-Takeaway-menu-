@@ -1,8 +1,9 @@
 /**
  * Babai CX METRICS: one row per order (rating + complaint + customer + kitchen times), live.
  *
- * Install in the CX METRICS sheet: Extensions > Apps Script. Paste this file as Code.gs and
- * Dashboard.html as an HTML file named "Dashboard". Save, then run setup() once (allow access).
+ * Install in the CX METRICS sheet: Extensions > Apps Script. Replace Code.gs with this file (its
+ * doPost still does what the old Code.gs did, see sheetsPost_) and add Dashboard.html as an HTML
+ * file named "Dashboard". Save, then run setup() once (allow access).
  *   - The "Merged" tab is rebuilt now and every 15 minutes.
  *   - Deploy > New deployment > Web app (execute as: me, access: your choice) gives the
  *     dashboard link. It reads the sheet live and refreshes itself every 5 minutes.
@@ -118,12 +119,34 @@ function doGet(e) {
 var CCOLS = ['Order_ID', 'KOT', 'Outlet', 'Channel', 'Brand', 'Slot', 'Items', 'Punched', 'Printed', 'Food ready',
   'Ready by', 'Picked up', 'Delivered', 'Status', 'KPT min', 'Rider wait min', 'Print sec', 'Updated'];
 
-/** A Console sends {key, orders:[...]} (see babai-hub/cxsheet.go). Rows are kept per order + KOT. */
+/**
+ * One doPost for the sheet. A Babai Console sends {key, orders:[...]}; anything else is the
+ * sheet's existing feed ({tab name: rows}), handled exactly as before by sheetsPost_.
+ */
 function doPost(e) {
+  var body = JSON.parse(e.postData.contents);
+  if (body && body.key != null && Array.isArray(body.orders)) return consolePost_(body);
+  return sheetsPost_(body);
+}
+
+// The sheet's existing feed, unchanged: each key is a tab name, its value the rows that replace the tab.
+function sheetsPost_(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  for (var sheetName in data) {
+    var sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+    sheet.clear();
+    var rows = data[sheetName];
+    if (rows && rows.length > 0) {
+      sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
+    }
+  }
+  return ContentService.createTextOutput("OK");
+}
+
+// Order times from a Babai Console (see babai-hub/cxsheet.go). Rows are kept per order + KOT.
+function consolePost_(body) {
   var out = function (o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); };
-  var body;
-  try { body = JSON.parse(e.postData.contents); } catch (err) { return out({ok: false, msg: 'not JSON'}); }
-  if (!body || body.key !== key_()) return out({ok: false, msg: 'wrong key: copy it again from the sheet (Babai > Show Console key)'});
+  if (body.key !== key_()) return out({ok: false, msg: 'wrong key: copy it again from the sheet (Babai > Show Console key)'});
   var list = (body.orders || []).slice(0, 1000);
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(60000)) return out({ok: false, msg: 'sheet busy, will retry'});

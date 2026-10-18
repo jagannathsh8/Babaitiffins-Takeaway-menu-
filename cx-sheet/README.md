@@ -2,12 +2,15 @@
 
 Everything runs inside the CX METRICS Google Sheet, so it is always live.
 
-1. In the sheet: **Extensions › Apps Script**. Replace `Code.gs` with `merge.gs`. Add an HTML file named
-   `Dashboard` and paste `Dashboard.html`. Save.
+1. In the sheet: **Extensions › Apps Script**. Replace everything in `Code.gs` with `merge.gs`. Its
+   `doPost` keeps doing what the old Code.gs did (each tab name → rows that replace the tab, see
+   `sheetsPost_`), so whatever feeds the sheet keeps working. Add an HTML file named `Dashboard` and
+   paste `Dashboard.html`. Save.
 2. Run `setup` once and allow access. It builds the **Merged** tab now and every 15 minutes and makes
    the Console key.
-3. **Deploy › New deployment › Web app**: execute as *me*, access *anyone*. The link it gives you is
-   the dashboard (it reads the sheet live and refreshes every 5 minutes; filters are remembered).
+3. **Deploy › New deployment › Web app**: execute as *me*, access *anyone*. This new link is the
+   dashboard and the Console link. The old deployment link (the one feeding the sheet) stays as it is
+   and keeps working; nothing needs changing where it is used.
 4. In each outlet's Babai Console (3.1 or newer): **Data › Ratings sheet**. Paste the web app link and
    the key (sheet menu **Babai › Show Console key**). From then on the Console sends its order times
    (punched, food ready = KPT, picked up = rider wait, delivered, slot) every 15 minutes into the
