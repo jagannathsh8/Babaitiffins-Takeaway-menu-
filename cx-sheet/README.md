@@ -11,6 +11,9 @@ Everything runs inside the CX METRICS Google Sheet, so it is always live.
 3. **Deploy › New deployment › Web app**: execute as *me*, access *anyone*. This new link is the
    dashboard and the Console link. The old deployment link (the one feeding the sheet) stays as it is
    and keeps working; nothing needs changing where it is used.
+   If that page stays blank (it happens when the browser is signed in to more than one Google
+   account), use **babaidosa.netlify.app/cx/** instead: paste the same link once and it is kept on
+   that device. It reads the link's `?format=json` and refreshes every 5 minutes.
 4. In each outlet's Babai Console (3.1 or newer): **Data › Ratings sheet**. Paste the web app link and
    the key (sheet menu **Babai › Show Console key**). From then on the Console sends its order times
    (punched, food ready = KPT, picked up = rider wait, delivered, slot) every 15 minutes into the

@@ -88,6 +88,12 @@ td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowra
   <div class="live"><span class="chip" id="src">Loading…</span><button class="btn" id="refresh" type="button">Refresh</button></div>
 </header>
 
+<section class="card" id="setup" hidden>
+  <div class="hd"><h2>Connect the CX METRICS sheet</h2></div>
+  <form id="setupForm" style="display:flex;gap:8px;flex-wrap:wrap"><input type="url" id="setupLink" placeholder="https://script.google.com/macros/s/…/exec" aria-label="Sheet web app link" style="flex:1 1 320px;font:600 13px var(--ui);padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)"><button class="btn" type="submit">Open dashboard</button></form>
+  <p class="note" id="setupMsg">Paste the sheet's web app link once (Apps Script › Deploy). It is kept on this device only.</p>
+</section>
+
 <div class="filters" role="group" aria-label="Filters">
   <div class="f"><label for="fDate">Date</label><select id="fDate">
     <option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7">Last 7 days</option>
@@ -137,6 +143,7 @@ td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowra
 <script>
 var SNAP = null; // the published preview puts a copy of the data here; in the sheet the page reads it live
 var ORDERS = [], UPDATED = null, LIVE = !!(window.google && google.script && google.script.run), shown = 50;
+var SRC_KEY = "babai.cx.src", SRC = ""; // outside the sheet (Netlify): the web app link, kept on this device
 var F_IDS = ["fDate", "fFrom", "fTo", "fOutlet", "fPlat", "fRate", "fComp", "fMeal", "fCust", "fFind", "fProb"];
 var STORE = "babai.cx.filters";
 
@@ -155,12 +162,31 @@ function load() {
       $("src").className = "chip no"; $("src").textContent = "Couldn't read the sheet: " + (e && e.message || e);
     }).getData();
   } else if (SNAP) got(SNAP);
+  else if (SRC) {
+    $("src").className = "chip"; $("src").textContent = "Reading the sheet…";
+    fetch(SRC + (SRC.indexOf("?") < 0 ? "?" : "&") + "format=json", {cache: "no-store"})
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(got).catch(function (e) { $("src").className = "chip no"; $("src").textContent = "Couldn't read the sheet: " + e.message; });
+  } else $("setup").hidden = false;
 }
+function sourceLink() {
+  var m = location.hash.match(/src=([^&]+)/);
+  if (m) { SRC = decodeURIComponent(m[1]); try { localStorage.setItem(SRC_KEY, SRC); } catch (e) {} history.replaceState(null, "", location.pathname); }
+  if (!SRC) try { SRC = localStorage.getItem(SRC_KEY) || ""; } catch (e) {}
+}
+$("setupForm").onsubmit = function (e) {
+  e.preventDefault();
+  var v = $("setupLink").value.trim();
+  if (!/^https?:\/\/\S+$/.test(v)) { $("setupMsg").textContent = "Paste the whole link, starting with https://"; return; }
+  SRC = v.replace(/\?.*$/, ""); try { localStorage.setItem(SRC_KEY, SRC); } catch (err) {}
+  $("setup").hidden = true; load();
+};
 function got(d) {
-  ORDERS = d.orders || []; UPDATED = new Date(d.updated);
+  if (!d || !d.orders) { $("src").className = "chip no"; $("src").textContent = "That link didn't send the sheet's orders"; return; }
+  ORDERS = d.orders; UPDATED = new Date(d.updated);
   var t = ("0" + UPDATED.getHours()).slice(-2) + ":" + ("0" + UPDATED.getMinutes()).slice(-2);
   $("src").className = "chip ok";
-  $("src").textContent = LIVE ? "● Live from CX METRICS · updated " + t + " · refreshes every 5 min" : "● Preview copy of CX METRICS (" + dShort(ymd(UPDATED)) + ", " + t + ")";
+  $("src").textContent = LIVE || SRC ? "● Live from CX METRICS · updated " + t + " · refreshes every 5 min" : "● Preview copy of CX METRICS (" + dShort(ymd(UPDATED)) + ", " + t + ")";
   fillChoices(); render();
 }
 
@@ -386,8 +412,9 @@ $("reset").onclick = function () {
 };
 $("refresh").onclick = load;
 restoreF();
+if (!LIVE && !SNAP) sourceLink();
 load();
-if (LIVE) setInterval(load, 5 * 60 * 1000);
+if (LIVE || SRC) setInterval(load, 5 * 60 * 1000);
 </script>
 </body>
 </html>

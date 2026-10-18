@@ -4,9 +4,11 @@
 #   ./make-netlify-site.sh <firebase db host> <out dir>
 set -euo pipefail
 DB="$1"; OUT=$(realpath -m "$2"); HERE=$(cd "$(dirname "$0")" && pwd)
-rm -rf "$OUT"; mkdir -p "$OUT/hub" "$OUT/indent" "$OUT/kds" "$OUT/console" "$OUT/scanner"
+rm -rf "$OUT"; mkdir -p "$OUT/hub" "$OUT/cx" "$OUT/indent" "$OUT/kds" "$OUT/console" "$OUT/scanner"
 sed "s/var BUILT_IN='__BABAI_DB__';/var BUILT_IN='$DB';/" "$HERE/dosa/index.html" > "$OUT/index.html"
 cp "$HERE/indent/index.html" "$HERE/indent/plan.js" "$HERE/indent/xlsx.full.min.js" "$HERE/indent/xlsx.LICENSE.txt" "$OUT/indent/"
+# Ratings & complaints dashboard (reads the CX METRICS sheet's web app; link kept on each device)
+cp "$HERE/cx-sheet/Dashboard.html" "$OUT/cx/index.html"
 # Babai Console (installs as a service; updates itself from console/version.json)
 cp "$HERE/babai-hub/dist/babai-console.exe" "$OUT/console/"
 V=$(grep -o 'version     = "[0-9.]*"' "$HERE/babai-hub/main.go" | grep -o '[0-9.]*')
@@ -34,5 +36,5 @@ if [ -f "$SAPK" ]; then
   SSUM=$(sha256sum "$OUT/scanner/BabaiScanner.apk" | cut -d' ' -f1)
   printf '{"b":%s,"url":"BabaiScanner.apk","sha256":"%s"}\n' "$SB" "$SSUM" > "$OUT/scanner/version.json"
 fi
-printf 'User-agent: *\nDisallow: /indent/\nDisallow: /hub/\nDisallow: /kds/\nDisallow: /console/\nDisallow: /scanner/\n' > "$OUT/robots.txt"
+printf 'User-agent: *\nDisallow: /indent/\nDisallow: /hub/\nDisallow: /kds/\nDisallow: /console/\nDisallow: /scanner/\nDisallow: /cx/\n' > "$OUT/robots.txt"
 echo "site in $OUT (console $V, KDS build ${B:-none}, scanner ${SB:-none})"
