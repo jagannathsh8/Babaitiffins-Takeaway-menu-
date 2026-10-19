@@ -73,3 +73,49 @@ func TestKDSMirror(t *testing.T) {
 		t.Fatalf("tampered build replaced the good one: %v %d", err, kdsHave.B)
 	}
 }
+
+func TestTVAppMirror(t *testing.T) {
+	apk := []byte("PK fake dosa tv apk")
+	sum := sha256.Sum256(apk)
+	site := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/tv/version.json":
+			_ = json.NewEncoder(w).Encode(kdsInfo{B: 2, URL: "Petpooja_KDS_Dosa_TV.apk", SHA256: hex.EncodeToString(sum[:])})
+		case "/tv/Petpooja_KDS_Dosa_TV.apk":
+			_, _ = w.Write(apk)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer site.Close()
+	oldClient, oldCfg, oldDir := updClient, cfg, dataDir
+	defer func() { updClient, cfg, dataDir = oldClient, oldCfg, oldDir }()
+	updClient = site.Client()
+	dataDir = t.TempDir()
+	cfg = Config{Page: site.URL + "/"}
+	m := &apkMirror{dir: "tv", label: "Dosa TV app", file: "Petpooja_KDS_Dosa_TV.apk"}
+
+	w := httptest.NewRecorder()
+	m.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tv/app.apk", nil))
+	if w.Code != 404 {
+		t.Fatalf("before download: %d", w.Code)
+	}
+	m.check()
+	w = httptest.NewRecorder()
+	m.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tv/app.apk", nil))
+	if w.Body.String() != string(apk) || m.status() != "version 2 ready" {
+		t.Fatalf("apk not served (%s)", m.status())
+	}
+	m2 := &apkMirror{dir: "tv"}
+	m2.loadLocal() // after a restart
+	if h, p, _ := m2.info(); h.B != 2 || p == "" {
+		t.Fatal("not reloaded after restart")
+	}
+	names := []string{}
+	for _, a := range appsList() {
+		names = append(names, a.Name)
+	}
+	if len(names) != 3 || names[0] != "Dosa TV app" || names[1] != "Rider app" || names[2] != "Scanner app" {
+		t.Fatal(names)
+	}
+}

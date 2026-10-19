@@ -31,8 +31,10 @@ UDP `:8789` are the same as before.
 Hub (PIN): Status, Petpooja & Firebase, Scanners & rider, Customers' page, This PC & updates.
 Data (PIN): Metrics, Prep Live, Indent planner, Connections.
 
-**Apps for phones and TVs:** `http://<this PC>:8790/apps` (Android KDS and Babai Scanner, kept
-up to date from the Netlify site).
+**Apps for phones and TVs:** `http://<this PC>:8790/apps`, in this order: Dosa TV app (the
+outlet's chosen KDS version for the Dosa TVs, `kds-dosa-live/tv-build`), Rider app (the KDS app that
+updates itself) and Scanner app, kept up to date from the Netlify site. The Dosa TV app and the
+Rider app are the same Android app, so a screen has one of them.
 
 **Updates:** `console/version.json` on the site; switched to only between 3 and 5 am with no KOT for
 5 minutes; the service goes back to the previous version by itself if the new one doesn't run fine

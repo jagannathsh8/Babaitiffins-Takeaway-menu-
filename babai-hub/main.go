@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "3.4"
+	version     = "3.5"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -112,7 +112,8 @@ func runWorker() {
 	go bridgeLoop()
 	go updateLoop()
 	go kdsMirrorLoop()
-	go scannerMirrorLoop()
+	go scanner.loop(2 * time.Minute)
+	go tvApp.loop(150 * time.Second)
 	go scanQueueLoop()
 	go cxLoop()
 

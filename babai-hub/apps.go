@@ -1,7 +1,8 @@
 package main
 
-// Android apps on the shop Wi-Fi: the Console keeps the latest Babai Scanner app (from
-// <site>/scanner/version.json, checked against its sha256) next to the KDS app (kdsmirror.go),
+// Android apps on the shop Wi-Fi: the Console keeps the latest Dosa TV app and Babai Scanner app
+// (from <site>/tv/ and <site>/scanner/version.json, checked against their sha256) next to the KDS
+// app (kdsmirror.go, the "Rider app"),
 // and the page http://<this PC>:8790/apps lets anyone on the Wi-Fi download them (QR codes).
 
 import (
@@ -23,105 +24,145 @@ import (
 	"time"
 )
 
+// apkMirror keeps one app from <site>/<dir>/version.json on this PC and serves it on the Wi-Fi as
+// /<dir>/version.json and /<dir>/app.apk.
+type apkMirror struct {
+	dir, label, file string // site/LAN folder, name in the log, file name for downloads
+	mu               sync.Mutex
+	have             kdsInfo
+	path, state      string
+}
+
 var (
-	scMu    sync.Mutex
-	scHave  kdsInfo
-	scPath  string
-	scState = "not checked yet"
+	scanner = &apkMirror{dir: "scanner", label: "Babai Scanner", file: "BabaiScanner.apk", state: "not checked yet"}
+	// The Dosa TV app: the outlet's chosen KDS version for the Dosa TVs (no self-update, so the
+	// tablets' KDS build never replaces it).
+	tvApp = &apkMirror{dir: "tv", label: "Dosa TV app", file: "Petpooja_KDS_Dosa_TV.apk", state: "not checked yet"}
 )
 
-func scannerDir() string { return filepath.Join(dataDir, "scanner") }
+func (m *apkMirror) localDir() string { return filepath.Join(dataDir, m.dir) }
 
-func scannerMirrorLoop() {
-	time.Sleep(2 * time.Minute)
-	scannerLoadLocal()
+func (m *apkMirror) loop(wait time.Duration) {
+	time.Sleep(wait)
+	m.loadLocal()
 	for {
 		if autoUpdateOn() {
-			scannerCheck()
+			m.check()
 		}
 		time.Sleep(30 * time.Minute)
 	}
 }
 
-func scannerLoadLocal() {
+func (m *apkMirror) loadLocal() {
 	var in kdsInfo
-	if !readJSONFile(filepath.Join(scannerDir(), "version.json"), &in) || in.B <= 0 {
+	if !readJSONFile(filepath.Join(m.localDir(), "version.json"), &in) || in.B <= 0 {
 		return
 	}
-	p := filepath.Join(scannerDir(), "scanner-"+strconv.Itoa(in.B)+".apk")
+	p := filepath.Join(m.localDir(), m.dir+"-"+strconv.Itoa(in.B)+".apk")
 	if st, err := os.Stat(p); err == nil && st.Size() > 0 {
-		scMu.Lock()
-		scHave, scPath, scState = in, p, fmt.Sprintf("version %d ready", in.B)
-		scMu.Unlock()
+		m.mu.Lock()
+		m.have, m.path, m.state = in, p, fmt.Sprintf("version %d ready", in.B)
+		m.mu.Unlock()
 	}
 }
 
-func scannerStatus() string {
-	scMu.Lock()
-	defer scMu.Unlock()
-	return scState
+func (m *apkMirror) status() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.state
 }
 
-func scannerSetState(s string) {
-	scMu.Lock()
-	scState = s
-	scMu.Unlock()
+func (m *apkMirror) setState(s string) {
+	m.mu.Lock()
+	m.state = s
+	m.mu.Unlock()
 }
 
-func scannerCheck() {
+func (m *apkMirror) check() {
 	base, err := updateBase()
 	if err == nil {
-		base, err = base.Parse("../scanner/")
+		base, err = base.Parse("../" + m.dir + "/")
 	}
 	if err != nil {
-		scannerSetState(err.Error())
+		m.setState(err.Error())
 		return
 	}
 	resp, err := updClient.Get(base.ResolveReference(&url.URL{Path: "version.json"}).String())
 	if err != nil {
-		scannerSetState("can't check (internet?)")
+		m.setState("can't check (internet?)")
 		return
 	}
 	var in kdsInfo
 	err = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&in)
 	resp.Body.Close()
 	if resp.StatusCode == 404 {
-		scannerSetState("no scanner app on the site yet")
+		m.setState("not on the site yet")
 		return
 	}
 	if err != nil || in.B <= 0 || in.URL == "" || len(in.SHA256) != 64 {
-		scannerSetState("scanner/version.json on the site is not right")
+		m.setState(m.dir + "/version.json on the site is not right")
 		return
 	}
-	scMu.Lock()
-	have := scHave.B
-	scMu.Unlock()
+	m.mu.Lock()
+	have := m.have.B
+	m.mu.Unlock()
 	if in.B <= have {
 		return
 	}
 	u, err := base.Parse(in.URL)
 	if err != nil || u.Scheme != "https" {
-		scannerSetState("scanner/version.json: the APK address is not right")
+		m.setState(m.dir + "/version.json: the APK address is not right")
 		return
 	}
-	path, size, err := apkDownload(u.String(), in.SHA256, scannerDir(), "scanner-"+strconv.Itoa(in.B)+".apk")
+	path, size, err := apkDownload(u.String(), in.SHA256, m.localDir(), m.dir+"-"+strconv.Itoa(in.B)+".apk")
 	if err != nil {
-		scannerSetState(fmt.Sprintf("version %d found, download failed: %v", in.B, err))
+		m.setState(fmt.Sprintf("version %d found, download failed: %v", in.B, err))
 		return
 	}
 	in.Size = size
 	if b, err := json.Marshal(in); err == nil {
-		_ = writeFileAtomic(filepath.Join(scannerDir(), "version.json"), b)
+		_ = writeFileAtomic(filepath.Join(m.localDir(), "version.json"), b)
 	}
-	scMu.Lock()
-	old := scPath
-	scHave, scPath, scState = in, path, fmt.Sprintf("version %d ready", in.B)
-	scMu.Unlock()
+	m.mu.Lock()
+	old := m.path
+	m.have, m.path, m.state = in, path, fmt.Sprintf("version %d ready", in.B)
+	m.mu.Unlock()
 	if old != "" && old != path {
 		_ = os.Remove(old)
 	}
-	log.Printf("Babai Scanner %d downloaded for the LAN", in.B)
+	log.Printf("%s %d downloaded for the LAN", m.label, in.B)
 }
+
+// ServeHTTP: /<dir>/version.json and /<dir>/app.apk on the shop Wi-Fi.
+func (m *apkMirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.mu.Lock()
+	have, path := m.have, m.path
+	m.mu.Unlock()
+	if have.B <= 0 || path == "" {
+		http.NotFound(w, r)
+		return
+	}
+	switch r.URL.Path {
+	case "/" + m.dir + "/version.json":
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(kdsInfo{B: have.B, URL: "app.apk", SHA256: have.SHA256, Size: have.Size})
+	case "/" + m.dir + "/app.apk":
+		w.Header().Set("Content-Type", "application/vnd.android.package-archive")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+m.file+`"`)
+		http.ServeFile(w, r, path)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (m *apkMirror) info() (kdsInfo, string, string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.have, m.path, m.state
+}
+
+func scannerStatus() string { return scanner.status() }
 
 func apkDownload(u, sum, dir, name string) (string, int64, error) {
 	resp, err := updClient.Get(u)
@@ -156,29 +197,6 @@ func apkDownload(u, sum, dir, name string) (string, int64, error) {
 	return path, n, nil
 }
 
-// handleScannerApp: /scanner/version.json and /scanner/app.apk on the shop Wi-Fi.
-func handleScannerApp(w http.ResponseWriter, r *http.Request) {
-	scMu.Lock()
-	have, path := scHave, scPath
-	scMu.Unlock()
-	if have.B <= 0 || path == "" {
-		http.NotFound(w, r)
-		return
-	}
-	switch r.URL.Path {
-	case "/scanner/version.json":
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(kdsInfo{B: have.B, URL: "app.apk", SHA256: have.SHA256, Size: have.Size})
-	case "/scanner/app.apk":
-		w.Header().Set("Content-Type", "application/vnd.android.package-archive")
-		w.Header().Set("Content-Disposition", `attachment; filename="BabaiScanner.apk"`)
-		http.ServeFile(w, r, path)
-	default:
-		http.NotFound(w, r)
-	}
-}
-
 type appInfo struct {
 	Name, What, Path, Size, State string
 	Build                         int
@@ -189,19 +207,22 @@ func appsList() []appInfo {
 	kdsMu.Lock()
 	k, kp, ks := kdsHave, kdsPath, kdsState
 	kdsMu.Unlock()
-	scMu.Lock()
-	s, sp, ss := scHave, scPath, scState
-	scMu.Unlock()
+	t, tp, ts := tvApp.info()
+	s, sp, ss := scanner.info()
 	size := func(n int64) string {
 		if n <= 0 {
 			return ""
 		}
 		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
 	}
+	// The Dosa TV app and the Rider app are both the KDS app: a screen has one or the other, and
+	// installing one replaces the other (settings are kept).
 	return []appInfo{
-		{Name: "Android KDS (Dosa Live)", What: "Kitchen screens, Dosa Live, Order Ready TV, rider screen and Prep Live. Updates itself after this.",
+		{Name: "Dosa TV app", What: "For the Dosa TVs: Dosa Live and Dosa Order Status (the outlet's chosen version, fast sync). Doesn't update itself; install new versions from here.",
+			Path: "/tv/app.apk", Build: t.B, Size: size(t.Size), Ready: t.B > 0 && tp != "", State: ts},
+		{Name: "Rider app", What: "For the rider screens and kitchen tablets: KDS, rider screen (Swiggy / Zomato / Ownly with slots), Dosa screens and Prep Live. Updates itself after this.",
 			Path: "/kds/app.apk", Build: k.B, Size: size(k.Size), Ready: k.B > 0 && kp != "", State: ks},
-		{Name: "Babai Scanner", What: "Phones and Android boxes that scan KOT barcodes to mark Food Ready.",
+		{Name: "Scanner app", What: "Phones and Android boxes that scan KOT barcodes to mark Food Ready.",
 			Path: "/scanner/app.apk", Build: s.B, Size: size(s.Size), Ready: s.B > 0 && sp != "", State: ss},
 	}
 }
@@ -240,7 +261,7 @@ h2{margin:0 0 4px;font-size:1.1rem}.row{display:flex;gap:16px;align-items:center
 .mute{color:#5b6573;font-size:.9rem;margin:8px 0 0;word-break:break-all}
 ol{padding-left:20px;color:#5b6573;font-size:.92rem}
 </style></head><body><main><h1><span>Babai</span> apps</h1>
-<p class="mute">For phones, tablets and Android TVs on the shop Wi-Fi.</p>__APPS__
+<p class="mute">For phones, tablets and Android TVs on the shop Wi-Fi. The Dosa TV app and the Rider app are both the KDS app: a screen has one of them, installing the other replaces it.</p>__APPS__
 <section><h2>Installing</h2><ol><li>Open this page on the phone or TV (or scan the code).</li><li>Tap Download, then open the file.</li><li>If Android asks, allow "Install unknown apps" for the browser, then tap Install.</li></ol></section>
 </main><script src="/console/qrcode.min.js"></script><script>
 document.querySelectorAll("[data-qr]").forEach(function(el){try{new QRCode(el,{text:el.getAttribute("data-qr"),width:150,height:150,correctLevel:QRCode.CorrectLevel.M})}catch(e){}});

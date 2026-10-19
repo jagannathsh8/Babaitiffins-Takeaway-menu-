@@ -37,7 +37,8 @@ func consoleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/console/", localOnly(handleConsoleAsset))
 	mux.HandleFunc("/console/qrcode.min.js", serveConsoleFile("qrcode.min.js")) // also for /apps on the Wi-Fi
 	mux.HandleFunc("/apps", handleApps)
-	mux.HandleFunc("/scanner/", handleScannerApp)
+	mux.Handle("/scanner/", scanner)
+	mux.Handle("/tv/", tvApp) // Dosa TV app
 	mux.HandleFunc("/window/ping", localOnly(handleWindowPing))
 	mux.HandleFunc("/window/state", localOnly(handleWindowState))
 
