@@ -29,7 +29,7 @@ import java.util.Calendar;
 public final class AppUpdate {
 
     /** This build. Raise by one for every KDS release (make-netlify-site.sh reads it). */
-    static final int BUILD = 5;
+    static final int BUILD = 6;
     static final String SITE = "https://babaidosa.netlify.app/";
     private static final String EXTRA = "babai_update";
     private static final long FIRST_CHECK_MS = 3 * 60_000L, EVERY_MS = 4 * 3600_000L;

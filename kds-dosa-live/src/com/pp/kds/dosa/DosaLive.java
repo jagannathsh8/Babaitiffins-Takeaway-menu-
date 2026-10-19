@@ -141,6 +141,10 @@ public final class DosaLive {
     public static void install(final Activity activity) {
         current = new java.lang.ref.WeakReference<Activity>(activity);
         try {
+            CloseLog.install(activity); // write down why the app closes; reopen after a crash
+        } catch (Throwable ignored) {
+        }
+        try {
             addButton(activity);
             start(activity.getApplicationContext());
         } catch (Throwable ignored) {
@@ -919,6 +923,13 @@ public final class DosaLive {
                 : "Ready orders stay until Petpooja shows them dispatched or cancelled. Last ones:\n" + gl);
         gone.setTextIsSelectable(true);
         box.addView(gone);
+
+        // -- why the app closed (TVs that close after some time) --
+        box.addView(heading(a, "Why the app closed"));
+        TextView closes = new TextView(a);
+        closes.setText(CloseLog.report(a));
+        closes.setTextIsSelectable(true);
+        box.addView(closes);
 
         // -- app updates --
         box.addView(heading(a, "App updates"));
