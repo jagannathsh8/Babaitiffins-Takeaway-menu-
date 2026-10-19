@@ -12,7 +12,6 @@
 #                      the old camera ScannerActivity is removed (replaced from src/)
 #   2. classes7.dex  - new, contains com.pp.kds.dosa.* and the new com.pp.kds.scan.ScannerActivity
 #   3. assets/ - mascot, food photos, prep_profile.json + prep_days.txt (make_prep_profile.py),
-#                ocr/ - Tesseract (tesseract.js-core 5.1.1, LSTM) + English data for the rider camera
 # All other dex files, resources and the manifest are copied byte-for-byte from the input,
 # ScannerBridge (marks Food Ready) and the board logic are untouched.
 set -euo pipefail

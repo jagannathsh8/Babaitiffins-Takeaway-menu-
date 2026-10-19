@@ -259,16 +259,16 @@ final class TokenBoard {
     }
 
     /**
-     * Estimated minutes left for the preparing token at queue position {@code pos} (0 = oldest),
-     * from today's real average prep time and the live completion rate. NaN when there is no
-     * real figure yet (the screen then shows no minutes rather than a guess).
+     * Minutes until a preparing token's dosas are done: the tawa round its dosas land in (all dosas
+     * ahead of it plus its own, ROUND_SIZE a round) times the round time, at most 10 min when
+     * the queue is lean (one round or less) and 20 min when busy.
+     * @param dosasUpTo dosas on this token and every token ahead of it
+     * @param queued    all dosas still to cook
      */
-    static double minutesLeft(int pos, double elapsedMin, double avgPrepMin, double perMin) {
-        boolean haveAvg = !Double.isNaN(avgPrepMin) && avgPrepMin > 0;
-        boolean haveRate = perMin > 0;
-        if (!haveAvg && !haveRate) return Double.NaN;
-        double left = haveAvg ? avgPrepMin - elapsedMin : 0;
-        if (haveRate) left = Math.max(left, (pos + 1) / perMin);
-        return Math.max(0.5, Math.min(DosaStats.MAX_ETA_MIN, left));
+    static double minutesLeft(int dosasUpTo, int queued, double roundMin) {
+        if (!(roundMin > 0)) roundMin = DosaStats.ROUND_MIN;
+        int rounds = Math.max(1, (dosasUpTo + DosaStats.ROUND_SIZE - 1) / DosaStats.ROUND_SIZE);
+        double cap = queued <= DosaStats.ROUND_SIZE ? DosaStats.LEAN_MAX_MIN : DosaStats.MAX_ETA_MIN;
+        return Math.max(0.5, Math.min(cap, rounds * roundMin));
     }
 }

@@ -81,7 +81,8 @@ final class TokenBoardView extends View {
     // data
     private List<TokenBoard.Token> ready = new ArrayList<TokenBoard.Token>();
     private List<TokenBoard.Token> preparing = new ArrayList<TokenBoard.Token>();
-    private double avgPrep = Double.NaN, perMin;
+    private double avgPrep = Double.NaN, perMin, roundMin = DosaStats.ROUND_MIN;
+    private int queued;
     private String waitLabel = "\u2014";
     private int onTawa;
     private List<String> facts = new ArrayList<String>();
@@ -182,6 +183,8 @@ final class TokenBoardView extends View {
         if (r != null) {
             avgPrep = r.avgPrepMin;
             perMin = r.throughputPerMin;
+            roundMin = r.roundMin;
+            queued = r.queuedDosas;
             waitLabel = Double.isNaN(r.etaMin) ? "Calculating\u2026" : r.etaLabel;
             onTawa = r.runningDosas;
             if (r.facts != null && !r.facts.isEmpty()) facts = new ArrayList<String>(r.facts);
@@ -570,10 +573,13 @@ final class TokenBoardView extends View {
             text.setTypeface(bold);
             text.setLetterSpacing(0.3f);
             text.setTextSize(36 * s);
+            String title = "DOSA ORDER STATUS";
+            float tw = text.measureText(title), room = text.measureText("ORDER READY"); // the space the old title used
+            if (tw > room) text.setTextSize(36 * s * room / tw);
             float ca = controlsAlpha();
             text.setColor(alpha(Color.WHITE, (int) (255 * (1f - 0.92f * ca))));
             if (ca == 0f) text.setShadowLayer(18 * s, 0, 0, theme.P); // glow only when steady
-            c.drawText("ORDER READY", x + w * 0.52f, cy + 12 * s, text);
+            c.drawText(title, x + w * 0.52f, cy + 12 * s, text);
             text.clearShadowLayer();
         }
 
@@ -876,6 +882,7 @@ final class TokenBoardView extends View {
         float rowsArea = flow ? (bottom - top) * 0.68f : bottom - top;
         float rowH = Math.min(86 * s, rowsArea / (flow ? ROWS : Math.max(shown, 4)));
         long wall = System.currentTimeMillis();
+        int upTo = 0;
         for (int i = 0; i < shown; i++) {
             TokenBoard.Token tk = preparing.get(i);
             String key = "P" + tk.label;
@@ -887,7 +894,8 @@ final class TokenBoardView extends View {
             Long seen = firstSeen.get(key);
             float appear = seen == null ? 1f : Math.min(1f, (now - seen) / 600f);
             double elapsed = tk.createdMs > 0 ? (wall - tk.createdMs) / 60_000.0 : 0;
-            double left = TokenBoard.minutesLeft(i, elapsed, avgPrep, perMin);
+            upTo += Math.max(1, preparing.get(i).dosas);
+            double left = TokenBoard.minutesLeft(upTo, Math.max(queued, upTo), roundMin);
             drawRow(c, ix, yy, iw, rowH, tk, elapsed, left, i == 0, appear, t);
         }
         if (flow) drawQueueFlow(c, ix, top + ROWS * rowH + 12 * s, iw, bottom - (top + ROWS * rowH + 12 * s), now, t);

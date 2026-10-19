@@ -25,6 +25,18 @@ public final class DosaStatsTest {
     static DosaStats.Entry prep(long id, long created) { return new DosaStats.Entry(id, created, false, false); }
     static DosaStats.Entry ready(long id, long created) { return new DosaStats.Entry(id, created, true, false); }
 
+    /** n single-dosa KOTs waiting, nothing finished yet. */
+    static DosaStats.Result waiting(int n) {
+        DosaStats st = new DosaStats();
+        long t = at(13, 0);
+        List<DosaStats.Entry> snap = new ArrayList<DosaStats.Entry>();
+        for (int i = 0; i < n; i++) snap.add(prep(1000 + i, t - MIN));
+        st.update(snap, t, false);
+        return st.compute(t);
+    }
+    static int rounds(int n) { return waiting(n).roundsAhead; }
+    static double eta(int n) { return waiting(n).etaMin; }
+
     public static void main(String[] a) {
         // Friendly ranges
         check("range 16.2", DosaStats.friendlyRange(16.2).equals("15–18 min"), DosaStats.friendlyRange(16.2));
@@ -58,7 +70,10 @@ public final class DosaStatsTest {
         DosaStats.Result r = s.compute(t0 + 30 * MIN);
         check("active 32", r.activeCount == 32, r.activeCount);
         check("throughput ~2/min", Math.abs(r.throughputPerMin - 2.0) < 0.15, r.throughputPerMin);
-        check("eta ~16 min", Math.abs(r.etaMin - 16) < 1.5, r.etaMin + " " + r.etaLabel);
+        // 32 dosas waiting -> 5 rounds; ~2 dosas/min finishing -> ~4 min a round -> ~19-20 min
+        check("busy: rounds 5", r.queuedDosas == 32 && r.roundsAhead == 5, r.queuedDosas + "/" + r.roundsAhead);
+        check("busy: round follows pace", Math.abs(r.roundMin - 4.0) < 0.3, r.roundMin);
+        check("busy: 5 rounds x pace, at most 20", r.etaMin <= 20.0 && Math.abs(r.etaMin - 5 * r.roundMin) < 0.01, r.etaMin + " " + r.etaLabel);
         System.out.println("     avg " + r.avgPrepMin + " completed " + r.completedToday);
 
         // Production improves: queue drains with no new orders -> ETA falls.
@@ -113,11 +128,11 @@ public final class DosaStatsTest {
         DosaStats.Result r5 = s5.compute(t0 + 2 * MIN);
         check("cancel/outlier", r5.completedToday == 0 && r5.activeCount == 0, r5.completedToday);
 
-        // Stalled kitchen: nothing completing, oldest waiting 25 min -> ETA >= 25.
+        // Lean: one dosa waiting (even a forgotten old ticket) -> one round, 3 min, not its age.
         DosaStats s6 = new DosaStats();
         s6.update(java.util.Collections.singletonList(prep(9, t0 - 25 * MIN)), t0, false);
         DosaStats.Result r6 = s6.compute(t0 + MIN);
-        check("stalled eta", r6.etaMin >= 25, r6.etaMin);
+        check("lean: one round", r6.roundsAhead == 1 && r6.etaMin == 3.0 && r6.etaLabel.equals("Under 5 min"), r6.etaMin + " " + r6.etaLabel);
 
         // Day rollover: today resets, yesterday goes to history.
         DosaStats.Result r7 = s.compute(at(19, 0) + 24 * 60 * MIN);
@@ -163,20 +178,20 @@ public final class DosaStatsTest {
         s11.load(s10.save(), t10 + 241 * MIN);
         check("trend persists", s11.compute(t10 + 241 * MIN).trendTimes.length >= 89, "");
 
-        // No Dosa data at all: no made-up number.
+        // Nothing waiting: a new order goes on the next round.
         DosaStats s12 = new DosaStats();
         DosaStats.Result r12 = s12.compute(t10);
-        check("no data -> calculating", Double.isNaN(r12.etaMin) && r12.etaLabel.startsWith("Calculating"), r12.etaLabel);
-        // Never above 40 min.
-        DosaStats s13 = new DosaStats();
-        s13.update(java.util.Collections.singletonList(prep(600, t10 - 75 * MIN)), t10, false);
-        check("cap 40", s13.compute(t10).etaMin == 40.0, s13.compute(t10).etaMin);
-        // Next morning, before any completion: yesterday's real average is used.
-        long nextDay = at(19, 0) + 24 * 60 * MIN + 1;
-        DosaStats s14 = new DosaStats();
-        s14.load(s.save(), nextDay);
-        DosaStats.Result r14 = s14.compute(nextDay);
-        check("uses last real day avg", Math.abs(r14.etaMin - 16.9) < 0.11, r14.etaMin);
+        check("empty: one round", r12.roundsAhead == 1 && r12.etaMin == 3.0, r12.etaMin + " " + r12.etaLabel);
+        // 7 waiting: the new order fits the same round; 8 waiting: it needs the next one.
+        check("7 waiting -> 1 round", rounds(7) == 1 && eta(7) == 3.0, eta(7));
+        check("8 waiting -> 2 rounds (6 min)", rounds(8) == 2 && eta(8) == 6.0, eta(8));
+        check("13 waiting -> 2 rounds (6 min)", rounds(13) == 2 && eta(13) == 6.0, eta(13));
+        check("30 waiting -> 4 rounds (12 min)", rounds(30) == 4 && eta(30) == 12.0, eta(30));
+        check("100 waiting -> capped at 20", eta(100) == 20.0, eta(100));
+        // One KOT with 3 Masala Dosas counts as 3 dosas.
+        DosaStats s15 = new DosaStats();
+        s15.update(java.util.Collections.singletonList(new DosaStats.Entry(77, t10, false, false, new String[]{"Masala Dosa"}, new double[]{3})), t10, false);
+        check("pieces counted", s15.compute(t10).queuedDosas == 3, s15.compute(t10).queuedDosas);
 
         check("hour labels", DosaStats.hourLabel(11).equals("11\u201312 PM") && DosaStats.hourLabel(0).equals("12\u20131 AM"),
                 DosaStats.hourLabel(11) + " " + DosaStats.hourLabel(0));

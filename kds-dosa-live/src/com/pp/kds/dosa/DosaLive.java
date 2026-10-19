@@ -156,10 +156,6 @@ public final class DosaLive {
             w.setCallback(new KeyScanCallback(w.getCallback(), activity)); // USB/BT scanner + touch
         } catch (Throwable ignored) {
         }
-        try {
-            RiderCam.init(activity); // hands-free camera (off until switched on in the rider settings)
-        } catch (Throwable ignored) {
-        }
         DailyCache.clearOncePerDay(activity.getApplicationContext());
     }
 
@@ -924,29 +920,6 @@ public final class DosaLive {
         gone.setTextIsSelectable(true);
         box.addView(gone);
 
-        // -- Camera (hands-free) --
-        box.addView(heading(a, "\uD83D\uDCF7 Camera (hands-free)"));
-        TextView camInfo = new TextView(a);
-        camInfo.setText("KOT barcode in front of the camera \u2192 Food Ready. On the rider screen, a rider's phone "
-                + "\u2192 brand, order ID, slot, status and items.\n" + RiderCam.cameras(a) + "\n" + RiderCam.status());
-        box.addView(camInfo);
-        final android.widget.RadioGroup camMode = radios(a, new String[]{"Off", "On while the rider screen is open",
-                "Always on (whole KDS)"}, RiderCam.mode());
-        box.addView(camMode);
-        box.addView(small(a, "Which camera"));
-        final android.widget.RadioGroup camWhich = radios(a, new String[]{"Auto (USB camera if plugged in, else back)",
-                "Back", "Front", "USB camera"}, RiderCam.which());
-        box.addView(camWhich);
-        final android.widget.CheckBox cFood = check(a, "\u2713 Food Ready from KOT barcode", RiderCam.food());
-        final android.widget.CheckBox cRider = check(a, "\uD83D\uDEF5 Rider phone \u2192 order details", RiderCam.riderReading());
-        final android.widget.CheckBox cPrev = check(a, "Show the small camera picture", RiderCam.preview());
-        box.addView(cFood);
-        box.addView(cRider);
-        box.addView(cPrev);
-        box.addView(small(a, "Flash / torch"));
-        final android.widget.RadioGroup camFlash = radios(a, new String[]{"Off", "On", "Auto (when dark)"}, RiderCam.flash());
-        box.addView(camFlash);
-
         // -- app updates --
         box.addView(heading(a, "App updates"));
         TextView upd = new TextView(a);
@@ -965,8 +938,6 @@ public final class DosaLive {
                 .setView(scrollable(a, box))
                 .setPositiveButton("Save", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface dlg, int which) {
-                        RiderCam.saveSettings(a, checked(camMode), checked(camWhich), checked(camFlash),
-                                cPrev.isChecked(), cFood.isChecked(), cRider.isChecked());
                         String h = HubFeed.norm(hubAddr.getText().toString());
                         if (!h.equals(HubFeed.manual())) HubFeed.setManual(h);
                         final String v = addr.getText().toString().trim();
@@ -1245,7 +1216,6 @@ public final class DosaLive {
             view.setVisibility(View.INVISIBLE);
             if (board != null) board.setVisibility(View.GONE);
             bindRider();
-            RiderCam.setRiderVisible(true);
         }
 
         void bindRider() {
@@ -1268,7 +1238,6 @@ public final class DosaLive {
                     ? "Bridge Print not set (long-press \uD83D\uDEF5 RIDER)" : "Bridge Print " + BridgeSlots.status());
             riderView.setData(rl, pl, src, bridge);
             riderView.setRemovals(riders.removedCount(), riders.removals());
-            RiderCam.setBoard(rl, pl);
         }
 
         void setMode(int m) {
@@ -1279,7 +1248,6 @@ public final class DosaLive {
                 return;
             }
             remember(activity, "dosa");
-            RiderCam.setRiderVisible(false);
             if (riderView != null) riderView.setVisibility(View.GONE);
             if (brightness != null) brightness.stop(); // normal brightness outside the rider board
             ui.edit().putInt("mode", m).apply();
@@ -1378,7 +1346,6 @@ public final class DosaLive {
         }
 
         void close() {
-            RiderCam.setRiderVisible(false);
             ViewGroup parent = (ViewGroup) view.getParent();
             if (parent != null) parent.removeView(view);
             if (board != null && board.getParent() != null) ((ViewGroup) board.getParent()).removeView(board);

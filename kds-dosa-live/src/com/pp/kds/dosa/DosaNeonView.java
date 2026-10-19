@@ -1220,12 +1220,12 @@ final class DosaNeonView extends View {
         }
     }
 
-    /** "ORDER READY" switch under the theme dots; fades with the close button. */
+    /** "DOSA ORDER STATUS" switch under the theme dots; fades with the close button. */
     private void drawModePill(Canvas c) {
         float a = closeAlpha();
         modeHit.setEmpty();
         if (a <= 0f) return;
-        String label = "\u25A6  ORDER READY";
+        String label = "\u25A6  DOSA ORDER STATUS";
         text.setTypeface(condensed);
         text.setLetterSpacing(0.12f);
         text.setTextSize(12 * d);

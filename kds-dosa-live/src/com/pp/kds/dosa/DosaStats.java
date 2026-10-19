@@ -68,6 +68,9 @@ public final class DosaStats {
         public long[] trendTimes = new long[0];
         public float[] trendEta = new float[0];
         public double fastestPrepMin;    // NaN when none
+        public int queuedDosas;          // Dosa pieces still to cook (Dine-In, preparing)
+        public int roundsAhead;          // tawa rounds a new order waits for, its own included
+        public double roundMin;          // minutes one tawa round of ROUND_SIZE dosas takes
         public List<String> facts = new ArrayList<String>();
         public long updatedAt;
         public List<String> history = new ArrayList<String>();
@@ -77,7 +80,15 @@ public final class DosaStats {
     static final long WINDOW_MS = 15 * MINUTE;      // recent-throughput window
     static final long MIN_WINDOW_MS = 3 * MINUTE;   // avoid huge rates right after start
     static final long MAX_PREP_MS = 150 * MINUTE;   // ignore forgotten tickets as outliers
-    static final double MAX_ETA_MIN = 40.0;         // never show more than 40 min
+    // Wait = tawa rounds. One round cooks ROUND_SIZE dosas in ROUND_MIN minutes (the outlet's own
+    // figure). A new order joins the next round with space. On a busy tawa the round time follows the
+    // real pace of finished dosas, kept close to ROUND_MIN; lean times never show more than
+    // LEAN_MAX_MIN, busy times never more than MAX_ETA_MIN.
+    static final int ROUND_SIZE = 8;
+    static final double ROUND_MIN = 3.0;
+    static final double ROUND_LOW = 2.5, ROUND_HIGH = 4.5;
+    static final double LEAN_MAX_MIN = 10.0;
+    static final double MAX_ETA_MIN = 20.0;
     static final int CONFIDENT_RECENT = 6;          // recent completions for full queue weighting
     static final int HISTORY_DAYS = 7;
     static final long TREND_STEP_MS = 2 * MINUTE;   // one trend point every 2 min
@@ -90,6 +101,7 @@ public final class DosaStats {
     private double peakRate;
     private final Set<Long> countedIds = new HashSet<Long>();
     private final LinkedList<Long> recent = new LinkedList<Long>();
+    private final LinkedList<long[]> recentPieces = new LinkedList<long[]>(); // {time, dosas} finished
     private final LinkedList<String> history = new LinkedList<String>();
     private final Map<Long, Long> active = new HashMap<Long, Long>(); // id -> createdMs
     private final Set<Long> seenToday = new HashSet<Long>();          // KOTs already in the totals
@@ -177,6 +189,7 @@ public final class DosaStats {
         totalPrepMs += prep;
         if (fastestMs <= 0 || prep < fastestMs) fastestMs = prep;
         recent.add(now);
+        recentPieces.add(new long[]{now, pieces});
     }
 
     private boolean rollover(long now) {
@@ -193,6 +206,7 @@ public final class DosaStats {
         trackingSince = now;
         countedIds.clear();
         recent.clear();
+        recentPieces.clear();
         seenToday.clear();
         kinds.clear();
         java.util.Arrays.fill(hourly, 0);
@@ -207,6 +221,7 @@ public final class DosaStats {
     public Result compute(long now) {
         rollover(now);
         while (!recent.isEmpty() && recent.getFirst() < now - WINDOW_MS) recent.removeFirst();
+        while (!recentPieces.isEmpty() && recentPieces.getFirst()[0] < now - WINDOW_MS) recentPieces.removeFirst();
 
         Result r = new Result();
         r.updatedAt = now;
@@ -228,28 +243,19 @@ public final class DosaStats {
         }
         r.oldestActiveMin = oldest;
 
-        // Only real figures: today's Dosa average, else the most recent day's real average.
-        // With no Dosa history at all the screen shows "Calculating..." instead of a guess.
-        double avg = !Double.isNaN(r.avgPrepMin) ? r.avgPrepMin : lastDayAvg();
-        double eta;
         r.queueMin = r.throughputPerMin > 0 ? r.activeCount / r.throughputPerMin : Double.NaN;
-        if (r.activeCount == 0) {
-            eta = avg;                                     // empty queue: just the prep time
-        } else if (r.throughputPerMin <= 0) {
-            // nothing finishing recently: at least as long as the oldest order has waited
-            double floor = Double.isNaN(avg) ? 0 : avg;
-            eta = Math.max(floor, oldest);
-            if (eta <= 0) eta = Double.NaN;
-        } else if (Double.isNaN(avg)) {
-            eta = r.queueMin;                              // pace known, no average yet
-        } else {
-            // Queue component (Little's law) can't beat the physical cook time.
-            double core = Math.max(r.queueMin, 0.6 * avg);
-            double w = Math.min(1.0, r.recentCompletions / (double) CONFIDENT_RECENT);
-            eta = (1 - w) * avg + w * core;
+        int queued = 0;
+        for (Long id : active.keySet()) {
+            Integer pc = activePieces.get(id);
+            queued += pc == null ? 1 : pc;
         }
-        r.etaMin = Double.isNaN(eta) ? Double.NaN : Math.min(eta, MAX_ETA_MIN);
-        r.etaLabel = Double.isNaN(r.etaMin) ? "Calculating\u2026" : friendlyRange(r.etaMin);
+        r.queuedDosas = queued;
+        r.roundMin = roundMinutes(queued, window);
+        r.roundsAhead = (queued + ROUND_SIZE) / ROUND_SIZE; // ceil((queued + 1) / ROUND_SIZE)
+        double eta = r.roundsAhead * r.roundMin;
+        eta = Math.min(eta, queued <= ROUND_SIZE ? LEAN_MAX_MIN : MAX_ETA_MIN);
+        r.etaMin = eta;
+        r.etaLabel = friendlyRange(r.etaMin);
 
         int total = 0;
         for (int q : kinds.values()) total += q;
@@ -277,6 +283,20 @@ public final class DosaStats {
         r.history.add(historyLine(dateKey));
         r.history.addAll(history);
         return r;
+    }
+
+    /**
+     * Minutes per tawa round: ROUND_MIN, or on a busy tawa (a full round or more waiting and two
+     * rounds finished in the window) the pace actually seen, kept within ROUND_LOW..ROUND_HIGH.
+     */
+    double roundMinutes(int queued, long windowMs) {
+        if (queued < ROUND_SIZE) return ROUND_MIN;
+        long done = 0;
+        for (long[] p : recentPieces) done += p[1];
+        if (done < 2 * ROUND_SIZE) return ROUND_MIN;
+        double perMin = done / (windowMs / (double) MINUTE);
+        double seen = ROUND_SIZE / perMin;
+        return Math.max(ROUND_LOW, Math.min(ROUND_HIGH, seen));
     }
 
     static final String[] TRIVIA = {

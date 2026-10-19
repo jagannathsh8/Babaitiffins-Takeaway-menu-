@@ -24,14 +24,15 @@ Built APK: `dist/Petpooja_KDS_V11_DOSA_LIVE.apk`
 * **Prep time** = moment the KOT is seen turning Food Ready − KOT created time
   (the board is checked every 2 s). Over 150 min is ignored as an outlier.
 * **Today Avg Prep** = total prep minutes ÷ completed Dosa KOTs (resets at midnight).
-* **Throughput** = Dosa KOTs completed in the last 15 min ÷ 15 (min. 3 min window after start-up).
-* **Approx. Wait**
-  * queue = active ÷ throughput (e.g. 32 ÷ 2/min = 16 min), never below 60 % of today's average;
-  * blended with today's average until ≥ 6 recent completions make the throughput reliable;
-  * if nothing has completed recently, at least the age of the oldest waiting Dosa KOT;
-  * no Dosa orders waiting → today's average (12 min default before the first completion);
-  * capped at 90 min. Shown as a range: 16 → "15–18 min", 19 → "18–21 min", 43 → "40–45 min",
-    under 5 → "Under 5 min".
+* **Approx. Wait = tawa rounds.** One round cooks 8 dosas in 3 minutes (the outlet's figure).
+  * dosas still to cook = Dine-In dosa pieces on KOTs still Preparing (Swiggy/Zomato not counted);
+  * a new order joins the next round with space: rounds = (dosas waiting + 1) ÷ 8, rounded up;
+  * wait = rounds × round time. On a busy tawa (8+ waiting, 16+ dosas finished in the last 15 min)
+    the round time follows the real pace, kept between 2.5 and 4.5 min;
+  * never more than 10 min when 8 or fewer dosas wait, never more than 20 min when busy.
+  * Example: 13 waiting → 2 rounds → 6 min. Nothing waiting → one round, 3 min ("Under 5 min").
+  * Each token on the DOSA ORDER STATUS screen gets the same rule: the round its dosas land in × the
+    round time.
 * Updates live: new Dosa KOT → count up; Food Ready → count down + prep recorded; every 15 s the
   throughput window slides even with no new events.
 
@@ -104,24 +105,10 @@ python3 tools/make_prep_profile.py BOM_SCRAP.xlsx assets/prep_profile.json repor
 
 Petpooja caps exports at 50,000 rows (~9 days here): export week by week and pass all files.
 
-## Rider screen: hands-free camera
+## Rider screen camera: removed
 
-Long-press **🛵 RIDER** → *Rider screen settings* → **📷 Camera**. Until it is changed there, it is on for the rider screen when the device has a camera, and off on devices without one (TV boxes behave as before, no camera permission is asked).
-
-* **Food Ready:** hold a KOT barcode in front of the camera and that KOT is marked Food Ready. This works the same as the USB/Bluetooth scanner.
-* **Rider phone:** while the rider screen is open, a rider's phone (Swiggy, Zomato, "Collect Food" app) held up to the camera opens a card. The card shows:
-  * the brand
-  * the full order ID, with the last 4 digits highlighted
-  * the slot
-  * READY or PREPARING
-  * when the order was placed and how long it has been ready
-  * the KOT items
-  
-  A different phone replaces the card. **OK** closes it, and it closes by itself after 20 seconds with nothing in front of the camera.
-* **Camera options:** off, on while the rider screen is open, or always on. You can pick the back, front or USB camera, show or hide the small preview, and set the flash.
-* **How it works:** the text is read on the device by Tesseract (`assets/ocr`, tesseract.js-core 5.1.1, Apache-2.0) in a hidden WebView. It needs no internet.
-  * `RiderOcr` matches the digits read from the phone against the board's order IDs, comparing from the last digit backwards. Only orders on the board can match.
-  * Camera and decoding run on their own threads. Watchdogs restart a camera that stops sending pictures or a reader that stops answering.
+The hands-free rider camera and its text reader (Tesseract, about 11 MB) were taken out (build 4) to keep
+the app light on TV boxes. The KDS's own scan button and USB/Bluetooth scanners work as before.
 * **Bridge Print:** if no address is set, the KDS looks for it on the Petpooja PC (`intra_ip` in the KDS settings, port 8787) every 2 minutes.
 * **Daily cache clear:** the app's cache folders are emptied once a day at the first start. Settings and KDS data are not touched.
 

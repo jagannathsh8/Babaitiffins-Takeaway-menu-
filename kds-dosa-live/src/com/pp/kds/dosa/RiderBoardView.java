@@ -210,7 +210,6 @@ final class RiderBoardView extends View {
 
     private void closeLookup(boolean byUser) {
         lookup = null;
-        RiderCam.lookupClosed(byUser);
         controlsAt = SystemClock.uptimeMillis();
         invalidate();
     }

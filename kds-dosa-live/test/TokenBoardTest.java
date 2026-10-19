@@ -134,11 +134,12 @@ public final class TokenBoardTest {
         check("table phrase", TokenBoard.phrase(Arrays.asList(t7, tt)).equals("Token number 7, table 4, dosa ready, kindly collect."),
                 TokenBoard.phrase(Arrays.asList(t7, tt)));
 
-        // Minutes left: real figures only.
-        check("no data -> NaN", Double.isNaN(TokenBoard.minutesLeft(0, 2, Double.NaN, 0)), "");
-        check("avg based", Math.abs(TokenBoard.minutesLeft(0, 2, 5.5, 0) - 3.5) < 1e-9, TokenBoard.minutesLeft(0, 2, 5.5, 0));
-        check("queue based", Math.abs(TokenBoard.minutesLeft(9, 2, 5.5, 1.0) - 10) < 1e-9, TokenBoard.minutesLeft(9, 2, 5.5, 1.0));
-        check("cap 40", TokenBoard.minutesLeft(99, 0, 5, 0.5) == 40, TokenBoard.minutesLeft(99, 0, 5, 0.5));
+        // Minutes left: tawa rounds of 8, 3 min each; lean (<= 8 waiting) at most 10, busy at most 20.
+        check("first round", TokenBoard.minutesLeft(3, 5, 3.0) == 3.0, TokenBoard.minutesLeft(3, 5, 3.0));
+        check("8 dosas = one round", TokenBoard.minutesLeft(8, 8, 3.0) == 3.0, TokenBoard.minutesLeft(8, 8, 3.0));
+        check("9th dosa = round 2", TokenBoard.minutesLeft(9, 12, 3.0) == 6.0, TokenBoard.minutesLeft(9, 12, 3.0));
+        check("busy cap 20", TokenBoard.minutesLeft(99, 99, 3.0) == 20.0, TokenBoard.minutesLeft(99, 99, 3.0));
+        check("no round time -> 3 min", TokenBoard.minutesLeft(1, 1, Double.NaN) == 3.0, TokenBoard.minutesLeft(1, 1, Double.NaN));
 
         System.out.println(failures == 0 ? "ALL PASS" : failures + " FAILED");
         if (failures > 0) System.exit(1);
