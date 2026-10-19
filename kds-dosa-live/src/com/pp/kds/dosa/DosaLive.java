@@ -1190,7 +1190,30 @@ public final class DosaLive {
             root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
             view.bringToFront();
+            hideUnder(root);
             setMode(forceMode >= 0 ? forceMode : ui.getInt("mode", DOSA_LIVE));
+        }
+
+        /**
+         * Our screens cover the whole KDS, but Android still draws the KDS board under them on every
+         * frame (hundreds of cards on a busy day), which a TV box can't keep up with: stutter, and
+         * board updates (Food Ready from another KDS) taking seconds. So the views under our screen are
+         * made invisible while it is open; the KDS keeps receiving orders, it just isn't drawn.
+         */
+        private final java.util.List<View> hidden = new java.util.ArrayList<View>();
+
+        private void hideUnder(ViewGroup root) {
+            for (int i = 0; i < root.getChildCount(); i++) {
+                View c = root.getChildAt(i);
+                if (c == view || c == board || c == riderView || c.getVisibility() != View.VISIBLE) continue;
+                c.setVisibility(View.INVISIBLE);
+                hidden.add(c);
+            }
+        }
+
+        private void showUnder() {
+            for (View c : hidden) c.setVisibility(View.VISIBLE);
+            hidden.clear();
         }
 
         private void showRider() {
@@ -1357,6 +1380,7 @@ public final class DosaLive {
         }
 
         void close() {
+            showUnder();
             ViewGroup parent = (ViewGroup) view.getParent();
             if (parent != null) parent.removeView(view);
             if (board != null && board.getParent() != null) ((ViewGroup) board.getParent()).removeView(board);
