@@ -1,6 +1,84 @@
-diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/DosaNeonView.java wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/DosaNeonView.java
---- orig/kds-dosa-live/src/com/pp/kds/dosa/DosaNeonView.java	2026-10-11 08:53:55.000000000 +0000
-+++ wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/DosaNeonView.java	2026-10-19 14:27:30.226641372 +0000
+diff -ru a/src/com/pp/kds/dosa/DosaLive.java b/src/com/pp/kds/dosa/DosaLive.java
+--- a/src/com/pp/kds/dosa/DosaLive.java	2026-10-19 17:15:19.162969440 +0000
++++ b/src/com/pp/kds/dosa/DosaLive.java	2026-10-19 17:15:19.168704318 +0000
+@@ -43,6 +43,8 @@
+     private static final String PREFS = "dosa_live_stats";
+     private static final long TICK_MS = 2_000L;          // board poll, mirrors KDS 2 s poll
+     private static final long RECOMPUTE_MS = 15_000L;    // sliding throughput window refresh
++    private static final long WATCH_MS = 250L;           // board-change check between ticks
++    private static long lastTickAt;
+     private static final int BOARD_CAP = 300;            // KotRepositoryImpl caps the board at 300
+     private static final String DOSA = "dosa";
+ 
+@@ -271,10 +273,24 @@
+                 handler.postDelayed(this, TICK_MS);
+             }
+         });
++        // A new board list (e.g. Food Ready on another KDS) shows within a quarter second instead
++        // of waiting for the next 2 s tick. Only a reference compare while nothing changes.
++        handler.postDelayed(new Runnable() {
++            @Override public void run() {
++                try {
++                    DashboardUiState st = currentState();
++                    if (st != null && st.getCards() != null && st.getCards() != lastCards
++                            && System.currentTimeMillis() - lastTickAt >= WATCH_MS) tick();
++                } catch (Throwable ignored) {
++                }
++                handler.postDelayed(this, WATCH_MS);
++            }
++        }, WATCH_MS);
+     }
+ 
+     private static void tick() {
+         long now = System.currentTimeMillis();
++        lastTickAt = now;
+         boolean changed = false;
+         DashboardUiState state = currentState();
+         if (state != null) {
+@@ -939,9 +955,32 @@
+             root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                     ViewGroup.LayoutParams.MATCH_PARENT));
+             view.bringToFront();
++            hideUnder(root);
+             setMode(forceMode >= 0 ? forceMode : ui.getInt("mode", DOSA_LIVE));
+         }
+ 
++        /**
++         * Our screens cover the whole KDS, but Android still draws the KDS board under them on every
++         * frame (hundreds of cards on a busy day), which a TV box can't keep up with: stutter, and
++         * board updates (Food Ready from another KDS) taking seconds. So the views under our screen are
++         * made invisible while it is open; the KDS keeps receiving orders, it just isn't drawn.
++         */
++        private final java.util.List<View> hidden = new java.util.ArrayList<View>();
++
++        private void hideUnder(ViewGroup root) {
++            for (int i = 0; i < root.getChildCount(); i++) {
++                View c = root.getChildAt(i);
++                if (c == view || c == board || c == riderView || c.getVisibility() != View.VISIBLE) continue;
++                c.setVisibility(View.INVISIBLE);
++                hidden.add(c);
++            }
++        }
++
++        private void showUnder() {
++            for (View c : hidden) c.setVisibility(View.VISIBLE);
++            hidden.clear();
++        }
++
+         private void showRider() {
+             if (riderView == null) {
+                 riderView = new RiderBoardView(activity);
+@@ -1105,6 +1144,7 @@
+         }
+ 
+         void close() {
++            showUnder();
+             ViewGroup parent = (ViewGroup) view.getParent();
+             if (parent != null) parent.removeView(view);
+             if (board != null && board.getParent() != null) ((ViewGroup) board.getParent()).removeView(board);
+diff -ru a/src/com/pp/kds/dosa/DosaNeonView.java b/src/com/pp/kds/dosa/DosaNeonView.java
+--- a/src/com/pp/kds/dosa/DosaNeonView.java	2026-10-19 17:15:19.163026809 +0000
++++ b/src/com/pp/kds/dosa/DosaNeonView.java	2026-10-19 17:15:19.168770682 +0000
 @@ -1225,7 +1225,7 @@
          float a = closeAlpha();
          modeHit.setEmpty();
@@ -10,9 +88,9 @@ diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/DosaNeonView.java wt
          text.setTypeface(condensed);
          text.setLetterSpacing(0.12f);
          text.setTextSize(12 * d);
-diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/DosaStats.java wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/DosaStats.java
---- orig/kds-dosa-live/src/com/pp/kds/dosa/DosaStats.java	2026-10-11 08:53:55.000000000 +0000
-+++ wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/DosaStats.java	2026-10-19 14:27:30.150483683 +0000
+diff -ru a/src/com/pp/kds/dosa/DosaStats.java b/src/com/pp/kds/dosa/DosaStats.java
+--- a/src/com/pp/kds/dosa/DosaStats.java	2026-10-19 17:15:19.163153463 +0000
++++ b/src/com/pp/kds/dosa/DosaStats.java	2026-10-19 17:15:19.168830907 +0000
 @@ -68,6 +68,9 @@
          public long[] trendTimes = new long[0];
          public float[] trendEta = new float[0];
@@ -134,9 +212,9 @@ diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/DosaStats.java wt/c8
      static final String[] TRIVIA = {
              // Babai Tiffins menu stories (owner-provided, trimmed for the screen; no recipe specifics)
              "Our Ghee Idli melts in your mouth thanks to a light, slow-fermented urad dal batter",
-diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/TokenBoard.java wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/TokenBoard.java
---- orig/kds-dosa-live/src/com/pp/kds/dosa/TokenBoard.java	2026-10-11 08:53:55.000000000 +0000
-+++ wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/TokenBoard.java	2026-10-19 14:27:30.151370788 +0000
+diff -ru a/src/com/pp/kds/dosa/TokenBoard.java b/src/com/pp/kds/dosa/TokenBoard.java
+--- a/src/com/pp/kds/dosa/TokenBoard.java	2026-10-19 17:15:19.163582210 +0000
++++ b/src/com/pp/kds/dosa/TokenBoard.java	2026-10-19 17:15:19.169336024 +0000
 @@ -259,16 +259,16 @@
      }
  
@@ -164,9 +242,9 @@ diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/TokenBoard.java wt/c
 +        return Math.max(0.5, Math.min(cap, rounds * roundMin));
      }
  }
-diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/TokenBoardView.java wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/TokenBoardView.java
---- orig/kds-dosa-live/src/com/pp/kds/dosa/TokenBoardView.java	2026-10-11 08:53:55.000000000 +0000
-+++ wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/TokenBoardView.java	2026-10-19 14:27:30.229279596 +0000
+diff -ru a/src/com/pp/kds/dosa/TokenBoardView.java b/src/com/pp/kds/dosa/TokenBoardView.java
+--- a/src/com/pp/kds/dosa/TokenBoardView.java	2026-10-19 17:15:19.163630648 +0000
++++ b/src/com/pp/kds/dosa/TokenBoardView.java	2026-10-19 17:15:19.169383965 +0000
 @@ -81,7 +81,8 @@
      // data
      private List<TokenBoard.Token> ready = new ArrayList<TokenBoard.Token>();
@@ -219,9 +297,9 @@ diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/TokenBoardView.java 
              drawRow(c, ix, yy, iw, rowH, tk, elapsed, left, i == 0, appear, t);
          }
          if (flow) drawQueueFlow(c, ix, top + ROWS * rowH + 12 * s, iw, bottom - (top + ROWS * rowH + 12 * s), now, t);
-diff -ru -x 'prep_*' orig/kds-dosa-live/test/DosaStatsTest.java wt/c84a80c/kds-dosa-live/test/DosaStatsTest.java
---- orig/kds-dosa-live/test/DosaStatsTest.java	2026-10-11 08:53:55.000000000 +0000
-+++ wt/c84a80c/kds-dosa-live/test/DosaStatsTest.java	2026-10-19 14:27:30.154707466 +0000
+diff -ru a/test/DosaStatsTest.java b/test/DosaStatsTest.java
+--- a/test/DosaStatsTest.java	2026-10-19 17:15:19.163964933 +0000
++++ b/test/DosaStatsTest.java	2026-10-19 17:15:19.169717559 +0000
 @@ -25,6 +25,18 @@
      static DosaStats.Entry prep(long id, long created) { return new DosaStats.Entry(id, created, false, false); }
      static DosaStats.Entry ready(long id, long created) { return new DosaStats.Entry(id, created, true, false); }
@@ -300,9 +378,9 @@ diff -ru -x 'prep_*' orig/kds-dosa-live/test/DosaStatsTest.java wt/c84a80c/kds-d
  
          check("hour labels", DosaStats.hourLabel(11).equals("11\u201312 PM") && DosaStats.hourLabel(0).equals("12\u20131 AM"),
                  DosaStats.hourLabel(11) + " " + DosaStats.hourLabel(0));
-diff -ru -x 'prep_*' orig/kds-dosa-live/test/TokenBoardTest.java wt/c84a80c/kds-dosa-live/test/TokenBoardTest.java
---- orig/kds-dosa-live/test/TokenBoardTest.java	2026-10-11 08:53:55.000000000 +0000
-+++ wt/c84a80c/kds-dosa-live/test/TokenBoardTest.java	2026-10-19 14:27:30.155221456 +0000
+diff -ru a/test/TokenBoardTest.java b/test/TokenBoardTest.java
+--- a/test/TokenBoardTest.java	2026-10-19 17:15:19.164128042 +0000
++++ b/test/TokenBoardTest.java	2026-10-19 17:15:19.169854317 +0000
 @@ -134,11 +134,12 @@
          check("table phrase", TokenBoard.phrase(Arrays.asList(t7, tt)).equals("Token number 7, table 4, dosa ready, kindly collect."),
                  TokenBoard.phrase(Arrays.asList(t7, tt)));
