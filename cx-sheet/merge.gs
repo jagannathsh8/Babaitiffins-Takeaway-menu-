@@ -77,7 +77,7 @@ function key_() {
 }
 
 var COLS = [
-  ['Date', 'day'], ['Time', 'time'], ['Meal', 'meal'], ['Outlet', 'outlet'], ['Platform', 'platform'], ['Order_ID', 'id'],
+  ['Date', 'day'], ['Time', 'time'], ['Meal', 'meal'], ['Outlet', 'outlet'], ['Platform', 'platform'], ['Order_ID', 'id'], ['Swiggy complaint order_id', 'sid'],
   ['Rating', 'rating'], ['Complaint', 'complaint'], ['Kind', 'kind'], ['Customer', 'customer'], ['Customer check', 'check'],
   ['Summary', 'summary'], ['Likely cause', 'cause'], ['Status', 'status'], ['Refund', 'refund'],
   ['KPT min (to food ready)', 'kpt'], ['Rider wait min', 'wait'], ['Slot', 'slot'], ['Food ready by', 'readyBy'],
@@ -314,9 +314,13 @@ function orders_() {
   if (c) {
     var hc = head_(c), links = links_(COMPLAINTS, hc.image_urls, c.length);
     c.slice(1).forEach(function (x, ci) {
-      var id = id_(x[hc.order_id]), p = String(x[hc.platform] || '').trim();
+      var id = id_(x[hc.order_id]), p = String(x[hc.platform] || '').trim(), shortId = '';
       if (!id || !p) return;
+      // Swiggy: order_id + complaint_id (4 digits) is the real order ID, the one on the Petpooja bill
+      var cid = hc.complaint_id != null ? id_(x[hc.complaint_id]) : '';
+      if (/^swiggy$/i.test(p) && /^\d{1,4}$/.test(cid) && id.length <= 12) { shortId = id; id = id + ('0000' + cid).slice(-4); }
       var o = get(p.charAt(0).toUpperCase() + p.slice(1).toLowerCase(), id);
+      if (shortId) o.shortId = shortId;
       var name = String(x[hc.outlet_name] || '').trim().toUpperCase();
       o.outlet = o.outlet || OUTLET[name] || name;
       o.ordered = date_(x[hc.order_date]);
@@ -426,7 +430,7 @@ function dishes_(s) {
 }
 
 /**
- * Swiggy complaints carry Swiggy's short order ID, the Console (Petpooja) the long one. Link a
+ * Older Swiggy complaints without a complaint_id carry only Swiggy's short order ID. Link such a
  * complaint to the Console order of the same outlet punched within 3 min before to 15 min after
  * the order time, with the most dishes in common. When that order was also rated, the two rows
  * become one.
@@ -436,7 +440,7 @@ function linkSwiggy_(byKey, keys, kt) {
   if (!cand.length) return;
   keys.forEach(function (key) {
     var o = byKey[key];
-    if (o.platform !== 'Swiggy' || !o.type || !o.ordered || kt[o.id]) return;
+    if (o.platform !== 'Swiggy' || !o.type || !o.ordered || kt[o.id] || o.shortId) return; // real ID known: no guessing
     var want = dishes_(o.items), best = null, bestScore = 0, bestGap = 1e15;
     cand.forEach(function (id) {
       var t = kt[id], gap = t.punched - o.ordered;
