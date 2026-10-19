@@ -4,3 +4,4 @@ kds-dosa-live/dist/*.apk
 *.xlsx
 kds-dosa-live/assets/prep_days.txt
 __pycache__/
+cx-sheet/web-app-url.txt

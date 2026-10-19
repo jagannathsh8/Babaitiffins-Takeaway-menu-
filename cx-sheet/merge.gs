@@ -89,6 +89,7 @@ function buildMerged() {
   if (!lock.tryLock(30000)) return;
   try {
     var list = orders_();
+    cachePayload_(list); // the dashboard reads this, so it never waits for the merge
     var ss = SpreadsheetApp.getActive();
     var sh = ss.getSheetByName(MERGED) || ss.insertSheet(MERGED);
     var out = [COLS.map(function (c) { return c[0]; })].concat(list.map(function (o) {
@@ -108,9 +109,9 @@ function buildMerged() {
 /** The dashboard page; ?format=json gives the orders as JSON instead. */
 function doGet(e) {
   if (e && e.parameter && e.parameter.format === 'json') {
-    return ContentService.createTextOutput(JSON.stringify(getData())).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(payload_()).setMimeType(ContentService.MimeType.JSON);
   }
-  return HtmlService.createHtmlOutputFromFile('Dashboard').setTitle('Babai Ratings & Complaints')
+  return HtmlService.createHtmlOutputFromFile('Dashboard').setTitle('Ratings & Complaints')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -188,7 +189,37 @@ function consolePost_(body) {
 
 /** Called by the dashboard page every 5 minutes. */
 function getData() {
-  return {updated: new Date().toISOString(), orders: orders_()};
+  return JSON.parse(payload_());
+}
+
+// The dashboard's data: only the fields it shows, as rows under one list of column names (small and
+// quick to send). Kept ready in the script cache, refreshed with the Merged tab every 15 minutes.
+var DCOLS = ['id', 'sid', 'day', 'time', 'meal', 'outlet', 'platform', 'rating', 'feedback', 'complaint', 'item', 'items',
+  'text', 'value', 'status', 'refund', 'ctype', 'check', 'cause', 'kpt', 'wait', 'slot'];
+var CHUNK = 90000;
+
+function cachePayload_(list) {
+  var json = JSON.stringify({updated: new Date().toISOString(), cols: DCOLS, rows: list.map(function (o) {
+    return DCOLS.map(function (c) { var v = o[c]; return v === '' || v === undefined ? null : v; });
+  })});
+  var parts = {}, n = Math.ceil(json.length / CHUNK);
+  for (var i = 0; i < n; i++) parts['dash_' + i] = json.slice(i * CHUNK, (i + 1) * CHUNK);
+  parts.dash_n = String(n);
+  try { CacheService.getScriptCache().putAll(parts, 21600); } catch (e) {} // too big for the cache: served fresh instead
+  return json;
+}
+
+function payload_() {
+  try {
+    var cache = CacheService.getScriptCache(), n = +cache.get('dash_n');
+    if (n) {
+      var keys = []; for (var i = 0; i < n; i++) keys.push('dash_' + i);
+      var got = cache.getAll(keys), out = '';
+      for (var j = 0; j < n; j++) { if (got['dash_' + j] == null) { out = ''; break; } out += got['dash_' + j]; }
+      if (out) return out;
+    }
+  } catch (e) {}
+  return cachePayload_(orders_());
 }
 
 // ---- the merge -----------------------------------------------------------------------------------

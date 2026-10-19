@@ -7,8 +7,12 @@ DB="$1"; OUT=$(realpath -m "$2"); HERE=$(cd "$(dirname "$0")" && pwd)
 rm -rf "$OUT"; mkdir -p "$OUT/hub" "$OUT/cx" "$OUT/indent" "$OUT/kds" "$OUT/console" "$OUT/scanner"
 sed "s/var BUILT_IN='__BABAI_DB__';/var BUILT_IN='$DB';/" "$HERE/dosa/index.html" > "$OUT/index.html"
 cp "$HERE/indent/index.html" "$HERE/indent/plan.js" "$HERE/indent/xlsx.full.min.js" "$HERE/indent/xlsx.LICENSE.txt" "$OUT/indent/"
-# Ratings & complaints dashboard (reads the CX METRICS sheet's web app; link kept on each device)
-cp "$HERE/cx-sheet/Dashboard.html" "$OUT/cx/index.html"
+# Ratings & complaints dashboard. The sheet's web app link is built in (from $CX_URL or the
+# untracked file cx-sheet/web-app-url.txt), so nobody is asked for it.
+CX="${CX_URL:-$(cat "$HERE/cx-sheet/web-app-url.txt" 2>/dev/null || true)}"
+CX=$(printf '%s' "$CX" | tr -d '[:space:]')
+case "$CX" in https://script.google.com/macros/s/*/exec) ;; *) echo "ratings dashboard: set CX_URL or cx-sheet/web-app-url.txt to the sheet's web app link (…/exec)" >&2; exit 1;; esac
+sed "s#__CX_URL__#$CX#" "$HERE/cx-sheet/Dashboard.html" > "$OUT/cx/index.html"
 # Babai Console (installs as a service; updates itself from console/version.json)
 cp "$HERE/babai-hub/dist/babai-console.exe" "$OUT/console/"
 V=$(grep -o 'version     = "[0-9.]*"' "$HERE/babai-hub/main.go" | grep -o '[0-9.]*')
