@@ -84,6 +84,7 @@ final class RiderBoardView extends View {
     private final Typeface medium = Typeface.create("sans-serif-medium", Typeface.NORMAL);
     private final DateFormat clock;
     private final boolean lite;
+    private final FramePacer pacer = new FramePacer(this);
     private Bitmap logo;
     private Listener listener;
     private boolean voiceOn = true;
@@ -646,7 +647,6 @@ final class RiderBoardView extends View {
 
     @Override
     protected void onDraw(Canvas c) {
-        long frameStart = SystemClock.uptimeMillis();
         float w = getWidth(), h = getHeight();
         if (w == 0 || h == 0) return;
         long now = SystemClock.uptimeMillis();
@@ -677,7 +677,7 @@ final class RiderBoardView extends View {
         if (lookup != null) drawLookup(c, w, h, now, land);
         drawCall(c, w, h, now, t);
 
-        if (lite) postInvalidateDelayed(Math.max(1L, 33L - (SystemClock.uptimeMillis() - frameStart)));
+        if (lite) pacer.next();
         else postInvalidateOnAnimation();
     }
 

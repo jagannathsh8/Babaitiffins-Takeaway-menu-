@@ -243,6 +243,7 @@ final class DosaNeonView extends View {
     private String trendNowStr, trendFrom, trendTo;
     /** TV / low-memory box: fewer floating sprites and embers. */
     private boolean lite;
+    private final FramePacer pacer = new FramePacer(this);
 
     /** Android TV, or a low-memory device: use the lighter animation set. */
     static boolean isLowEnd(Context c) {
@@ -547,7 +548,6 @@ final class DosaNeonView extends View {
 
     @Override
     protected void onDraw(Canvas c) {
-        long frameStart = SystemClock.uptimeMillis();
         float w = getWidth(), h = getHeight();
         if (w == 0 || h == 0) return;
         // Animation clock wraps every 6 h: a float counting seconds for days loses precision
@@ -597,8 +597,8 @@ final class DosaNeonView extends View {
         if (showStaff) drawStaff(c, w, h);
 
         if (lite) {
-            // TV boxes: a steady 30 fps looks smoother than a 60 fps target that keeps dropping frames.
-            postInvalidateDelayed(Math.max(1L, 33L - (SystemClock.uptimeMillis() - frameStart)));
+            // TV boxes: a steady 30 fps, on every second display refresh (see FramePacer).
+            pacer.next();
         } else {
             postInvalidateOnAnimation();
         }

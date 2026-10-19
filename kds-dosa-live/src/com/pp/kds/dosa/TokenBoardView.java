@@ -464,7 +464,6 @@ final class TokenBoardView extends View {
 
     @Override
     protected void onDraw(Canvas c) {
-        long frameStart = SystemClock.uptimeMillis();
         float w = getWidth(), h = getHeight();
         if (w == 0 || h == 0) return;
         long now = SystemClock.uptimeMillis();
@@ -498,8 +497,8 @@ final class TokenBoardView extends View {
         drawFocus(c);
         drawCall(c, w, h, now, t);
         if (lite) {
-            // TV boxes: a steady 30 fps looks smoother than a 60 fps target that keeps dropping frames.
-            postInvalidateDelayed(Math.max(1L, 33L - (SystemClock.uptimeMillis() - frameStart)));
+            // TV boxes: a steady 30 fps, on every second display refresh (see FramePacer).
+            pacer.next();
         } else {
             postInvalidateOnAnimation();
         }
@@ -1380,6 +1379,7 @@ final class TokenBoardView extends View {
     private long clockAt;
     /** TV / low-memory box: fewer floating particles. */
     private final boolean lite;
+    private final FramePacer pacer = new FramePacer(this);
 
     private String clockText() {
         long now = System.currentTimeMillis();
