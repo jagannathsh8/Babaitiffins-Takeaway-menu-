@@ -1,0 +1,323 @@
+diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/DosaNeonView.java wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/DosaNeonView.java
+--- orig/kds-dosa-live/src/com/pp/kds/dosa/DosaNeonView.java	2026-10-11 08:53:55.000000000 +0000
++++ wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/DosaNeonView.java	2026-10-19 14:27:30.226641372 +0000
+@@ -1225,7 +1225,7 @@
+         float a = closeAlpha();
+         modeHit.setEmpty();
+         if (a <= 0f) return;
+-        String label = "\u25A6  ORDER READY";
++        String label = "\u25A6  DOSA ORDER STATUS";
+         text.setTypeface(condensed);
+         text.setLetterSpacing(0.12f);
+         text.setTextSize(12 * d);
+diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/DosaStats.java wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/DosaStats.java
+--- orig/kds-dosa-live/src/com/pp/kds/dosa/DosaStats.java	2026-10-11 08:53:55.000000000 +0000
++++ wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/DosaStats.java	2026-10-19 14:27:30.150483683 +0000
+@@ -68,6 +68,9 @@
+         public long[] trendTimes = new long[0];
+         public float[] trendEta = new float[0];
+         public double fastestPrepMin;    // NaN when none
++        public int queuedDosas;          // Dosa pieces still to cook (Dine-In, preparing)
++        public int roundsAhead;          // tawa rounds a new order waits for, its own included
++        public double roundMin;          // minutes one tawa round of ROUND_SIZE dosas takes
+         public List<String> facts = new ArrayList<String>();
+         public long updatedAt;
+         public List<String> history = new ArrayList<String>();
+@@ -77,7 +80,15 @@
+     static final long WINDOW_MS = 15 * MINUTE;      // recent-throughput window
+     static final long MIN_WINDOW_MS = 3 * MINUTE;   // avoid huge rates right after start
+     static final long MAX_PREP_MS = 150 * MINUTE;   // ignore forgotten tickets as outliers
+-    static final double MAX_ETA_MIN = 40.0;         // never show more than 40 min
++    // Wait = tawa rounds. One round cooks ROUND_SIZE dosas in ROUND_MIN minutes (the outlet's own
++    // figure). A new order joins the next round with space. On a busy tawa the round time follows the
++    // real pace of finished dosas, kept close to ROUND_MIN; lean times never show more than
++    // LEAN_MAX_MIN, busy times never more than MAX_ETA_MIN.
++    static final int ROUND_SIZE = 8;
++    static final double ROUND_MIN = 3.0;
++    static final double ROUND_LOW = 2.5, ROUND_HIGH = 4.5;
++    static final double LEAN_MAX_MIN = 10.0;
++    static final double MAX_ETA_MIN = 20.0;
+     static final int CONFIDENT_RECENT = 6;          // recent completions for full queue weighting
+     static final int HISTORY_DAYS = 7;
+     static final long TREND_STEP_MS = 2 * MINUTE;   // one trend point every 2 min
+@@ -90,6 +101,7 @@
+     private double peakRate;
+     private final Set<Long> countedIds = new HashSet<Long>();
+     private final LinkedList<Long> recent = new LinkedList<Long>();
++    private final LinkedList<long[]> recentPieces = new LinkedList<long[]>(); // {time, dosas} finished
+     private final LinkedList<String> history = new LinkedList<String>();
+     private final Map<Long, Long> active = new HashMap<Long, Long>(); // id -> createdMs
+     private final Set<Long> seenToday = new HashSet<Long>();          // KOTs already in the totals
+@@ -177,6 +189,7 @@
+         totalPrepMs += prep;
+         if (fastestMs <= 0 || prep < fastestMs) fastestMs = prep;
+         recent.add(now);
++        recentPieces.add(new long[]{now, pieces});
+     }
+ 
+     private boolean rollover(long now) {
+@@ -193,6 +206,7 @@
+         trackingSince = now;
+         countedIds.clear();
+         recent.clear();
++        recentPieces.clear();
+         seenToday.clear();
+         kinds.clear();
+         java.util.Arrays.fill(hourly, 0);
+@@ -207,6 +221,7 @@
+     public Result compute(long now) {
+         rollover(now);
+         while (!recent.isEmpty() && recent.getFirst() < now - WINDOW_MS) recent.removeFirst();
++        while (!recentPieces.isEmpty() && recentPieces.getFirst()[0] < now - WINDOW_MS) recentPieces.removeFirst();
+ 
+         Result r = new Result();
+         r.updatedAt = now;
+@@ -228,28 +243,19 @@
+         }
+         r.oldestActiveMin = oldest;
+ 
+-        // Only real figures: today's Dosa average, else the most recent day's real average.
+-        // With no Dosa history at all the screen shows "Calculating..." instead of a guess.
+-        double avg = !Double.isNaN(r.avgPrepMin) ? r.avgPrepMin : lastDayAvg();
+-        double eta;
+         r.queueMin = r.throughputPerMin > 0 ? r.activeCount / r.throughputPerMin : Double.NaN;
+-        if (r.activeCount == 0) {
+-            eta = avg;                                     // empty queue: just the prep time
+-        } else if (r.throughputPerMin <= 0) {
+-            // nothing finishing recently: at least as long as the oldest order has waited
+-            double floor = Double.isNaN(avg) ? 0 : avg;
+-            eta = Math.max(floor, oldest);
+-            if (eta <= 0) eta = Double.NaN;
+-        } else if (Double.isNaN(avg)) {
+-            eta = r.queueMin;                              // pace known, no average yet
+-        } else {
+-            // Queue component (Little's law) can't beat the physical cook time.
+-            double core = Math.max(r.queueMin, 0.6 * avg);
+-            double w = Math.min(1.0, r.recentCompletions / (double) CONFIDENT_RECENT);
+-            eta = (1 - w) * avg + w * core;
+-        }
+-        r.etaMin = Double.isNaN(eta) ? Double.NaN : Math.min(eta, MAX_ETA_MIN);
+-        r.etaLabel = Double.isNaN(r.etaMin) ? "Calculating\u2026" : friendlyRange(r.etaMin);
++        int queued = 0;
++        for (Long id : active.keySet()) {
++            Integer pc = activePieces.get(id);
++            queued += pc == null ? 1 : pc;
++        }
++        r.queuedDosas = queued;
++        r.roundMin = roundMinutes(queued, window);
++        r.roundsAhead = (queued + ROUND_SIZE) / ROUND_SIZE; // ceil((queued + 1) / ROUND_SIZE)
++        double eta = r.roundsAhead * r.roundMin;
++        eta = Math.min(eta, queued <= ROUND_SIZE ? LEAN_MAX_MIN : MAX_ETA_MIN);
++        r.etaMin = eta;
++        r.etaLabel = friendlyRange(r.etaMin);
+ 
+         int total = 0;
+         for (int q : kinds.values()) total += q;
+@@ -279,6 +285,20 @@
+         return r;
+     }
+ 
++    /**
++     * Minutes per tawa round: ROUND_MIN, or on a busy tawa (a full round or more waiting and two
++     * rounds finished in the window) the pace actually seen, kept within ROUND_LOW..ROUND_HIGH.
++     */
++    double roundMinutes(int queued, long windowMs) {
++        if (queued < ROUND_SIZE) return ROUND_MIN;
++        long done = 0;
++        for (long[] p : recentPieces) done += p[1];
++        if (done < 2 * ROUND_SIZE) return ROUND_MIN;
++        double perMin = done / (windowMs / (double) MINUTE);
++        double seen = ROUND_SIZE / perMin;
++        return Math.max(ROUND_LOW, Math.min(ROUND_HIGH, seen));
++    }
++
+     static final String[] TRIVIA = {
+             // Babai Tiffins menu stories (owner-provided, trimmed for the screen; no recipe specifics)
+             "Our Ghee Idli melts in your mouth thanks to a light, slow-fermented urad dal batter",
+diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/TokenBoard.java wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/TokenBoard.java
+--- orig/kds-dosa-live/src/com/pp/kds/dosa/TokenBoard.java	2026-10-11 08:53:55.000000000 +0000
++++ wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/TokenBoard.java	2026-10-19 14:27:30.151370788 +0000
+@@ -259,16 +259,16 @@
+     }
+ 
+     /**
+-     * Estimated minutes left for the preparing token at queue position {@code pos} (0 = oldest),
+-     * from today's real average prep time and the live completion rate. NaN when there is no
+-     * real figure yet (the screen then shows no minutes rather than a guess).
++     * Minutes until a preparing token's dosas are done: the tawa round its dosas land in (all dosas
++     * ahead of it plus its own, ROUND_SIZE a round) times the round time, at most 10 min when
++     * the queue is lean (one round or less) and 20 min when busy.
++     * @param dosasUpTo dosas on this token and every token ahead of it
++     * @param queued    all dosas still to cook
+      */
+-    static double minutesLeft(int pos, double elapsedMin, double avgPrepMin, double perMin) {
+-        boolean haveAvg = !Double.isNaN(avgPrepMin) && avgPrepMin > 0;
+-        boolean haveRate = perMin > 0;
+-        if (!haveAvg && !haveRate) return Double.NaN;
+-        double left = haveAvg ? avgPrepMin - elapsedMin : 0;
+-        if (haveRate) left = Math.max(left, (pos + 1) / perMin);
+-        return Math.max(0.5, Math.min(DosaStats.MAX_ETA_MIN, left));
++    static double minutesLeft(int dosasUpTo, int queued, double roundMin) {
++        if (!(roundMin > 0)) roundMin = DosaStats.ROUND_MIN;
++        int rounds = Math.max(1, (dosasUpTo + DosaStats.ROUND_SIZE - 1) / DosaStats.ROUND_SIZE);
++        double cap = queued <= DosaStats.ROUND_SIZE ? DosaStats.LEAN_MAX_MIN : DosaStats.MAX_ETA_MIN;
++        return Math.max(0.5, Math.min(cap, rounds * roundMin));
+     }
+ }
+diff -ru -x 'prep_*' orig/kds-dosa-live/src/com/pp/kds/dosa/TokenBoardView.java wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/TokenBoardView.java
+--- orig/kds-dosa-live/src/com/pp/kds/dosa/TokenBoardView.java	2026-10-11 08:53:55.000000000 +0000
++++ wt/c84a80c/kds-dosa-live/src/com/pp/kds/dosa/TokenBoardView.java	2026-10-19 14:27:30.229279596 +0000
+@@ -81,7 +81,8 @@
+     // data
+     private List<TokenBoard.Token> ready = new ArrayList<TokenBoard.Token>();
+     private List<TokenBoard.Token> preparing = new ArrayList<TokenBoard.Token>();
+-    private double avgPrep = Double.NaN, perMin;
++    private double avgPrep = Double.NaN, perMin, roundMin = DosaStats.ROUND_MIN;
++    private int queued;
+     private String waitLabel = "\u2014";
+     private int onTawa;
+     private List<String> facts = new ArrayList<String>();
+@@ -182,6 +183,8 @@
+         if (r != null) {
+             avgPrep = r.avgPrepMin;
+             perMin = r.throughputPerMin;
++            roundMin = r.roundMin;
++            queued = r.queuedDosas;
+             waitLabel = Double.isNaN(r.etaMin) ? "Calculating\u2026" : r.etaLabel;
+             onTawa = r.runningDosas;
+             if (r.facts != null && !r.facts.isEmpty()) facts = new ArrayList<String>(r.facts);
+@@ -570,10 +573,13 @@
+             text.setTypeface(bold);
+             text.setLetterSpacing(0.3f);
+             text.setTextSize(36 * s);
++            String title = "DOSA ORDER STATUS";
++            float tw = text.measureText(title), room = text.measureText("ORDER READY"); // the space the old title used
++            if (tw > room) text.setTextSize(36 * s * room / tw);
+             float ca = controlsAlpha();
+             text.setColor(alpha(Color.WHITE, (int) (255 * (1f - 0.92f * ca))));
+             if (ca == 0f) text.setShadowLayer(18 * s, 0, 0, theme.P); // glow only when steady
+-            c.drawText("ORDER READY", x + w * 0.52f, cy + 12 * s, text);
++            c.drawText(title, x + w * 0.52f, cy + 12 * s, text);
+             text.clearShadowLayer();
+         }
+ 
+@@ -876,6 +882,7 @@
+         float rowsArea = flow ? (bottom - top) * 0.68f : bottom - top;
+         float rowH = Math.min(86 * s, rowsArea / (flow ? ROWS : Math.max(shown, 4)));
+         long wall = System.currentTimeMillis();
++        int upTo = 0;
+         for (int i = 0; i < shown; i++) {
+             TokenBoard.Token tk = preparing.get(i);
+             String key = "P" + tk.label;
+@@ -887,7 +894,8 @@
+             Long seen = firstSeen.get(key);
+             float appear = seen == null ? 1f : Math.min(1f, (now - seen) / 600f);
+             double elapsed = tk.createdMs > 0 ? (wall - tk.createdMs) / 60_000.0 : 0;
+-            double left = TokenBoard.minutesLeft(i, elapsed, avgPrep, perMin);
++            upTo += Math.max(1, preparing.get(i).dosas);
++            double left = TokenBoard.minutesLeft(upTo, Math.max(queued, upTo), roundMin);
+             drawRow(c, ix, yy, iw, rowH, tk, elapsed, left, i == 0, appear, t);
+         }
+         if (flow) drawQueueFlow(c, ix, top + ROWS * rowH + 12 * s, iw, bottom - (top + ROWS * rowH + 12 * s), now, t);
+diff -ru -x 'prep_*' orig/kds-dosa-live/test/DosaStatsTest.java wt/c84a80c/kds-dosa-live/test/DosaStatsTest.java
+--- orig/kds-dosa-live/test/DosaStatsTest.java	2026-10-11 08:53:55.000000000 +0000
++++ wt/c84a80c/kds-dosa-live/test/DosaStatsTest.java	2026-10-19 14:27:30.154707466 +0000
+@@ -25,6 +25,18 @@
+     static DosaStats.Entry prep(long id, long created) { return new DosaStats.Entry(id, created, false, false); }
+     static DosaStats.Entry ready(long id, long created) { return new DosaStats.Entry(id, created, true, false); }
+ 
++    /** n single-dosa KOTs waiting, nothing finished yet. */
++    static DosaStats.Result waiting(int n) {
++        DosaStats st = new DosaStats();
++        long t = at(13, 0);
++        List<DosaStats.Entry> snap = new ArrayList<DosaStats.Entry>();
++        for (int i = 0; i < n; i++) snap.add(prep(1000 + i, t - MIN));
++        st.update(snap, t, false);
++        return st.compute(t);
++    }
++    static int rounds(int n) { return waiting(n).roundsAhead; }
++    static double eta(int n) { return waiting(n).etaMin; }
++
+     public static void main(String[] a) {
+         // Friendly ranges
+         check("range 16.2", DosaStats.friendlyRange(16.2).equals("15–18 min"), DosaStats.friendlyRange(16.2));
+@@ -58,7 +70,10 @@
+         DosaStats.Result r = s.compute(t0 + 30 * MIN);
+         check("active 32", r.activeCount == 32, r.activeCount);
+         check("throughput ~2/min", Math.abs(r.throughputPerMin - 2.0) < 0.15, r.throughputPerMin);
+-        check("eta ~16 min", Math.abs(r.etaMin - 16) < 1.5, r.etaMin + " " + r.etaLabel);
++        // 32 dosas waiting -> 5 rounds; ~2 dosas/min finishing -> ~4 min a round -> ~19-20 min
++        check("busy: rounds 5", r.queuedDosas == 32 && r.roundsAhead == 5, r.queuedDosas + "/" + r.roundsAhead);
++        check("busy: round follows pace", Math.abs(r.roundMin - 4.0) < 0.3, r.roundMin);
++        check("busy: 5 rounds x pace, at most 20", r.etaMin <= 20.0 && Math.abs(r.etaMin - 5 * r.roundMin) < 0.01, r.etaMin + " " + r.etaLabel);
+         System.out.println("     avg " + r.avgPrepMin + " completed " + r.completedToday);
+ 
+         // Production improves: queue drains with no new orders -> ETA falls.
+@@ -113,11 +128,11 @@
+         DosaStats.Result r5 = s5.compute(t0 + 2 * MIN);
+         check("cancel/outlier", r5.completedToday == 0 && r5.activeCount == 0, r5.completedToday);
+ 
+-        // Stalled kitchen: nothing completing, oldest waiting 25 min -> ETA >= 25.
++        // Lean: one dosa waiting (even a forgotten old ticket) -> one round, 3 min, not its age.
+         DosaStats s6 = new DosaStats();
+         s6.update(java.util.Collections.singletonList(prep(9, t0 - 25 * MIN)), t0, false);
+         DosaStats.Result r6 = s6.compute(t0 + MIN);
+-        check("stalled eta", r6.etaMin >= 25, r6.etaMin);
++        check("lean: one round", r6.roundsAhead == 1 && r6.etaMin == 3.0 && r6.etaLabel.equals("Under 5 min"), r6.etaMin + " " + r6.etaLabel);
+ 
+         // Day rollover: today resets, yesterday goes to history.
+         DosaStats.Result r7 = s.compute(at(19, 0) + 24 * 60 * MIN);
+@@ -163,20 +178,20 @@
+         s11.load(s10.save(), t10 + 241 * MIN);
+         check("trend persists", s11.compute(t10 + 241 * MIN).trendTimes.length >= 89, "");
+ 
+-        // No Dosa data at all: no made-up number.
++        // Nothing waiting: a new order goes on the next round.
+         DosaStats s12 = new DosaStats();
+         DosaStats.Result r12 = s12.compute(t10);
+-        check("no data -> calculating", Double.isNaN(r12.etaMin) && r12.etaLabel.startsWith("Calculating"), r12.etaLabel);
+-        // Never above 40 min.
+-        DosaStats s13 = new DosaStats();
+-        s13.update(java.util.Collections.singletonList(prep(600, t10 - 75 * MIN)), t10, false);
+-        check("cap 40", s13.compute(t10).etaMin == 40.0, s13.compute(t10).etaMin);
+-        // Next morning, before any completion: yesterday's real average is used.
+-        long nextDay = at(19, 0) + 24 * 60 * MIN + 1;
+-        DosaStats s14 = new DosaStats();
+-        s14.load(s.save(), nextDay);
+-        DosaStats.Result r14 = s14.compute(nextDay);
+-        check("uses last real day avg", Math.abs(r14.etaMin - 16.9) < 0.11, r14.etaMin);
++        check("empty: one round", r12.roundsAhead == 1 && r12.etaMin == 3.0, r12.etaMin + " " + r12.etaLabel);
++        // 7 waiting: the new order fits the same round; 8 waiting: it needs the next one.
++        check("7 waiting -> 1 round", rounds(7) == 1 && eta(7) == 3.0, eta(7));
++        check("8 waiting -> 2 rounds (6 min)", rounds(8) == 2 && eta(8) == 6.0, eta(8));
++        check("13 waiting -> 2 rounds (6 min)", rounds(13) == 2 && eta(13) == 6.0, eta(13));
++        check("30 waiting -> 4 rounds (12 min)", rounds(30) == 4 && eta(30) == 12.0, eta(30));
++        check("100 waiting -> capped at 20", eta(100) == 20.0, eta(100));
++        // One KOT with 3 Masala Dosas counts as 3 dosas.
++        DosaStats s15 = new DosaStats();
++        s15.update(java.util.Collections.singletonList(new DosaStats.Entry(77, t10, false, false, new String[]{"Masala Dosa"}, new double[]{3})), t10, false);
++        check("pieces counted", s15.compute(t10).queuedDosas == 3, s15.compute(t10).queuedDosas);
+ 
+         check("hour labels", DosaStats.hourLabel(11).equals("11\u201312 PM") && DosaStats.hourLabel(0).equals("12\u20131 AM"),
+                 DosaStats.hourLabel(11) + " " + DosaStats.hourLabel(0));
+diff -ru -x 'prep_*' orig/kds-dosa-live/test/TokenBoardTest.java wt/c84a80c/kds-dosa-live/test/TokenBoardTest.java
+--- orig/kds-dosa-live/test/TokenBoardTest.java	2026-10-11 08:53:55.000000000 +0000
++++ wt/c84a80c/kds-dosa-live/test/TokenBoardTest.java	2026-10-19 14:27:30.155221456 +0000
+@@ -134,11 +134,12 @@
+         check("table phrase", TokenBoard.phrase(Arrays.asList(t7, tt)).equals("Token number 7, table 4, dosa ready, kindly collect."),
+                 TokenBoard.phrase(Arrays.asList(t7, tt)));
+ 
+-        // Minutes left: real figures only.
+-        check("no data -> NaN", Double.isNaN(TokenBoard.minutesLeft(0, 2, Double.NaN, 0)), "");
+-        check("avg based", Math.abs(TokenBoard.minutesLeft(0, 2, 5.5, 0) - 3.5) < 1e-9, TokenBoard.minutesLeft(0, 2, 5.5, 0));
+-        check("queue based", Math.abs(TokenBoard.minutesLeft(9, 2, 5.5, 1.0) - 10) < 1e-9, TokenBoard.minutesLeft(9, 2, 5.5, 1.0));
+-        check("cap 40", TokenBoard.minutesLeft(99, 0, 5, 0.5) == 40, TokenBoard.minutesLeft(99, 0, 5, 0.5));
++        // Minutes left: tawa rounds of 8, 3 min each; lean (<= 8 waiting) at most 10, busy at most 20.
++        check("first round", TokenBoard.minutesLeft(3, 5, 3.0) == 3.0, TokenBoard.minutesLeft(3, 5, 3.0));
++        check("8 dosas = one round", TokenBoard.minutesLeft(8, 8, 3.0) == 3.0, TokenBoard.minutesLeft(8, 8, 3.0));
++        check("9th dosa = round 2", TokenBoard.minutesLeft(9, 12, 3.0) == 6.0, TokenBoard.minutesLeft(9, 12, 3.0));
++        check("busy cap 20", TokenBoard.minutesLeft(99, 99, 3.0) == 20.0, TokenBoard.minutesLeft(99, 99, 3.0));
++        check("no round time -> 3 min", TokenBoard.minutesLeft(1, 1, Double.NaN) == 3.0, TokenBoard.minutesLeft(1, 1, Double.NaN));
+ 
+         System.out.println(failures == 0 ? "ALL PASS" : failures + " FAILED");
+         if (failures > 0) System.exit(1);
