@@ -59,7 +59,15 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Babai')
     .addItem('Rebuild Merged now', 'buildMerged')
     .addItem('Show Console key', 'showKey')
+    .addItem('Clean Console times now', 'cleanConsoleNow')
     .addToUi();
+}
+
+function cleanConsoleNow() {
+  PropertiesService.getScriptProperties().deleteProperty('TRIM_AT');
+  buildMerged();
+  var sh = SpreadsheetApp.getActive().getSheetByName(CONSOLE);
+  SpreadsheetApp.getUi().alert('Console times now has ' + (sh ? sh.getLastRow() - 1 : 0) + ' rows (all orders of the last ' + ALL_DAYS + ' days, rated or complained ones for ' + LINKED_DAYS + ' days).');
 }
 
 function showKey() {
@@ -90,6 +98,7 @@ function buildMerged() {
   try {
     var list = orders_();
     cachePayload_(list); // the dashboard reads this, so it never waits for the merge
+    trimConsole_(list);
     var ss = SpreadsheetApp.getActive();
     var sh = ss.getSheetByName(MERGED) || ss.insertSheet(MERGED);
     var out = [COLS.map(function (c) { return c[0]; })].concat(list.map(function (o) {
@@ -106,6 +115,29 @@ function buildMerged() {
   }
 }
 
+// Marks the Console times rows of rated / complained orders 'Keep' and drops old rows nobody needs.
+// Runs with buildMerged (every 15 min) but rewrites the tab only every 6 hours or when it grew big.
+function trimConsole_(list) {
+  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName(CONSOLE);
+  if (!sh || sh.getLastRow() < 2) return;
+  var p = PropertiesService.getScriptProperties(), last = +p.getProperty('TRIM_AT') || 0;
+  if (Date.now() - last < 6 * 36e5 && sh.getLastRow() < 20000) return;
+  var linked = {};
+  list.forEach(function (o) { if (o.id) linked[id_(o.id)] = 1; if (o.cid) linked[id_(o.cid)] = 1; if (o.sid) linked[id_(o.sid)] = 1; });
+  var data = sh.getDataRange().getValues();
+  data[0] = CCOLS.slice();
+  data = data.map(function (r) { while (r.length < CCOLS.length) r.push(''); return r.slice(0, CCOLS.length); });
+  var now = Date.now(), before = data.length;
+  for (var i = 1; i < data.length; i++) if (linked[id_(data[i][0])]) data[i][KEEP_COL] = 1;
+  data = [data[0]].concat(data.slice(1).filter(function (r) { return keepRow_(r, now); }));
+  sh.getRange(2, 1, Math.max(sh.getLastRow() - 1, 1), Math.max(sh.getLastColumn(), CCOLS.length)).clearContent();
+  sh.getRange(1, 1, data.length, CCOLS.length).setValues(data);
+  sh.getRange(1, 1, 1, CCOLS.length).setFontWeight('bold');
+  if (sh.getMaxRows() > data.length + 500) sh.deleteRows(data.length + 201, sh.getMaxRows() - data.length - 200); // no empty grid
+  p.setProperty('TRIM_AT', String(now));
+  Logger.log('Console times: ' + (before - 1) + ' -> ' + (data.length - 1) + ' rows');
+}
+
 /** The dashboard page; ?format=json gives the orders as JSON instead. */
 function doGet(e) {
   if (e && e.parameter && e.parameter.format === 'json') {
@@ -118,7 +150,17 @@ function doGet(e) {
 // ---- order times from the Babai Consoles -------------------------------------------------------
 
 var CCOLS = ['Order_ID', 'KOT', 'Outlet', 'Channel', 'Brand', 'Slot', 'Items', 'Punched', 'Printed', 'Food ready',
-  'Ready by', 'Picked up', 'Delivered', 'Status', 'KPT min', 'Rider wait min', 'Print sec', 'Updated', 'Item names'];
+  'Ready by', 'Picked up', 'Delivered', 'Status', 'KPT min', 'Rider wait min', 'Print sec', 'Updated', 'Item names', 'Keep'];
+var KEEP_COL = CCOLS.indexOf('Keep');
+// The tab stays small: every order for 10 days (ratings and complaints come in by then), after that
+// only the orders that got a rating or complaint (marked 'Keep' by buildMerged), for 120 days.
+var ALL_DAYS = 10, LINKED_DAYS = 120;
+
+function keepRow_(r, now) {
+  if (!(r[7] instanceof Date)) return true;
+  var age = now - r[7].getTime();
+  return age < ALL_DAYS * 864e5 || (r[KEEP_COL] === 1 || r[KEEP_COL] === '1') && age < LINKED_DAYS * 864e5;
+}
 
 /**
  * One doPost for the sheet. A Babai Console sends {key, orders:[...]}; anything else is the
@@ -172,13 +214,13 @@ function consolePost_(body) {
       var row = [id, o.kot || '', String(o.outlet || ''), String(o.channel || ''), String(o.brand || ''), String(o.slot || ''), o.items || '',
         d(o.punched), d(o.printed), d(o.ready), String(o.readyBy || ''), d(o.dispatched), d(o.delivered), String(o.status || ''),
         o.kptMin || '', o.waitMin || '', o.printSec || '', now, String(o.names || '')];
+      row.push('');
       var k = id + '|' + (o.kot || '');
-      if (at[k] != null) data[at[k]] = row; else { at[k] = data.length; data.push(row); }
+      if (at[k] != null) { row[KEEP_COL] = data[at[k]][KEEP_COL]; data[at[k]] = row; } else { at[k] = data.length; data.push(row); }
     });
-    // keep 120 days
-    var cut = Date.now() - 120 * 864e5;
+    var cut = Date.now() - LINKED_DAYS * 864e5; // the 10-day clean-up is trimConsole_'s (it knows the rated orders)
     data = [data[0]].concat(data.slice(1).filter(function (r) { return !(r[7] instanceof Date) || r[7].getTime() >= cut; }));
-    sh.getRange(2, 1, Math.max(sh.getLastRow() - 1, 1), CCOLS.length).clearContent();
+    sh.getRange(2, 1, Math.max(sh.getLastRow() - 1, 1), Math.max(sh.getLastColumn(), CCOLS.length)).clearContent();
     sh.getRange(1, 1, data.length, CCOLS.length).setValues(data);
     sh.getRange(1, 1, 1, CCOLS.length).setFontWeight('bold');
     return out({ok: true, n: list.length});
