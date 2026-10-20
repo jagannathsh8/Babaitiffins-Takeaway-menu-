@@ -239,3 +239,16 @@ td.wrap{white-space:normal;min-width:180px}
 #mxDlg .acts{display:flex;gap:8px;justify-content:flex-end}
 #mxDlg .acts button{all:unset;cursor:pointer;padding:7px 14px;border-radius:9px;font-weight:700;border:1px solid var(--line)}
 #mxDlg .acts .pri{background:var(--ink);color:#fff;border-color:var(--ink)}
+/* CX cards: rating with stars, Google-style bars */
+.mx .rbig{display:flex;align-items:baseline;gap:10px;margin-top:6px;flex-wrap:wrap}
+.mx .rbig .v{font:600 34px/1.1 var(--mono);letter-spacing:-.5px}
+.mx .rbig .unit{font-size:13px;color:var(--mute);font-weight:600}
+.mx .stars{position:relative;display:inline-block;font-size:20px;line-height:1;letter-spacing:2px;color:#e3e7ec}
+.mx .stars .s1{position:absolute;left:0;top:0;overflow:hidden;white-space:nowrap;color:#f5a623}
+.mx .hb{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:7px 10px;align-items:center;margin-top:12px;font-size:12.5px}
+.mx .hb .hl{color:var(--mute);font-weight:600;white-space:nowrap}
+.mx .hb .ht{height:8px;border-radius:9px;background:#eef1f5;overflow:hidden}
+.mx .hb .ht i{display:block;height:100%;border-radius:9px;background:#f5a623;min-width:0}
+.mx .hb .ht i.g{background:#19a463}.mx .hb .ht i.o{background:#f5a623}.mx .hb .ht i.r{background:#ef4b5f}
+.mx .hb .hn{font:600 13px var(--mono);text-align:right;min-width:22px}
+.mx .pl.pl3{margin-top:12px}

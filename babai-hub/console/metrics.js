@@ -79,6 +79,22 @@
     return '<div class="blk neon ' + tone + (run ? " run" : "") + '"><div class="l">' + label + '</div><div class="v ' + vcls + '">' + v + "<small>" + unit + '</small></div><div class="s">' + sub +
       '</div><div class="p8"><span>' + p8l + "</span><b>" + p8v + '</b></div><div class="pl">' + rows + "</div></div>";
   }
+  // a summary card with its own body (rating, ratings bars, complaints bars)
+  function card(label, vcls, run, inner, tone) {
+    tone = tone || { "c-r": "r", "c-o": "o", "c-g": "g" }[vcls] || vcls || "n";
+    return '<div class="blk neon ' + tone + (run ? " run" : "") + '"><div class="l">' + label + "</div>" + inner + "</div>";
+  }
+  // Google-style bars: [label, count, tone] rows, bar length = share of the total
+  function bars(rows, total) {
+    return '<div class="hb">' + rows.map(function (r) {
+      var w = total ? Math.round(r[1] * 100 / total) : 0;
+      return '<span class="hl">' + r[0] + '</span><span class="ht"><i class="' + r[2] + '" style="width:' + w + '%"></i></span><span class="hn">' + r[1] + "</span>";
+    }).join("") + "</div>";
+  }
+  function stars(m) {
+    var pct = m == null ? 0 : Math.max(0, Math.min(100, m * 20));
+    return '<span class="stars" aria-label="' + (m == null ? "no rating" : m.toFixed(2) + " of 5") + '"><span class="s0">★★★★★</span><span class="s1" style="width:' + pct + '%">★★★★★</span></span>';
+  }
   function slotTable(key, title, list, pOf, mOf, cell) {
     function row(lbl, sub, t, tot) {
       return "<tr" + (tot ? ' class="tot"' : "") + "><td>" + lbl + (sub ? ' <span class="mute">' + sub + "</span>" : "") + "</td>" +
@@ -307,12 +323,21 @@
     var h = head(false);
     if (M.cx.err) h += '<div class="banner">' + esc(M.cx.err) + "</div>";
     h += '<div class="panel"><div class="hd"><h2>Summary</h2><span class="sub">all platforms, then each platform' + (M.cx.updated ? " · sheet updated " + hm(Date.parse(M.cx.updated)) : "") + '</span></div><div class="sum4">' +
-      blk("Rating · average", M.p.length === 1 ? rc(A.m, M.p[0]) : rcAll(A.m), A.m == null ? "–" : A.m.toFixed(2), "★", A.r.length + " rated orders", "5★ · 4★", A.r.filter(function (v) { return v.rating == 5; }).length + " · " + A.r.filter(function (v) { return v.rating == 4; }).length,
-        plRows(xs, byP, function (t, p) { var u = rs(t); return [rc(u.m, p), u.m == null ? "–" : u.m.toFixed(2), "target " + rtgt(p)]; }), 1) +
-      blk("Low rated (1–3★)", "", A.low.length, "", (A.r.length ? Math.round(A.low.length * 100 / A.r.length) : 0) + "% of rated", "1★ · 2★ · 3★", [1, 2, 3].map(function (k) { return A.low.filter(function (v) { return v.rating == k; }).length; }).join(" · "),
-        plRows(xs, byP, function (t) { var u = rs(t); return ["", u.low.length, u.r.length + " rated"]; }), 0, A.low.length ? "o" : "g") +
-      blk("Complaints", "", A.c.length, "", "refund ₹" + Math.round(refund), "Missing · wrong · quality · pack", [0, 1, 2, 3].map(function (k) { return A.c.filter(function (v) { return ctype(v) === k; }).length; }).join(" · "),
-        plRows(xs, byP, function (t) { var u = rs(t); return ["", u.c.length, "₹" + Math.round(u.c.reduce(function (a, v) { return a + (+v.refund || 0); }, 0))]; }), 1, A.c.length ? "r" : "g") +
+      card("Rating · average", M.p.length === 1 ? rc(A.m, M.p[0]) : rcAll(A.m), 1,
+        '<div class="rbig"><span class="v ' + (M.p.length === 1 ? rc(A.m, M.p[0]) : rcAll(A.m)) + '">' + (A.m == null ? "–" : A.m.toFixed(2)) + "</span>" + stars(A.m) + "</div>" +
+        '<div class="s">' + A.r.length + " rated orders</div>" +
+        '<div class="pl pl3">' + PLAT.map(function (p) { var u = rs(xs.filter(function (c) { return c._p === p; })); if (!u.r.length) return "";
+          return '<span class="pf ' + p + '">' + p + "</span><span>" + PF[p] + '</span><span class="a ' + rc(u.m, p) + '">' + u.m.toFixed(2) + '</span><span class="b">target ' + rtgt(p) + "</span>"; }).join("") + "</div>") +
+      card("Ratings", A.low.length ? "o" : "g", 0,
+        '<div class="s">' + A.r.length + " rated · " + A.low.length + " low (1–3★) · " + (A.r.length ? Math.round(A.low.length * 100 / A.r.length) : 0) + "%</div>" +
+        bars([5, 4, 3, 2, 1].map(function (k) { return [k + "★", A.r.filter(function (v) { return v.rating == k; }).length, k >= 4 ? "g" : k === 3 ? "o" : "r"]; }), A.r.length) +
+        '<div class="pl pl3">' + PLAT.map(function (p) { var u = rs(xs.filter(function (c) { return c._p === p; })); if (!u.r.length) return "";
+          return '<span class="pf ' + p + '">' + p + "</span><span>" + PF[p] + '</span><span class="a">' + u.low.length + '</span><span class="b">low of ' + u.r.length + "</span>"; }).join("") + "</div>", A.low.length ? "o" : "g") +
+      card("Complaints", A.c.length ? "r" : "g", 1,
+        '<div class="rbig"><span class="v">' + A.c.length + '</span><span class="unit">refund ₹' + Math.round(refund) + "</span></div>" +
+        bars([["Missing item", 0], ["Wrong item", 1], ["Quality / taste", 2], ["Packaging", 3], ["Other", 4]].map(function (t) { return [t[0], A.c.filter(function (v) { return ctype(v) === t[1]; }).length, "r"]; }), A.c.length) +
+        '<div class="pl pl3">' + PLAT.map(function (p) { var u = rs(xs.filter(function (c) { return c._p === p; })); if (!u.c.length) return "";
+          return '<span class="pf ' + p + '">' + p + "</span><span>" + PF[p] + '</span><span class="a">' + u.c.length + '</span><span class="b">₹' + Math.round(u.c.reduce(function (a, v) { return a + (+v.refund || 0); }, 0)) + "</span>"; }).join("") + "</div>", A.c.length ? "r" : "g") +
       blk("KPT on unhappy orders · avg", kc(uk), f1(uk), "min", "low rated + complaints", "All orders avg", f1(allK) + " min",
         plRows(xs, byP, function (t) { var u = rs(t), k = avg(u.low.concat(u.c).map(kptOf).filter(function (v) { return v != null; })); return [kc(k), f1(k), null]; })) +
       "</div></div>";
