@@ -31,6 +31,14 @@ UDP `:8789` are the same as before.
 Hub (PIN): Status, Petpooja & Firebase, Scanners & rider, Customers' page, This PC & updates.
 Data (PIN): Metrics, Prep Live, Indent planner, Connections.
 
+**Metrics (no PIN):** CX metrics (ratings and complaints for this outlet from the CX METRICS sheet,
+through the link in Data › Ratings sheet) and Ops metrics (KPT, rider wait, Food Ready accuracy,
+average and P80, by platform and slot, order by order with the kitchen load at that time), from this
+PC's own order records. Numbers are approximate (≈): rider arrival is learned from orders whose
+food waited for the rider; early-mark limits start at 5 min Swiggy / 3 min Zomato and are learned
+from scanned Food Ready orders after 30 days. Targets and colours: ⚙ (saved on the PC). The PC keeps
+120 days of orders, KOT days and Prep Live days.
+
 **Apps for phones and TVs:** `http://<this PC>:8790/apps`, in this order: Dosa TV app (the
 outlet's chosen KDS version for the Dosa TVs, `kds-dosa-live/tv-build`), Rider app (the KDS app that
 updates itself) and Scanner app, kept up to date from the Netlify site. The Dosa TV app and the

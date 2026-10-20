@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "3.5"
+	version     = "3.6"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -116,6 +116,7 @@ func runWorker() {
 	go tvApp.loop(150 * time.Second)
 	go scanQueueLoop()
 	go cxLoop()
+	go metricsLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "babai-hub "+version) })

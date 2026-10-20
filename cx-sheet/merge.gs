@@ -195,7 +195,7 @@ function getData() {
 // The dashboard's data: only the fields it shows, as rows under one list of column names (small and
 // quick to send). Kept ready in the script cache, refreshed with the Merged tab every 15 minutes.
 var DCOLS = ['id', 'sid', 'day', 'time', 'meal', 'outlet', 'platform', 'rating', 'feedback', 'complaint', 'item', 'items',
-  'text', 'value', 'status', 'refund', 'ctype', 'check', 'cause', 'kpt', 'wait', 'slot'];
+  'text', 'value', 'status', 'refund', 'ctype', 'check', 'cause', 'kpt', 'wait', 'slot', 'customer', 'photoUrl'];
 var CHUNK = 90000;
 
 function cachePayload_(list) {

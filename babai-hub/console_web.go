@@ -52,6 +52,10 @@ func consoleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/console/api/menu", localOnly(handleMenu))
 	mux.HandleFunc("/console/api/testprint", localOnly(handleTestPrint))
 	mux.HandleFunc("/console/api/apps", localOnly(handleAppsJSON))
+	mux.HandleFunc("/console/api/ops", localOnly(handleOps)) // Metrics area: open to the outlet team (no PIN)
+	mux.HandleFunc("/console/api/opsload", localOnly(handleOpsLoad))
+	mux.HandleFunc("/console/api/cx", localOnly(handleCX))
+	mux.HandleFunc("/console/api/metrics/targets", localOnly(handleMetricTargets))
 	// Hub and Data areas: PIN
 	mux.HandleFunc("/console/api/metrics", localOnly(pinnedAPI(handleMetrics)))
 	mux.HandleFunc("/console/api/window", localOnly(pinnedAPI(handleWindowSetting)))

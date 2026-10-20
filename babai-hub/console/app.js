@@ -35,12 +35,13 @@ function last(s, n) { s = String(s || ""); return s.length > n ? "…" + s.slice
 var AREAS = {
   bridge: { label: "Bridge Print", items: [["overview", "Overview"], ["dispatch", "Dispatch"], ["rules", "Printers & rules"], ["timing", "Print timing"], ["alerts", "Alerts"], ["apps", "Apps"]] },
   hub: { label: "Hub", items: [["status", "Status"], ["petpooja", "Petpooja & Firebase"], ["scanners", "Scanners & rider"], ["customers", "Customers' page"], ["pc", "This PC & updates"]] },
+  metrics: { label: "Metrics", items: [["cx", "CX metrics"], ["ops", "Ops metrics"]], open: true },
   data: { label: "Data", items: [["metrics", "Metrics"], ["prep", "Prep Live"], ["planner", "Indent planner"], ["cxsheet", "Ratings sheet"], ["sources", "Connections"]] }
 };
 var HUBFRAME = { status: "now,qr", petpooja: "pp,fb,raw", scanners: "scanners", customers: "qr,dishes", prep: "prep" };
 var S = null, offset = 0, area = LS.get("area", "bridge"), tab = null, loop = null, counts = {};
 if (!AREAS[area]) area = "bridge";
-tab = LS.get("tab." + area, AREAS[area].items[0][0]);
+tab = area === "metrics" ? "cx" : LS.get("tab." + area, AREAS[area].items[0][0]);
 (function fromHash() {
   var h = location.hash.replace("#", "");
   for (var a in AREAS) AREAS[a].items.forEach(function (it) { if (it[0] === h) { area = a; tab = h; } });
@@ -71,6 +72,7 @@ document.querySelector(".mtabs").addEventListener("click", function (e) {
   var b = e.target.closest(".mt"); if (!b) return;
   area = b.dataset.area; LS.set("area", area);
   tab = LS.get("tab." + area, AREAS[area].items[0][0]);
+  if (area === "metrics") { tab = "cx"; if (window.MetricsReset) MetricsReset(); } // Metrics always opens on CX, Today · All · All day
   if (!AREAS[area].items.some(function (it) { return it[0] === tab; })) tab = AREAS[area].items[0][0];
   render();
 });
@@ -93,7 +95,7 @@ function render() {
   if (loop) { clearInterval(loop); loop = null; }
   renderRail();
   $("lockBtn").hidden = !(S && S.unlocked);
-  if (area !== "bridge" && !(S && S.unlocked)) { pinView(); return; }
+  if (area !== "bridge" && !AREAS[area].open && !(S && S.unlocked)) { pinView(); return; }
   if (tab === "overview") { setFrame("http://127.0.0.1:8787/"); return; }
   if (HUBFRAME[tab]) { setFrame("/hub?show=" + HUBFRAME[tab]); return; }
   var v = VIEWS[tab];
