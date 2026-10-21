@@ -14,6 +14,10 @@ CX=$(printf '%s' "$CX" | tr -d '[:space:]')
 case "$CX" in https://script.google.com/macros/s/*/exec) ;; *) echo "ratings dashboard: set CX_URL or cx-sheet/web-app-url.txt to the sheet's web app link (…/exec)" >&2; exit 1;; esac
 sed "s#__CX_URL__#$CX#" "$HERE/cx-sheet/Dashboard.html" > "$OUT/cx/index.html"
 # Babai Console (installs as a service; updates itself from console/version.json)
+# never pack an exe older than the code (a failed build would ship the old exe under the new version)
+for f in "$HERE"/babai-hub/*.go "$HERE"/babai-hub/console/*; do
+  if [ "$f" -nt "$HERE/babai-hub/dist/babai-console.exe" ]; then echo "babai-console.exe is older than $f: run babai-hub/build.sh first" >&2; exit 1; fi
+done
 cp "$HERE/babai-hub/dist/babai-console.exe" "$OUT/console/"
 V=$(grep -o 'version     = "[0-9.]*"' "$HERE/babai-hub/main.go" | grep -o '[0-9.]*')
 SUM=$(sha256sum "$OUT/console/babai-console.exe" | cut -d' ' -f1)
