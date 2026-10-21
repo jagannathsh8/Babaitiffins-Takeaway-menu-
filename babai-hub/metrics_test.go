@@ -223,6 +223,9 @@ func TestTargetsSaveAndPrune(t *testing.T) {
 func TestMetricsOnTheWiFi(t *testing.T) {
 	defer metricsEnv(t)()
 	cfg = Config{Outlet: "Whitefield", Pin: "4321"}
+	pinMu.Lock()
+	pinWrong, pinBlocked = 0, time.Time{} // wrong PINs typed by other tests don't count here
+	pinMu.Unlock()
 	mux := http.NewServeMux()
 	consoleRoutes(mux)
 	metricsLANRoutes(mux)

@@ -277,6 +277,7 @@ func TestBridgePrintAPIUnchanged(t *testing.T) {
 	if w := req(http.MethodPost, "/api/jobs/"+j.ID+"/reprint", `{}`); w.Code != 200 {
 		t.Fatalf("reprint: %s", w.Body.String())
 	}
+	waitJob(t, j, "sent") // let the reprint finish writing before the test's folder is removed
 	// LAN: only the TV
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Host = "10.9.9.9:8787"
