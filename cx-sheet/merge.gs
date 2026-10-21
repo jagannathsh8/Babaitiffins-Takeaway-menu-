@@ -291,6 +291,20 @@ function date_(v) {
   return new Date(2000 + (+m[3]), mon, +m[1], h, +m[5]);
 }
 
+// A date cell, or a date written as text: 2026-10-21, 21/10/2026, 21-10-2026, 21-Oct-2026 (noon,
+// so no time zone moves it to another day), or the platforms' "13 Oct'26, 07:18 AM".
+function day_(v) {
+  if (v instanceof Date) return v;
+  var s = String(v || '').trim(), m;
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return new Date(+m[1], +m[2] - 1, +m[3], 12);
+  if ((m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/))) return new Date(+m[3], +m[2] - 1, +m[1], 12);
+  if ((m = s.match(/^(\d{1,2})[ -]([A-Za-z]{3})[a-z]*[\s,-]*(\d{4})/))) {
+    var mon = 'janfebmaraprmayjunjulaugsepoctnovdec'.indexOf(m[2].toLowerCase()) / 3;
+    if (mon >= 0) return new Date(+m[3], mon, +m[1], 12);
+  }
+  return date_(v);
+}
+
 function num_(re, s) {
   var m = String(s || '').replace(/,/g, '').match(re);
   return m ? +m[1] : null;
@@ -376,7 +390,7 @@ function orders_() {
       var id = id_(x[h.Order_ID]), p = String(x[h.Channel] || '').trim();
       if (!id || !p || x[h.Rating] === '' || x[h.Rating] == null) return;
       var o = get(p, id);
-      o.rdate = x[h.Date] instanceof Date ? x[h.Date] : null;
+      o.rdate = day_(x[h.Date]);
       o.outlet = o.outlet || String(x[h.Outlet] || '').split(' ')[0];
       o.rating = +x[h.Rating];
       o.feedback = String(x[h.Feedback] || '').trim();
@@ -449,7 +463,7 @@ function orders_() {
   var list = keys.filter(function (key) { return !byKey[key].gone; }).map(function (key) {
     var o = byKey[key], t = kt[o.cid || o.id] || {};
     var exact = o.ordered || t.punched || null; // order time: the platform's, else when the KOT was punched
-    var when = exact || o.rdate;
+    var when = o.rdate || exact; // a rating counts on its Date (as in the outlet sheets), a complaint on its order date
     var hour = exact ? +Utilities.formatDate(exact, TZ, 'H') : null;
     var said = o.text || o.feedback || '';
     var cu = customer_(o);
