@@ -282,27 +282,65 @@ function rows_(name) {
 }
 
 // "13 Oct'26, 07:18 AM" (Swiggy) or a real date (Zomato).
-function date_(v) {
-  if (v instanceof Date) return v;
-  var m = String(v || '').match(/(\d+) (\w{3})'(\d\d), (\d+):(\d+) (AM|PM)/);
-  if (!m) return null;
-  var mon = 'JanFebMarAprMayJunJulAugSepOctNovDec'.indexOf(m[2]) / 3;
-  var h = (+m[4]) % 12 + (m[6] === 'PM' ? 12 : 0);
-  return new Date(2000 + (+m[3]), mon, +m[1], h, +m[5]);
+// A moment in India time (Asia/Kolkata), whatever the script's own time zone is.
+function ist_(y, mo, d, h, mi) {
+  return Utilities.parseDate(y + '-' + mo + '-' + d + ' ' + (h || 0) + ':' + (mi || 0), TZ, 'yyyy-M-d H:m');
 }
 
-// A date cell, or a date written as text: 2026-10-21, 21/10/2026, 21-10-2026, 21-Oct-2026 (noon,
-// so no time zone moves it to another day), or the platforms' "13 Oct'26, 07:18 AM".
-function day_(v) {
+var MON_ = 'janfebmaraprmayjunjulaugsepoctnovdec';
+
+// An order time: a date cell, the platforms' "13 Oct'26, 07:18 AM", or text like
+// "2026-10-21 08:15", "2026-10-21T08:15:00", "21/10/2026 8:15 PM". null when it can't be read.
+function date_(v) {
   if (v instanceof Date) return v;
   var s = String(v || '').trim(), m;
-  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return new Date(+m[1], +m[2] - 1, +m[3], 12);
-  if ((m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/))) return new Date(+m[3], +m[2] - 1, +m[1], 12);
-  if ((m = s.match(/^(\d{1,2})[ -]([A-Za-z]{3})[a-z]*[\s,-]*(\d{4})/))) {
-    var mon = 'janfebmaraprmayjunjulaugsepoctnovdec'.indexOf(m[2].toLowerCase()) / 3;
-    if (mon >= 0) return new Date(+m[3], mon, +m[1], 12);
+  if (!s) return null;
+  var hm = function (h, mi, ap) { h = +h || 0; if (ap) h = h % 12 + (/p/i.test(ap) ? 12 : 0); return [h, +mi || 0]; };
+  if ((m = s.match(/^(\d{1,2}) (\w{3})'(\d\d), (\d+):(\d+) ?(AM|PM)/i))) {
+    var t = hm(m[4], m[5], m[6]);
+    return ist_(2000 + (+m[3]), MON_.indexOf(m[2].toLowerCase()) / 3 + 1, +m[1], t[0], t[1]);
   }
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?)?/i))) {
+    var t2 = m[4] != null ? hm(m[4], m[5], m[6]) : [12, 0];
+    return ist_(+m[1], +m[2], +m[3], t2[0], t2[1]);
+  }
+  if ((m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:,?\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?)?/i))) {
+    var t3 = m[4] != null ? hm(m[4], m[5], m[6]) : [12, 0];
+    return ist_(+m[3], +m[2], +m[1], t3[0], t3[1]);
+  }
+  if ((m = s.match(/^(\d{1,2})[ -]([A-Za-z]{3})[a-z]*[\s,-]*(\d{2,4})(?:,?\s+(\d{1,2}):(\d{2})\s*(AM|PM)?)?/))) {
+    var mon = MON_.indexOf(m[2].toLowerCase()) / 3;
+    if (mon < 0) return null;
+    var t4 = m[4] != null ? hm(m[4], m[5], m[6]) : [12, 0], yr = +m[3] < 100 ? 2000 + (+m[3]) : +m[3];
+    return ist_(yr, mon + 1, +m[1], t4[0], t4[1]);
+  }
+  return null;
+}
+
+// A day: the same forms as date_ (a date without a time is taken at noon, so no time zone moves it).
+function day_(v) {
   return date_(v);
+}
+
+// Platform names the same way in every tab: Swiggy, Zomato, Ownly…
+function plat_(p) {
+  p = String(p || '').trim();
+  if (/swiggy/i.test(p)) return 'Swiggy';
+  if (/zomato/i.test(p)) return 'Zomato';
+  if (/ownly/i.test(p)) return 'Ownly';
+  return p ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : '';
+}
+
+// Outlet code (VTR, SJP, JPN, HSR) from "VTR - Babai Tiffins", "Whitefield", "Sarjapur Road"…
+function outlet_(s) {
+  var n = String(s || '').trim().toUpperCase();
+  if (!n) return '';
+  if (OUTLET[n]) return OUTLET[n];
+  if (/WHITEFIELD|VARTHUR|^VTR\b/.test(n)) return 'VTR';
+  if (/SARJAPUR|^SJP\b/.test(n)) return 'SJP';
+  if (/JP ?NAGAR|AREKERE|^JPN\b/.test(n)) return 'JPN';
+  if (/HSR/.test(n)) return 'HSR';
+  return n.split(/[\s-]+/)[0];
 }
 
 function num_(re, s) {
@@ -387,12 +425,13 @@ function orders_() {
   if (r) {
     var h = head_(r);
     r.slice(1).forEach(function (x) {
-      var id = id_(x[h.Order_ID]), p = String(x[h.Channel] || '').trim();
-      if (!id || !p || x[h.Rating] === '' || x[h.Rating] == null) return;
+      var id = id_(x[h.Order_ID]), p = plat_(x[h.Channel]);
+      var rt = parseFloat(String(x[h.Rating] == null ? '' : x[h.Rating]).replace(',', '.'));
+      if (!id || !p || !(rt >= 1 && rt <= 5)) return; // no rating, or not a 1-5 number
       var o = get(p, id);
       o.rdate = day_(x[h.Date]);
-      o.outlet = o.outlet || String(x[h.Outlet] || '').split(' ')[0];
-      o.rating = +x[h.Rating];
+      o.outlet = o.outlet || outlet_(x[h.Outlet]);
+      o.rating = rt;
       o.feedback = String(x[h.Feedback] || '').trim();
     });
   }
@@ -401,15 +440,14 @@ function orders_() {
   if (c) {
     var hc = head_(c), links = links_(COMPLAINTS, hc.image_urls, c.length);
     c.slice(1).forEach(function (x, ci) {
-      var id = id_(x[hc.order_id]), p = String(x[hc.platform] || '').trim(), shortId = '';
+      var id = id_(x[hc.order_id]), p = plat_(x[hc.platform]), shortId = '';
       if (!id || !p) return;
       // Swiggy: order_id + complaint_id (4 digits) is the real order ID, the one on the Petpooja bill
       var cid = hc.complaint_id != null ? id_(x[hc.complaint_id]) : '';
       if (/^swiggy$/i.test(p) && /^\d{1,4}$/.test(cid) && id.length <= 12) { shortId = id; id = id + ('0000' + cid).slice(-4); }
-      var o = get(p.charAt(0).toUpperCase() + p.slice(1).toLowerCase(), id);
+      var o = get(p, id);
       if (shortId) o.shortId = shortId;
-      var name = String(x[hc.outlet_name] || '').trim().toUpperCase();
-      o.outlet = o.outlet || OUTLET[name] || name;
+      o.outlet = o.outlet || outlet_(x[hc.outlet_name]);
       o.ordered = date_(x[hc.order_date]);
       o.type = String(x[hc.issue_type] || 'OTHER').trim();
       o.items = items_(x[hc.order_items]);
