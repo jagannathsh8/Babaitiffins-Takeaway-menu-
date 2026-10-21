@@ -197,8 +197,10 @@ func startConsoleWindow(hash string) {
 			continue
 		}
 		_ = os.MkdirAll(windowProfile(), 0o755)
+		markCleanExit()
 		cmd := exec.Command(e, "--app="+u, "--user-data-dir="+windowProfile(), "--no-first-run",
-			"--no-default-browser-check", "--disable-features=Translate", "--window-size=1366,860")
+			"--no-default-browser-check", "--disable-features=Translate", "--window-size=1366,860",
+			"--hide-crash-restore-bubble", "--disable-session-crashed-bubble")
 		if cmd.Start() == nil {
 			go cmd.Wait()
 			agentMu.Lock()
@@ -211,6 +213,31 @@ func startConsoleWindow(hash string) {
 	agentFallback = true
 	agentMu.Unlock()
 	openBrowser(u)
+}
+
+// markCleanExit: when a Console window was closed by force (or Edge crashed), Edge would restore that
+// window next time next to the new one. Telling the profile it closed normally stops the restore.
+func markCleanExit() {
+	p := filepath.Join(windowProfile(), "Default", "Preferences")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return
+	}
+	var pref map[string]any
+	if json.Unmarshal(b, &pref) != nil {
+		return
+	}
+	prof, _ := pref["profile"].(map[string]any)
+	if prof == nil {
+		return
+	}
+	if prof["exit_type"] == "Normal" && prof["exited_cleanly"] == true {
+		return
+	}
+	prof["exit_type"], prof["exited_cleanly"] = "Normal", true
+	if out, err := json.Marshal(pref); err == nil {
+		_ = os.WriteFile(p, out, 0o600)
+	}
 }
 
 func closeConsoleWindows() {
