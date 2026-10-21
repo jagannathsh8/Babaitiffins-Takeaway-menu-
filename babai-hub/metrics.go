@@ -439,7 +439,13 @@ func handleOps(w http.ResponseWriter, r *http.Request) {
 	l := lrn
 	lrnMu.Unlock()
 	code := outletCodeCX(getConfig().Outlet)
-	writeJSON(w, map[string]any{"rows": rows, "targets": loadTargets(), "learn": l, "learnDays": learnDays, "pcKeepDays": pcKeepDays,
+	var lan []string // the same pages for other computers on the Wi-Fi
+	for _, a := range localIPv4s() {
+		if !strings.HasPrefix(a, "127.") {
+			lan = append(lan, fmt.Sprintf("http://%s:%d/metrics", a, consolePort()))
+		}
+	}
+	writeJSON(w, map[string]any{"lan": lan, "rows": rows, "targets": loadTargets(), "learn": l, "learnDays": learnDays, "pcKeepDays": pcKeepDays,
 		"outlet": code, "outletName": outletNames[code], "outletSet": getConfig().Outlet, "now": time.Now().UnixMilli()})
 }
 

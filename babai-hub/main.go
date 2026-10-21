@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "3.9"
+	version     = "4.0"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -123,6 +123,7 @@ func runWorker() {
 	mux.HandleFunc("/", handleRoot)
 	mux.HandleFunc("/hub", localOnly(pinned(handleHome)))
 	consoleRoutes(mux)
+	metricsLANRoutes(mux)
 	mux.HandleFunc("/status.json", localOnly(pinned(handleStatus)))
 	mux.HandleFunc("/settings", localOnly(pinned(handleSettings)))
 	mux.HandleFunc("/test", localOnly(pinned(handleTest)))

@@ -6,6 +6,8 @@
   var MEALS = [["B", "Breakfast", "7–12"], ["L", "Lunch", "12–4"], ["S", "Snacks", "4–7"], ["D", "Dinner", "7 pm on"]];
   var MEALNAME = { B: "Breakfast", L: "Lunch", S: "Snacks", D: "Dinner" };
   var AP = '<span class="ap">≈</span>';
+  // On the outlet PC the Console's own API; on another computer on the Wi-Fi (/metrics) a view-only copy.
+  var API = window.MX_API || "/console/api/", RO = !!window.MX_READONLY;
   var M = { day: "today", from: "", to: "", p: [], m: [], ops: null, cx: null, opsKey: "", T: null, L: null };
 
   // ---- small helpers ---------------------------------------------------------------------------
@@ -123,8 +125,9 @@
     var segP = '<button aria-pressed="' + !M.p.length + '" data-p="">All</button>' + PLAT.map(function (p) { return '<button aria-pressed="' + (M.p.indexOf(p) >= 0) + '" data-p="' + p + '">' + PF[p] + "</button>"; }).join("");
     var segM = '<button aria-pressed="' + !M.m.length + '" data-m="">All day</button>' + MEALS.map(function (m) { return '<button aria-pressed="' + (M.m.indexOf(m[0]) >= 0) + '" data-m="' + m[0] + '">' + m[1] + "</button>"; }).join("");
     var out = '<div class="bar"><span class="ol' + (o.outlet ? "" : " off") + '">● ' + (o.outlet ? esc((o.outletName || o.outlet) + " (" + o.outlet + ")") : "Outlet not set") + '</span><span class="mute">' +
-      (o.outlet ? "found from this PC's outlet setting" : "set the outlet name in Hub › Petpooja & Firebase") + "</span></div>" +
-      '<div class="flt"><button class="gear" id="mxGear" title="Targets and colours" aria-label="Targets and colours">⚙</button><div class="seg" id="mxD">' + segD + "</div>" +
+      (o.outlet ? (RO ? "from the outlet PC" : "found from this PC's outlet setting") : "set the outlet name in Hub › Petpooja & Firebase") + "</span>" +
+      (!RO && o.lan && o.lan.length ? '<span class="grow"></span><span class="mute" title="Other computers and phones on the shop Wi-Fi can open this (view only, with the PIN)">On the Wi-Fi: <b>' + esc(o.lan[0]) + "</b></span>" : "") + "</div>" +
+      '<div class="flt">' + (RO ? "" : '<button class="gear" id="mxGear" title="Targets and colours" aria-label="Targets and colours">⚙</button>') + '<div class="seg" id="mxD">' + segD + "</div>" +
       '<span class="rng" id="mxR"' + (M.day === "range" ? "" : " hidden") + '><input type="date" id="mxF" value="' + (M.from || r[0]) + '" aria-label="From"> to <input type="date" id="mxT" value="' + (M.to || r[1]) + '" aria-label="To"></span>' +
       '<div class="seg" id="mxP">' + segP + '</div><div class="seg" id="mxM">' + segM + "</div></div>";
     if (withLearn && M.L) {
@@ -150,16 +153,16 @@
       };
     }
     multi("mxP", "p", "data-p"); multi("mxM", "m", "data-m");
-    $("mxGear").onclick = openTargets;
+    if ($("mxGear")) $("mxGear").onclick = openTargets;
   }
 
   // ---- data ------------------------------------------------------------------------------------
   function fetchAll(redraw, quiet) {
     var r = range(), key = r.join("_");
-    var a = getJ("/console/api/ops?from=" + r[0] + "&to=" + r[1]).then(function (d) {
+    var a = getJ(API + "ops?from=" + r[0] + "&to=" + r[1]).then(function (d) {
       M.T = d.targets; M.L = d.learn; d.list = (d.rows || []).map(derive); M.ops = d; M.opsKey = key;
     });
-    var b = getJ("/console/api/cx" + (quiet ? "" : "")).then(function (d) {
+    var b = getJ(API + "cx" + (quiet ? "" : "")).then(function (d) {
       if (!d.ok) { M.cx = { err: d.msg, rows: [] }; return; }
       M.cx = { rows: (d.rows || []).map(function (row) { var o = {}; d.cols.forEach(function (c, i) { o[c] = row[i]; }); return o; }), updated: d.updated, stale: d.stale };
     }).catch(function () { M.cx = { err: "Can't reach the ratings sheet.", rows: [] }; });
@@ -251,7 +254,7 @@
         if (!box.hidden) { box.hidden = true; lb.textContent = "Kitchen load at that time ▸"; return; }
         box.hidden = false; lb.textContent = "Kitchen load at that time ▾";
         var o = lb._o; box.innerHTML = loadHtml(o, lb._L);
-        if (!lb._L) getJ("/console/api/opsload?kot=" + o.k + "&day=" + o.day).then(function (L) { lb._L = L; box.innerHTML = loadHtml(o, L); }).catch(function () { box.innerHTML = '<p class="mute">Kitchen load not available for this order.</p>'; });
+        if (!lb._L) getJ(API + "opsload?kot=" + o.k + "&day=" + o.day).then(function (L) { lb._L = L; box.innerHTML = loadHtml(o, L); }).catch(function () { box.innerHTML = '<p class="mute">Kitchen load not available for this order.</p>'; });
         return;
       }
       var cp = e.target.closest("[data-copy]"); if (cp) { tableCopy(cp.dataset.copy, cp.dataset.csv === "1"); return; }
@@ -264,7 +267,7 @@
       var d = document.createElement("tr"); d.className = "det";
       d.innerHTML = '<td colspan="' + tr.children.length + '">' + details(o, c, null) + "</td>"; tr.after(d); tr.classList.add("open"); M.openRow = tr.dataset.key;
       var btn = d.querySelector(".ldb"); if (btn) btn._o = o;
-      if (o) getJ("/console/api/opsload?kot=" + o.k + "&day=" + o.day).then(function (L) {
+      if (o) getJ(API + "opsload?kot=" + o.k + "&day=" + o.day).then(function (L) {
         if (!d.isConnected) return; var keep = d.querySelector(".ld"), open = keep && !keep.hidden;
         d.firstChild.innerHTML = details(o, c, L); var b2 = d.querySelector(".ldb"); b2._o = o; b2._L = L;
         if (open) { b2.nextElementSibling.hidden = false; b2.textContent = "Kitchen load at that time ▾"; b2.nextElementSibling.innerHTML = loadHtml(o, L); }
@@ -298,7 +301,7 @@
           '</td><td class="items">' + esc(o.items) + "</td><td>" + hm(o.pu) + '<span class="dt">' + dmon(o.pu) + "</span></td><td>" + hm(o.rd) + "</td><td>" + hm(o.pk) + '</td><td class="num">' + f1(o.kpt) + '</td><td class="num">' + f1(o.rwt) +
           "</td><td>" + frChip(o.fr) + '</td><td class="mute">' + esc(o.by || "—") + "</td></tr>";
       }).join("") + (xs.length ? "" : '<tr><td colspan="12" class="empty">No platform orders in this period.</td></tr>') + "</tbody></table></div></div>";
-    $("main").innerHTML = '<div class="mx" id="mxRoot">' + h + "</div>" + targetsDialog();
+    $("main").innerHTML = '<div class="mx" id="mxRoot">' + h + "</div>" + (RO ? "" : targetsDialog());
     bindHead(drawOps); bindTargets();
     bindRows("mxRoot", function (tr) { var k = +tr.dataset.key.slice(1), o = M.ops.list.filter(function (x) { return x.k === k; })[0]; return [o, cxFor(o)]; });
   }
@@ -358,7 +361,7 @@
           '</td><td class="num">' + (c.refund ? "₹" + Math.round(c.refund) : '<span class="mute">–</span>') + '</td><td class="items">' + esc(o ? o.items : c.items || "–") + '</td><td class="num">' + f1(o && o.kpt != null ? o.kpt : c.kpt) +
           '</td><td class="num">' + f1(o ? o.rwt : c.wait) + "</td><td>" + (o ? frChip(o.fr) : '<span class="mute">–</span>') + "</td></tr>";
       }).join("") + (unhappy.length ? "" : '<tr><td colspan="10" class="empty">No low ratings or complaints in this period.</td></tr>') + "</tbody></table></div></div>";
-    $("main").innerHTML = '<div class="mx" id="mxRoot">' + h + "</div>" + targetsDialog();
+    $("main").innerHTML = '<div class="mx" id="mxRoot">' + h + "</div>" + (RO ? "" : targetsDialog());
     bindHead(drawCx); bindTargets();
     bindRows("mxRoot", function (tr) { var c = unhappy[+tr.dataset.key.slice(1)]; return [opsFor(c), c]; });
   }
@@ -384,14 +387,15 @@
     var d = $("mxDlg"); d.querySelectorAll("input[data-k]").forEach(function (i) { i.value = M.T[i.dataset.k]; }); $("mxUL").checked = !!M.T.useLearned; $("mxTMsg").textContent = ""; d.showModal();
   }
   function bindTargets() {
+    if (RO) return;
     function save(t) {
-      post("/console/api/metrics/targets", t).then(function (r) {
+      post(API + "metrics/targets", t).then(function (r) {
         if (!r.ok) { $("mxTMsg").className = "msg bad"; $("mxTMsg").textContent = r.msg; return; }
         M.T = t; M.ops.list = M.ops.rows.map(derive); $("mxDlg").close(); VIEWS[tab] && VIEWS[tab].draw();
       });
     }
     $("mxTSave").onclick = function () { var t = Object.assign({}, M.T); $("mxDlg").querySelectorAll("input[data-k]").forEach(function (i) { var n = parseFloat(i.value); if (!isNaN(n)) t[i.dataset.k] = n; }); t.useLearned = $("mxUL").checked; save(t); };
-    $("mxTReset").onclick = function () { getJ("/console/api/metrics/targets").then(function (d) { save(d.defaults); }); };
+    $("mxTReset").onclick = function () { getJ(API + "metrics/targets").then(function (d) { save(d.defaults); }); };
   }
 
   // ---- views ------------------------------------------------------------------------------------

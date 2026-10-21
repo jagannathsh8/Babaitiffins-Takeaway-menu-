@@ -39,6 +39,10 @@ food waited for the rider; early-mark limits start at 5 min Swiggy / 3 min Zomat
 from scanned Food Ready orders after 30 days. Targets and colours: ⚙ (saved on the PC). The PC keeps
 120 days of orders, KOT days and Prep Live days.
 
+**Metrics on the shop Wi-Fi:** `http://<this PC>:8790/metrics` (the address is shown in Metrics on
+the PC) opens CX and Ops metrics on any computer or phone on the same network, view only, after the
+Console PIN (12 hours per browser). Targets and the rest of the Console stay on the PC.
+
 **Apps for phones and TVs:** `http://<this PC>:8790/apps`, in this order: Dosa TV app (the
 outlet's chosen KDS version for the Dosa TVs, `kds-dosa-live/tv-build`), Rider app (the KDS app that
 updates itself) and Scanner app, kept up to date from the Netlify site. The Dosa TV app and the

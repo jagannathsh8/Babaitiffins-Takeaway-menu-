@@ -219,3 +219,56 @@ func TestTargetsSaveAndPrune(t *testing.T) {
 		}
 	}
 }
+
+func TestMetricsOnTheWiFi(t *testing.T) {
+	defer metricsEnv(t)()
+	cfg = Config{Outlet: "Whitefield", Pin: "4321"}
+	mux := http.NewServeMux()
+	consoleRoutes(mux)
+	metricsLANRoutes(mux)
+	lan := func(method, path, body, cookie string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr = "192.168.0.50:51000"
+		r.Header.Set("X-Babai-Hub", "1")
+		if cookie != "" {
+			r.AddCookie(&http.Cookie{Name: pinCookie, Value: cookie})
+		}
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		return w
+	}
+	if w := lan("GET", "/metrics", "", ""); !strings.Contains(w.Body.String(), `fetch("/metrics/unlock"`) {
+		t.Fatal("locked: the PIN screen first")
+	}
+	if w := lan("GET", "/metrics/api/ops", "", ""); w.Code != 401 {
+		t.Fatalf("api without PIN: %d", w.Code)
+	}
+	if w := lan("POST", "/metrics/unlock", `{"Pin":"1111"}`, ""); !strings.Contains(w.Body.String(), `"ok":false`) {
+		t.Fatal("wrong PIN accepted")
+	}
+	w := lan("POST", "/metrics/unlock", `{"Pin":"4321"}`, "")
+	var tok string
+	for _, c := range w.Result().Cookies() {
+		if c.Name == pinCookie {
+			tok = c.Value
+		}
+	}
+	if tok == "" {
+		t.Fatal("no session after the right PIN")
+	}
+	if w := lan("GET", "/metrics", "", tok); !strings.Contains(w.Body.String(), "MX_READONLY = true") {
+		t.Fatal("unlocked: the view-only page")
+	}
+	if w := lan("GET", "/metrics/api/ops", "", tok); w.Code != 200 || !strings.Contains(w.Body.String(), `"outlet":"VTR"`) {
+		t.Fatalf("ops on the Wi-Fi: %d %s", w.Code, w.Body.String())
+	}
+	if w := lan("POST", "/metrics/api/ops", "{}", tok); w.Code != 405 {
+		t.Fatal("view only")
+	}
+	if w := lan("GET", "/console/api/ops", "", tok); w.Code != 403 {
+		t.Fatal("the Console's own API stays on the PC")
+	}
+	if w := lan("POST", "/console/api/metrics/targets", "{}", tok); w.Code != 403 {
+		t.Fatal("targets can't be changed from the Wi-Fi")
+	}
+}

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Babai Metrics</title>
+<link rel="stylesheet" href="/metrics/style.css">
+<style>.top .lan{margin-left:auto}</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><b>Babai</b> Metrics <span class="mute" id="where">view only · from the outlet PC</span></div>
+  <button class="btn ghost sm lan" id="lockBtn" title="Ask for the PIN again on this computer">Lock</button>
+</header>
+<nav class="rail" id="rail" aria-label="Sections">
+  <button class="tab" role="tab" data-tab="cx" aria-selected="true">CX metrics</button>
+  <button class="tab" role="tab" data-tab="ops" aria-selected="false">Ops metrics</button>
+</nav>
+<div class="app"><main class="main" id="main"></main></div>
+<script>
+"use strict";
+// The few helpers metrics.js uses from the Console window (app.js), for the Wi-Fi view.
+window.MX_API = "/metrics/api/"; window.MX_READONLY = true;
+var $ = function (id) { return document.getElementById(id); };
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function hm(ms) { if (!ms) return "–"; var d = new Date(ms); return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); }
+function getJ(u) {
+  return fetch(u, { cache: "no-store" }).then(function (r) {
+    if (r.status === 401) { location.reload(); throw new Error("locked"); } // the PIN screen again
+    return r.json();
+  });
+}
+function post(u, b) {
+  return fetch(u, { method: "POST", headers: { "Content-Type": "application/json", "X-Babai-Hub": "1" }, body: JSON.stringify(b || {}) }).then(function (r) { return r.json(); });
+}
+var VIEWS = {}, tab = "cx", loop = null;
+function render() {
+  if (loop) { clearInterval(loop); loop = null; }
+  document.querySelectorAll("#rail .tab").forEach(function (b) { b.setAttribute("aria-selected", String(b.dataset.tab === tab)); });
+  var v = VIEWS[tab];
+  $("main").innerHTML = v.html();
+  v.init(); v.load(); loop = setInterval(function () { v.load(); }, v.every);
+}
+$("rail").addEventListener("click", function (e) { var b = e.target.closest(".tab"); if (!b || b.dataset.tab === tab) return; tab = b.dataset.tab; render(); });
+$("lockBtn").onclick = function () { post("/metrics/lock").then(function () { location.reload(); }); };
+</script>
+<script src="/metrics/metrics.js"></script>
+<script>render();</script>
+</body>
+</html>
