@@ -58,7 +58,6 @@ type Row struct {
 	OnlineName  looseStr        `json:"online_order_user_name"`
 	Addons      json.RawMessage `json:"addons"`        // [{group_name, name, quantity, status}]
 	ItemNote    looseStr        `json:"special_notes"` // a note on this item
-	ItemDesc    looseStr        `json:"i_desc"`        // the item's instruction, shown by the KDS too
 	OrderNote   looseStr        `json:"description"`   // the customer's note on the order ("Send cutlery")
 }
 
@@ -476,8 +475,8 @@ func groupRows(rows []Row) []Kot {
 			k.Note = cleanNote(string(r.OrderNote))
 		}
 		nt := cleanNote(string(r.ItemNote))
-		if d := cleanNote(string(r.ItemDesc)); d != "" && !strings.EqualFold(d, nt) && !strings.EqualFold(d, name) {
-			nt = strings.TrimPrefix(nt+" · "+d, " · ")
+		if reMenuText.MatchString(nt) || strings.EqualFold(nt, name) {
+			nt = "" // the menu's description of the dish, not a note
 		}
 		k.Items = append(k.Items, KItem{N: name, C: strings.TrimSpace(string(r.Category)), Q: q, S: s, ID: iid, A: parseAddons(r.Addons), Nt: nt})
 	}
@@ -609,6 +608,9 @@ func parseAddons(raw json.RawMessage) []KAddon {
 	}
 	return out
 }
+
+// reMenuText: the menu's own description of a dish ("Serves 1 | Deep-fried ..."), never a note.
+var reMenuText = regexp.MustCompile(`(?i)^serves\s*\d|\|`)
 
 var rePhoneLike = regexp.MustCompile(`\+?\d[\d -]{6,}\d`)
 

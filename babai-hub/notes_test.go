@@ -12,9 +12,9 @@ func TestAddonsAndNotes(t *testing.T) {
 	  "addons":[{"group_name":"Extras & Sides","name":"Breakfast Sambar (100ml)","quantity":2,"status":1},{"group_name":"Extras & Sides","name":"Chutney","quantity":1,"status":-9}],
 	  "special_notes":"","description":"Send cutlery"},
 	 {"id":699,"kot_unique_id":23,"order_type":1,"kot_status":"1","created":"2026-11-03 12:51:00","p_o_id":"8796250481","o_u_id":"5409","name":"Veg Hyderabadi Dum Biryani","quantity":1,"status":1,"item_id":12,
-	  "addons":null,"special_notes":"less spicy","i_desc":"","description":"Send cutlery"},
+	  "addons":null,"special_notes":"less spicy","i_desc":"Serves 1 | Rice cooked in the traditional Andhra style","description":"Send cutlery"},
 	 {"id":700,"kot_unique_id":24,"order_type":1,"kot_status":"1","created":"2026-11-03 12:52:00","p_o_id":"252475675152540","o_u_id":"6736","name":"Ghee Dosa","quantity":1,"status":1,"item_id":13,
-	  "addons":"[{\"group_name\":\"Toppings\",\"name\":\"Extra Ghee\",\"quantity\":\"1\"}]","special_notes":"null","description":"Call me on 98765 43210 at the gate"},
+	  "addons":"[{\"group_name\":\"Toppings\",\"name\":\"Extra Ghee\",\"quantity\":\"1\"}]","special_notes":"Serves 1 | Deep-fried, crispy cauliflower florets","i_desc":"Serves 1 | Deep-fried","description":"Call me on 98765 43210 at the gate"},
 	 {"id":701,"kot_unique_id":25,"order_type":3,"kot_status":"1","created":"2026-11-03 12:53:00","name":"Idli","quantity":2,"status":1,"item_id":14,"addons":"","description":""}
 	]`
 	var rows []Row
