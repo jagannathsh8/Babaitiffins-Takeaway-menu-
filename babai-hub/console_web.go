@@ -56,6 +56,9 @@ func consoleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/console/api/opsload", localOnly(handleOpsLoad))
 	mux.HandleFunc("/console/api/cx", localOnly(handleCX))
 	mux.HandleFunc("/console/api/metrics/targets", localOnly(handleMetricTargets))
+	mux.HandleFunc("/console/api/scan", localOnly(handlePCScan))         // barcode scanner on this PC, keyboard mode
+	mux.HandleFunc("/console/api/scanfeed", localOnly(handlePCScanFeed)) // its COM-mode scans, for the toast
+	mux.HandleFunc("/console/api/comscan", localOnly(handleComScan))
 	// Hub and Data areas: PIN
 	mux.HandleFunc("/console/api/metrics", localOnly(pinnedAPI(handleMetrics)))
 	mux.HandleFunc("/console/api/window", localOnly(pinnedAPI(handleWindowSetting)))

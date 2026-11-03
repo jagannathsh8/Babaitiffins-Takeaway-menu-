@@ -108,6 +108,8 @@ func resetPrintState() {
 	mkMu.Unlock()
 	ordMu.Lock()
 	orders, ordLoaded, readyByMap = map[int64]*OrderRec{}, false, map[int64]string{}
+	skewSamples = nil // clock difference learned in earlier tests
+	skewNow.Store(0)
 	ordMu.Unlock()
 	alertMu.Lock()
 	alerts = nil

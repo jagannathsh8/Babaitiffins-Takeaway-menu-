@@ -190,7 +190,9 @@ var (
 	reCandidate     = regexp.MustCompile(`(?i)order\s*(?:type|from|source)|(?:delivery|service)\s*type`)
 	reSkipBrandLine = regexp.MustCompile(`(?i)barcode|delivery partner`)
 	reExplicit      = regexp.MustCompile(`(?i)(?:order\s*(?:type|from|source)|(?:delivery|service)\s*type)\s*[:#-]\s*([A-Z][A-Z0-9 .&-]{1,30})`)
-	reIgnoredLabel  = regexp.MustCompile(`(?i)^(?:kot|otp|order(?:\s*(?:id|no\.?|number))?|table(?:\s*(?:id|no\.?|number))?|bill(?:\s*(?:id|no\.?|number))?|token|customer|phone|mobile|payment|total|gst|invoice|cashier|date|time|(?:delivery\s+)?passcode)$`)
+	reIgnoredLabel  = regexp.MustCompile(`(?i)^(?:kot|otp|order(?:\s*(?:id|no\.?|number))?|table(?:\s*(?:id|no\.?|number))?|bill(?:\s*(?:id|no\.?|number))?|token|customer|phone|mobile|payment|total|gst|invoice|cashier|date|time|(?:delivery\s+)?passcode|payment\s*status|(?:prepare|ready|deliver|delivery|pick\s*up)\s*by|(?:delivery|pick\s*up)\s*time)$`)
+	reLabelOnly     = regexp.MustCompile(`(?i)^\s*([A-Z][A-Z0-9 .&-]{1,23}?)\s*[:#-]\s*$`)
+	reDateValue     = regexp.MustCompile(`^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}$`)
 	reSourceID      = regexp.MustCompile(`(?i)^\s*([A-Z][A-Z0-9 .&-]{1,23})\s*[:#-]\s*([A-Z0-9][A-Z0-9-]{1,39})\s*$`)
 	reOcrIDLine     = regexp.MustCompile(`(?i)^\s*([A-Z][A-Z0-9 .&-]{1,23}?)\s*[:#;-]\s*([0-9OoIl|][0-9OoIl| -]{4,48}[0-9OoIl|])\s*$`)
 	reOcrish        = regexp.MustCompile(`^[0-9OoIl|]{10,}$`)
@@ -207,7 +209,7 @@ var (
 	}{
 		{regexp.MustCompile(`(?i)\bzomato\b`), "Zomato"}, {regexp.MustCompile(`(?i)\bswiggy\b`), "Swiggy"},
 		{regexp.MustCompile(`(?i)\bownly\b`), "Ownly"}, {regexp.MustCompile(`(?i)\bmagicpin\b`), "Magicpin"},
-		{regexp.MustCompile(`(?i)\bondc\b`), "ONDC"}, {regexp.MustCompile(`(?i)\bself[ -]*service\b`), "Self service"},
+		{regexp.MustCompile(`(?i)\bondc\b`), "ONDC"}, {regexp.MustCompile(`(?i)\beat\s*[il1|]n\s*by\s*minutes\b`), "EatIn By Minutes"}, {regexp.MustCompile(`(?i)\bself[ -]*service\b`), "Self service"},
 		{regexp.MustCompile(`(?i)\bpick[ -]*up\b|\btake[ -]*away\b|\bparcel\b`), "Pick up"},
 		{regexp.MustCompile(`(?i)\bdine[ -]*in\b`), "Dine in"},
 	}
@@ -303,10 +305,23 @@ func parseReceiptText(text string) ReceiptMeta {
 			}
 		}
 	}
+	// "EatIn By Minutes :" with the order number on the next line
+	for i := 0; orderID == "" && i+1 < len(head); i++ {
+		m := reLabelOnly.FindStringSubmatch(head[i])
+		if m == nil || reIgnoredLabel.MatchString(strings.TrimSpace(m[1])) || !reOcrLine.MatchString(head[i+1]) {
+			continue
+		}
+		if d := ocrDigits(head[i+1]); reDigits6to24.MatchString(d) {
+			orderID = d
+			if brand == "" {
+				brand = reSpaces.ReplaceAllString(strings.TrimSpace(m[1]), " ")
+			}
+		}
+	}
 	if orderID == "" {
 		for _, line := range head {
 			m := reSourceID.FindStringSubmatch(line)
-			if m != nil && reHasDigit.MatchString(m[2]) && !reIgnoredLabel.MatchString(strings.TrimSpace(m[1])) {
+			if m != nil && reHasDigit.MatchString(m[2]) && !reDateValue.MatchString(m[2]) && !reIgnoredLabel.MatchString(strings.TrimSpace(m[1])) {
 				orderID = m[2]
 				if brand == "" {
 					brand = reSpaces.ReplaceAllString(strings.TrimSpace(m[1]), " ")
@@ -319,7 +334,7 @@ func parseReceiptText(text string) ReceiptMeta {
 	if orderID == "" {
 		for _, line := range head {
 			m := reOcrIDLine.FindStringSubmatch(line)
-			if m == nil || reIgnoredLabel.MatchString(strings.TrimSpace(m[1])) {
+			if m == nil || reDateValue.MatchString(strings.TrimSpace(m[2])) || reIgnoredLabel.MatchString(strings.TrimSpace(m[1])) {
 				continue
 			}
 			if d := ocrDigits(m[2]); reDigits6to24.MatchString(d) {

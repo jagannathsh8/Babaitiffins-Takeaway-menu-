@@ -252,3 +252,5 @@ td.wrap{white-space:normal;min-width:180px}
 .mx .hb .ht i.g{background:#19a463}.mx .hb .ht i.o{background:#f5a623}.mx .hb .ht i.r{background:#ef4b5f}
 .mx .hb .hn{font:600 13px var(--mono);text-align:right;min-width:22px}
 .mx .pl.pl3{margin-top:12px}
+
+.scantoast{position:fixed;left:50%;top:18px;transform:translate(-50%,-160%);transition:transform .2s;z-index:50;padding:14px 26px;border-radius:14px;color:#fff;font-size:22px;font-weight:800;box-shadow:0 10px 30px rgba(0,0,0,.25);max-width:92vw;text-align:center;pointer-events:none}.scantoast.show{transform:translate(-50%,0)}.scantoast.ok{background:var(--ok)}.scantoast.bad{background:var(--bad)}.scantoast.warn{background:#b7791f}

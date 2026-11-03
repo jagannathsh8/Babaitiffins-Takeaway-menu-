@@ -484,7 +484,7 @@ function loadPhones(){fetch("/phones").then(function(r){return r.json()}).then(f
  var b=p.bridge||{};$("bstate").textContent="Bridge Print: "+(b.addr?b.addr+" \u2022 ":"")+(b.state||"")+(b.auto&&b.note?" ("+b.note+")":"");
  $("pwifi").textContent=(p.wifi||[]).join(", ")||"no network found";$("pnet").textContent=p.internet;$("pkds").textContent=(p.wifi||[])[0]||"this PC's address";
  $("plist").innerHTML=(p.phones||[]).length?(p.phones||[]).map(function(x){return '<div class="ph"><b>'+esc(x.name)+'</b><span class="hint">'+(x.seen?"last used "+ago(Math.round((Date.now()-x.seen)/1000))+" via "+(x.route==="wifi"?"Wi-Fi":"internet"):"not used yet")+'</span><button type="button" class="ghost" data-k="'+esc(x.key)+'" data-op="qr">Show QR</button><button type="button" class="ghost" data-k="'+esc(x.key)+'" data-n="'+esc(x.name)+'" data-op="remove">Remove</button></div>'}).join(""):'<p class="hint">No phones yet.</p>';
- $("slog").innerHTML=(p.scans||[]).map(function(e){var d=new Date(e.t);return "<tr><td>"+d.toLocaleTimeString()+"</td><td>"+esc(e.d)+"</td><td>"+(e.r==="wifi"?"Wi-Fi":"internet")+"</td><td>"+(e.ok?"\u2713 ":"\u2715 ")+esc(e.m)+"</td></tr>"}).join("");
+ $("slog").innerHTML=(p.scans||[]).map(function(e){var d=new Date(e.t);return "<tr><td>"+d.toLocaleTimeString()+"</td><td>"+esc(e.d)+"</td><td>"+({wifi:"Wi-Fi",internet:"internet",pc:"PC (keyboard)",com:"PC (COM)"}[e.r]||esc(e.r))+"</td><td>"+(e.ok?"\u2713 ":"\u2715 ")+esc(e.m)+"</td></tr>"}).join("");
 })}
 var bLoaded=false;
 $("fbf").addEventListener("submit",function(e){e.preventDefault();$("bfout").textContent="Looking…";fetch("/bridge/find?q="+encodeURIComponent($("bfq").value)).then(function(r){return r.text()}).then(function(t){$("bfout").textContent=t})});

@@ -123,7 +123,7 @@ func bjson(w http.ResponseWriter, status int, v any) {
 var (
 	reJobAction = regexp.MustCompile(`^/api/jobs/([a-f0-9-]+)/(retry|reprint|ready|delete)$`)
 	bridgeFiles = map[string]string{"/": "index.html", "/app.js": "app.js", "/style.css": "style.css",
-		"/display": "display.html", "/display.js": "display.js", "/display.css": "display.css"}
+		"/display": "display.html", "/display.js": "display.js", "/display.css": "display.css", "/wedge.js": "wedge.js"}
 )
 
 func handleBridgeWeb(w http.ResponseWriter, r *http.Request) {
@@ -201,6 +201,9 @@ func handleBridgeWeb(w http.ResponseWriter, r *http.Request) {
 	}
 	if name, ok := bridgeFiles[p]; ok && r.Method == http.MethodGet {
 		b, err := bridgeUI.ReadFile("bridgeui/" + name)
+		if name == "wedge.js" { // the Console's scanner catcher, for this page inside the Console window
+			b, err = consoleFiles.ReadFile("console/wedge.js")
+		}
 		if err != nil {
 			bjson(w, 404, map[string]string{"error": "Not found."})
 			return

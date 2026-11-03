@@ -147,7 +147,10 @@ func markFromScan(id, code, device, route string) ScanResult {
 	d := digitsOnly(code)
 	var res ScanResult
 	if d == lastCode && now.Sub(lastCodeAt) < scanDupFor {
-		res = lastRes
+		res = lastRes // the same bill again right away: nothing sent again
+		if res.OK && res.N > 0 {
+			res.Already, res.N, res.Kots, res.Msg = true, 0, nil, "Already Food Ready"
+		}
 	} else {
 		res = markCode(code, now)
 		lastCode, lastCodeAt, lastRes = d, now, res
@@ -187,7 +190,7 @@ func markCode(code string, now time.Time) ScanResult {
 		return ScanResult{Msg: "No preparing order ending " + tail, Last4: tail}
 	}
 	first := matched[0]
-	res := ScanResult{Brand: brandOf(first), Order: first.POID, Last4: last4Of(first.POID), Slot: slotFor(first.POID)}
+	res := ScanResult{Brand: brandOf(first), Order: first.POID, Last4: last4Of(first.POID), Slot: slotForKot(first.ID, first.POID)}
 	base := serverBase(c.Server)
 	marked, already := 0, 0
 	var lastErr error

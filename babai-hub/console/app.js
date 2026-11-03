@@ -34,7 +34,7 @@ function last(s, n) { s = String(s || ""); return s.length > n ? "…" + s.slice
 
 var AREAS = {
   bridge: { label: "Bridge Print", items: [["overview", "Overview"], ["dispatch", "Dispatch"], ["rules", "Printers & rules"], ["timing", "Print timing"], ["alerts", "Alerts"], ["apps", "Apps"]] },
-  hub: { label: "Hub", items: [["status", "Status"], ["petpooja", "Petpooja & Firebase"], ["scanners", "Scanners & rider"], ["customers", "Customers' page"], ["pc", "This PC & updates"]] },
+  hub: { label: "Hub", items: [["status", "Status"], ["petpooja", "Petpooja & Firebase"], ["scanners", "Scanners & rider"], ["pcscan", "PC scanner"], ["customers", "Customers' page"], ["pc", "This PC & updates"]] },
   metrics: { label: "Metrics", items: [["cx", "CX metrics"], ["ops", "Ops metrics"]], open: true },
   data: { label: "Data", items: [["metrics", "Metrics"], ["prep", "Prep Live"], ["planner", "Indent planner"], ["cxsheet", "Ratings sheet"], ["sources", "Connections"]] }
 };
@@ -520,6 +520,83 @@ VIEWS.cxsheet = {
     getJ("/console/api/cxsheet").then(function (d) { var e = $("cxst"); if (!e) return; e.textContent = "Sheet: " + d.state; e.className = "msg " + (d.ok ? "ok" : ""); }).catch(function () {});
   },
   every: 15000
+};
+
+// ---- barcode scanner on this PC: any tab marks Food Ready ---------------------------------------
+var scanSeq = -1, scanTT = null;
+function scanSound(ok) {
+  try {
+    var c = new (window.AudioContext || window.webkitAudioContext)(), t = c.currentTime;
+    (ok ? [1320] : [330, 330]).forEach(function (f, i) {
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = "square"; o.frequency.value = f; g.gain.value = 0.12;
+      o.connect(g); g.connect(c.destination); o.start(t + i * 0.18); o.stop(t + i * 0.18 + 0.13);
+    });
+    setTimeout(function () { c.close(); }, 800);
+  } catch (e) {}
+}
+function scanToast(r) {
+  var good = r.ok && !r.already, el = $("scanToast");
+  var who = r.b ? r.b + " …" + r.l + (r.s ? " · Slot " + r.s : "") : "…" + String(r.c || "").slice(-4);
+  el.textContent = good ? "✓ FOOD READY · " + who : r.already ? "Already food ready · " + who : "✗ " + (r.m || "Not marked") + (r.b ? " · " + who : "");
+  el.className = "scantoast show " + (good ? "ok" : r.already ? "warn" : "bad");
+  scanSound(good);
+  clearTimeout(scanTT); scanTT = setTimeout(function () { el.className = "scantoast"; }, 4000);
+  if (tab === "pcscan" && VIEWS.pcscan.load) VIEWS.pcscan.load();
+}
+function pcScan(code) {
+  post("/console/api/scan", { C: code }).then(scanToast).catch(function () { scanToast({ m: "Console not answering", c: code }); });
+}
+BabaiWedge(document, pcScan);
+document.addEventListener("load", function (e) { // the pages shown inside the Console (same PC)
+  if (e.target && e.target.tagName === "IFRAME") try { BabaiWedge(e.target.contentDocument, pcScan); } catch (x) {}
+}, true);
+window.addEventListener("message", function (e) { // the Bridge Print overview (port 8787)
+  if (/^http:\/\/(127\.0\.0\.1|localhost):8787$/.test(e.origin) && e.data && typeof e.data.babaiScan === "string") pcScan(e.data.babaiScan);
+});
+function pollScanFeed() { // COM-mode scans, read by the Console in the background
+  getJ("/console/api/scanfeed?after=" + scanSeq).then(function (r) {
+    if (scanSeq >= 0) (r.items || []).forEach(scanToast);
+    scanSeq = r.seq;
+  }).catch(function () {});
+}
+pollScanFeed();
+setInterval(pollScanFeed, 1000);
+
+VIEWS.pcscan = {
+  html: function () {
+    return '<div class="panel"><div class="hd"><h2>Barcode scanner on this PC</h2><span class="sub">Scan a KOT or bill: the order is marked Food Ready in Petpooja</span></div>' +
+      '<p class="help"><b>Keyboard mode</b> (as most scanners come): works on every tab of this Console while its window is in front. With Petpooja in front, the scan types into Petpooja instead. Nothing to set up.</p>' +
+      '<p class="help"><b>COM mode</b>: works in the background whatever window is in front. Switch the scanner to “USB COM / virtual serial” with the setup barcode in its manual, plug it in, choose its port here.</p>' +
+      '<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><label for="comp" class="help">COM scanner</label><select id="comp"></select><button class="btn p" id="coms">Save</button><button class="btn" id="comr">Refresh ports</button></div>' +
+      '<p class="msg" id="comm"></p><p class="msg" id="comst"></p>' +
+      '<p class="help">Same rules as the scanner phones: any KOT or bill barcode of an open order; every KOT of the bill; scanning again says “already food ready”; each scan is in the scan log (Hub › Scanners &amp; rider).</p></div>';
+  },
+  init: function () {
+    $("coms").onclick = function () {
+      post("/console/api/comscan", { Port: $("comp").value }).then(function (r) { $("comm").textContent = r.msg; $("comm").className = "msg " + (r.ok ? "ok" : "bad"); setTimeout(VIEWS.pcscan.load, 1500); });
+    };
+    $("comr").onclick = function () { VIEWS.pcscan.ports = null; VIEWS.pcscan.load(); };
+  },
+  load: function () {
+    getJ("/console/api/comscan").then(function (d) {
+      var sel = $("comp"); if (!sel) return;
+      var st = d.state || {};
+      if (!VIEWS.pcscan.ports || document.activeElement !== sel) {
+        var ports = d.ports || [], has = false;
+        sel.innerHTML = '<option value="">Off (keyboard mode only)</option>' + ports.map(function (p) {
+          if (p.name === st.port) has = true;
+          return '<option value="' + esc(p.name) + '">' + esc(p.name) + (/usbser/i.test(p.dev) ? " · USB" : "") + "</option>";
+        }).join("") + (st.port && !has ? '<option value="' + esc(st.port) + '">' + esc(st.port) + " (not plugged in)</option>" : "");
+        sel.value = st.port || "";
+        VIEWS.pcscan.ports = ports;
+      }
+      var e = $("comst");
+      e.textContent = !st.port ? "COM scanner off." : st.open ? "Reading " + st.port + " · ready to scan" + (st.lastAt ? " · last scan " + hms(st.lastAt) + " (…" + String(st.lastCode).slice(-4) + ")" : "") : (st.err || "Opening " + st.port + "…");
+      e.className = "msg " + (!st.port ? "" : st.open ? "ok" : "bad");
+    }).catch(function () {});
+  },
+  every: 3000
 };
 
 loadState().then(render);

@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "4.0"
+	version     = "4.1"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -58,6 +58,7 @@ type Config struct {
 	HideSet      bool     `json:"hideSet,omitempty"`    // false = the default (Go Self Service)
 	CXURL        string   `json:"cxUrl,omitempty"`      // ratings sheet web app (Data > Ratings sheet)
 	CXKey        string   `json:"cxKey,omitempty"`      // its key
+	ScanCOM      string   `json:"scanCom,omitempty"`    // COM-mode barcode scanner on this PC ("" = off)
 }
 
 // Phone is one paired Babai Scanner phone. Key: its private pairing key (in the QR code).
@@ -117,6 +118,7 @@ func runWorker() {
 	go scanQueueLoop()
 	go cxLoop()
 	go metricsLoop()
+	go comScanLoop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "babai-hub "+version) })
