@@ -136,7 +136,11 @@ func riderOrders(kots []Kot) []riderOrder {
 			if q <= 0 {
 				q = 1
 			}
-			o.Items = append(o.Items, strconv.FormatFloat(q, 'f', -1, 64)+" × "+it.N)
+			line := strconv.FormatFloat(q, 'f', -1, 64) + " × " + it.N
+			for _, a := range it.A { // add-ons on the same line: "2 × Masala Dosa + 2 × Breakfast Sambar"
+				line += " + " + strconv.FormatFloat(a.Q, 'f', -1, 64) + " × " + a.N
+			}
+			o.Items = append(o.Items, line)
 		}
 		out = append(out, o)
 	}

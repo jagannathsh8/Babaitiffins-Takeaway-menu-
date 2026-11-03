@@ -24,6 +24,7 @@ type OrderRec struct {
 	Type       int      `json:"type"`
 	Table      string   `json:"table,omitempty"`
 	Items      []KItem  `json:"items,omitempty"`
+	Note       string   `json:"note,omitempty"`       // the customer's note ("Send cutlery")
 	Punched    int64    `json:"punched"`              // KOT created (Petpooja's clock)
 	Seen       int64    `json:"seen"`                 // first seen by this PC
 	Token      int      `json:"token,omitempty"`      // Bridge token
@@ -164,7 +165,7 @@ func recFor(k *Kot, now time.Time) *OrderRec {
 	}
 	o.KotNo, o.OrderID, o.Type, o.Table, o.Punched = k.Token, k.POID, k.OrderType, k.Table, k.Created
 	o.Brand, o.Channel = brandOf(*k), k.Channel
-	o.Items = k.Items
+	o.Items, o.Note = k.Items, k.Note
 	o.Brands = factsFromKot(k).Brands
 	return o
 }

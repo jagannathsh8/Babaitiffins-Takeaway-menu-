@@ -17,6 +17,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,23 +39,27 @@ const (
 
 // Row is one item line from get_kot_data_for_kitchen_view (fields the KDS app reads).
 type Row struct {
-	ID          looseNum `json:"id"`
-	KotUniqueID looseNum `json:"kot_unique_id"` // token number
-	TableNo     looseStr `json:"table_no"`
-	OrderType   looseNum `json:"order_type"` // 1 delivery, 2 pick-up, 3 dine-in
-	KotStatus   looseStr `json:"kot_status"` // "9" ready, "10" dispatched, "0" cancelled
-	Created     looseStr `json:"created"`
-	POID        looseStr `json:"p_o_id"`
-	OUID        looseStr `json:"o_u_id"`
-	Brand       looseStr `json:"tp_virtual_brand_name"`
-	Name        looseStr `json:"name"`
-	Category    looseStr `json:"category"`
-	Quantity    looseNum `json:"quantity"`
-	Status      looseNum `json:"status"` // item: 9 ready, 10 dispatched, -9 cancelled
-	KotItemID   looseNum `json:"kot_item_id"`
-	ItemID      looseNum `json:"item_id"` // menu item id: what the KDS sends to mark an item ready
-	OhStatus    looseStr `json:"oh_status"`
-	OnlineName  looseStr `json:"online_order_user_name"`
+	ID          looseNum        `json:"id"`
+	KotUniqueID looseNum        `json:"kot_unique_id"` // token number
+	TableNo     looseStr        `json:"table_no"`
+	OrderType   looseNum        `json:"order_type"` // 1 delivery, 2 pick-up, 3 dine-in
+	KotStatus   looseStr        `json:"kot_status"` // "9" ready, "10" dispatched, "0" cancelled
+	Created     looseStr        `json:"created"`
+	POID        looseStr        `json:"p_o_id"`
+	OUID        looseStr        `json:"o_u_id"`
+	Brand       looseStr        `json:"tp_virtual_brand_name"`
+	Name        looseStr        `json:"name"`
+	Category    looseStr        `json:"category"`
+	Quantity    looseNum        `json:"quantity"`
+	Status      looseNum        `json:"status"` // item: 9 ready, 10 dispatched, -9 cancelled
+	KotItemID   looseNum        `json:"kot_item_id"`
+	ItemID      looseNum        `json:"item_id"` // menu item id: what the KDS sends to mark an item ready
+	OhStatus    looseStr        `json:"oh_status"`
+	OnlineName  looseStr        `json:"online_order_user_name"`
+	Addons      json.RawMessage `json:"addons"`        // [{group_name, name, quantity, status}]
+	ItemNote    looseStr        `json:"special_notes"` // a note on this item
+	ItemDesc    looseStr        `json:"i_desc"`        // the item's instruction, shown by the KDS too
+	OrderNote   looseStr        `json:"description"`   // the customer's note on the order ("Send cutlery")
 }
 
 // looseStr / looseNum read a field whatever way Petpooja writes it (the KDS app's reader is just
@@ -114,15 +119,24 @@ type Kot struct {
 	Channel   string  `json:"ch,omitempty"`
 	Platform  string  `json:"pf,omitempty"` // Swiggy / Zomato / ... as the KDS names it (online orders)
 	Online    bool    `json:"on,omitempty"` // an online platform order (o_u_id set)
+	Note      string  `json:"nt,omitempty"` // the customer's note on the order
 	Items     []KItem `json:"i"`
 }
 
 type KItem struct {
-	N  string  `json:"n"`
-	C  string  `json:"c,omitempty"`
-	Q  float64 `json:"q"`
-	S  int     `json:"s"`
-	ID int64   `json:"-"` // item_id (marking Food Ready)
+	N  string   `json:"n"`
+	C  string   `json:"c,omitempty"`
+	Q  float64  `json:"q"`
+	S  int      `json:"s"`
+	A  []KAddon `json:"a,omitempty"`  // add-ons: Extras & Sides, toppings ...
+	Nt string   `json:"nt,omitempty"` // a note on this item
+	ID int64    `json:"-"`            // item_id (marking Food Ready)
+}
+
+type KAddon struct {
+	N string  `json:"n"`
+	G string  `json:"g,omitempty"` // its group ("Extras & Sides")
+	Q float64 `json:"q"`
 }
 
 type StockItem struct {
@@ -458,7 +472,14 @@ func groupRows(rows []Row) []Kot {
 		if r.ItemID.OK {
 			iid = r.ItemID.Int()
 		}
-		k.Items = append(k.Items, KItem{N: name, C: strings.TrimSpace(string(r.Category)), Q: q, S: s, ID: iid})
+		if k.Note == "" {
+			k.Note = cleanNote(string(r.OrderNote))
+		}
+		nt := cleanNote(string(r.ItemNote))
+		if d := cleanNote(string(r.ItemDesc)); d != "" && !strings.EqualFold(d, nt) && !strings.EqualFold(d, name) {
+			nt = strings.TrimPrefix(nt+" · "+d, " · ")
+		}
+		k.Items = append(k.Items, KItem{N: name, C: strings.TrimSpace(string(r.Category)), Q: q, S: s, ID: iid, A: parseAddons(r.Addons), Nt: nt})
 	}
 	out := make([]Kot, 0, len(order))
 	for _, id := range order {
@@ -550,4 +571,57 @@ func petpoojaStatus() map[string]any {
 	}
 	return map[string]any{"ppOkAgo": okAgo, "ppErr": ppErr, "ppErrAgo": errAgo, "ppRows": ppRows,
 		"ppKots": kots, "ppSample": ppSample, "ppStock": len(ppStock), "ppStockOff": off}
+}
+
+// parseAddons reads an item's add-ons, written as a list or as a JSON string holding one.
+func parseAddons(raw json.RawMessage) []KAddon {
+	b := []byte(strings.TrimSpace(string(raw)))
+	if len(b) > 0 && b[0] == '"' {
+		var inner string
+		if json.Unmarshal(b, &inner) != nil {
+			return nil
+		}
+		b = []byte(strings.TrimSpace(inner))
+	}
+	if len(b) == 0 || b[0] != '[' {
+		return nil
+	}
+	var list []struct {
+		Group  looseStr `json:"group_name"`
+		Name   looseStr `json:"name"`
+		Qty    looseNum `json:"quantity"`
+		Status looseNum `json:"status"`
+	}
+	if json.Unmarshal(b, &list) != nil {
+		return nil
+	}
+	var out []KAddon
+	for _, a := range list {
+		n := strings.TrimSpace(string(a.Name))
+		if n == "" || (a.Status.OK && a.Status.Int() == -9) || len(out) >= 20 {
+			continue
+		}
+		q := 1.0
+		if a.Qty.OK && a.Qty.V > 0 {
+			q = a.Qty.V
+		}
+		out = append(out, KAddon{N: n, G: strings.TrimSpace(string(a.Group)), Q: q})
+	}
+	return out
+}
+
+var rePhoneLike = regexp.MustCompile(`\+?\d[\d -]{6,}\d`)
+
+// cleanNote: a note as the kitchen should see it, without phone numbers.
+func cleanNote(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	switch strings.ToLower(s) {
+	case "", "-", "na", "n/a", "null", "none", "0":
+		return ""
+	}
+	s = rePhoneLike.ReplaceAllString(s, "•••")
+	if r := []rune(s); len(r) > 200 {
+		s = string(r[:200]) + "…"
+	}
+	return s
 }

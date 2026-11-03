@@ -233,7 +233,12 @@ function drawDispatch() {
     return '<article class="dc" style="--c:' + c + '"><div class="t1"><div><div class="tk">' + (otok(o) || '<span class="chip warn" title="No KOT print reached this PC for this order">not printed</span>') + '</div><div class="bd">' + esc(o.brand || typeName(o.type)) + " · " + (o.printOnly ? '<span class="chip warn" title="Petpooja can\'t be read right now: shown from the print">from print</span>' : typeName(o.type)) +
       '</div></div><span class="tm ' + tcls(now() - start) + '" data-t0="' + start + '">' + mmss(now() - start) + "</span></div>" +
       '<div class="ids"><span>Order <b title="' + esc(o.orderId) + '">' + esc(last(o.orderId, 8) || "–") + "</b></span><span>KOT <b>" + esc(o.kotNo || "–") + "</b> · punched <b>" + hm(o.punched || o.seen) + "</b></span></div>" +
-      "<ul>" + items.map(function (i) { return "<li><span>" + (i.q || 1) + "×</span>" + esc(i.n) + "</li>"; }).join("") + "</ul>" +
+      "<ul>" + items.map(function (i) {
+        return "<li><span>" + (i.q || 1) + "×</span>" + esc(i.n) +
+          (i.a || []).map(function (a) { return '<i class="ad">+ ' + (a.q || 1) + " × " + esc(a.n) + (a.g ? " · " + esc(a.g) : "") + "</i>"; }).join("") +
+          (i.nt ? '<i class="nt">Note: ' + esc(i.nt) + "</i>" : "") + "</li>";
+      }).join("") + "</ul>" +
+      (o.note ? '<div class="onote"><small>Customer note</small>' + esc(o.note) + "</div>" : "") +
       '<div class="ft"><button class="btn g" data-ready="' + esc(okey(o)) + '">Food ready</button></div></article>';
   }).join("");
 }
@@ -242,7 +247,9 @@ function allOrdersTable(list) {
   var st = { preparing: "warn", ready: "ok", dispatched: "", cancelled: "bad" };
   return '<div class="panel tw"><table><thead><tr><th>Token</th><th>Brand</th><th>Order ID</th><th>KOT</th><th>Type</th><th>Items</th><th>Punched</th><th>Printed</th><th>Food ready</th><th>Dispatched</th><th>Delivered</th><th>Status</th></tr></thead><tbody>' +
     list.map(function (o) {
-      var items = (o.items || []).filter(function (i) { return i.s !== -9; }).map(function (i) { return (i.q || 1) + "× " + i.n; }).join(", ");
+      var items = (o.items || []).filter(function (i) { return i.s !== -9; }).map(function (i) {
+        return (i.q || 1) + "× " + i.n + (i.a || []).map(function (a) { return " + " + (a.q || 1) + "× " + a.n; }).join("") + (i.nt ? " (" + i.nt + ")" : "");
+      }).join(", ") + (o.note ? " · Note: " + o.note : "");
       return "<tr><td>" + (otok(o) ? '<span class="tok">' + esc(otok(o)) + "</span>" : '<span class="chip warn">not printed</span>') + '</td><td><span class="dot" style="--c:' + brandColor(o.brand, o.type) + '"></span> ' + esc(o.brand || "–") +
         '</td><td class="num" title="' + esc(o.orderId) + '">' + esc(last(o.orderId, 10) || "–") + '</td><td class="num">' + esc(o.kotNo || "–") + "</td><td>" + (o.printOnly ? '<span class="chip warn">from print</span>' : typeName(o.type)) +
         '</td><td class="wrap">' + esc(items) + '</td><td class="num">' + hms(o.punched || o.seen) + '</td><td class="num">' + (o.printed ? hms(o.printed) + (o.printMs ? ' <span class="mute">' + o.printMs + " ms</span>" : "") : "–") +
