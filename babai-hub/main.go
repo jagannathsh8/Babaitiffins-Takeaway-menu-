@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "4.3"
+	version     = "4.4"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -119,6 +119,7 @@ func runWorker() {
 	go cxLoop()
 	go metricsLoop()
 	go comScanLoop()
+	go menuSeenSnapshot() // read the saved menu (or build it from the order history) before the first Petpooja read needs it
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "babai-hub "+version) })

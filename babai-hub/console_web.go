@@ -46,6 +46,7 @@ func consoleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/console/api/state", localOnly(handleConsoleState))
 	mux.HandleFunc("/console/api/dispatch", localOnly(handleDispatch))
 	mux.HandleFunc("/console/api/ready", localOnly(handleConsoleReady))
+	mux.HandleFunc("/console/api/find", localOnly(handleFindOrders)) // dispatch search: last digits, 3 days
 	mux.HandleFunc("/console/api/jobs", localOnly(handleJobsTiming))
 	mux.HandleFunc("/console/api/alerts", localOnly(handleAlerts))
 	mux.HandleFunc("/console/api/rules", localOnly(handleRules))
@@ -524,6 +525,11 @@ func handleMenu(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ppMu.Unlock()
+	for c, items := range menuSeenSnapshot() { // everything Petpooja has sent before, not only now
+		for _, n := range items {
+			add(c, n)
+		}
+	}
 	brands := map[string]bool{"Swiggy": true, "Zomato": true, "Ownly": true, "Toing By Swiggy": true, "Go Self Service": true, "Magicpin": true}
 	for _, o := range ordersSnapshot(time.Now().AddDate(0, 0, -2)) {
 		for _, b := range o.Brands {

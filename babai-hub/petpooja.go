@@ -228,17 +228,20 @@ func pollOnce(host string) error {
 	onBoard(kots, now)
 	trackRiderReady(kots, now)
 	noteKotsForPrint(kots, now)
+	var stock []StockItem
 	if stockDue {
 		if items, err := fetchStock(base, code); err == nil {
 			ppMu.Lock()
 			ppStock, ppStockAt = items, now
 			ppMu.Unlock()
+			stock = items
 		} else {
 			ppMu.Lock()
 			ppStockAt = now // try again later; orders matter more
 			ppMu.Unlock()
 		}
 	}
+	noteMenu(kots, stock, now) // the print-rule menu remembers every category and item
 	return nil
 }
 

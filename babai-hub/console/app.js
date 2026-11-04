@@ -189,7 +189,7 @@ VIEWS.dispatch = {
       };
     });
     $("dsort").onclick = function () { D.sort = D.sort === "old" ? "new" : "old"; LS.set("d.sort", D.sort); this.setAttribute("aria-pressed", String(D.sort === "old")); drawDispatch(); };
-    $("dq").oninput = function () { D.q = this.value; drawDispatch(); };
+    $("dq").oninput = function () { D.q = this.value; findSoon(); drawDispatch(); };
     $("dlist").addEventListener("click", function (e) {
       var b = e.target.closest("[data-ready]"); if (!b) return;
       var key = b.dataset.ready, card = b.closest(".dc");
@@ -200,9 +200,45 @@ VIEWS.dispatch = {
       });
     });
   },
-  load: function () { getJ("/console/api/dispatch").then(function (d) { D.data = d; drawDispatch(); }).catch(function () {}); },
+  load: function () {
+    getJ("/console/api/dispatch").then(function (d) { D.data = d; drawDispatch(); }).catch(function () {});
+    if (searching()) findNow();
+  },
   every: 2000
 };
+// Search: 3+ digits look through every order of the last 3 days, whatever the filters show.
+var findT = null;
+function searching() { return D.q.replace(/\D/g, "").length >= 3; }
+function findSoon() { clearTimeout(findT); D.found = null; if (searching()) findT = setTimeout(findNow, 250); }
+function findNow() {
+  var q = D.q.replace(/\D/g, "");
+  getJ("/console/api/find?q=" + encodeURIComponent(q)).then(function (r) {
+    if (r.q !== D.q.replace(/\D/g, "")) return; // typed on meanwhile
+    D.found = r; drawDispatch();
+  }).catch(function () {});
+}
+function detailCard(o, sk) {
+  var c = brandColor(o.brand, o.type), items = (o.items || []).filter(function (i) { return i.s !== -9; });
+  var st = { preparing: ["warn", "Preparing"], ready: ["ok", "Food ready"], dispatched: ["ok", "Picked up"], cancelled: ["bad", "Cancelled"] }[o.status] || ["", o.status];
+  var p = o.punched ? o.punched + sk : o.seen, d0 = new Date(p), today = new Date(now());
+  var day = d0.toDateString() === today.toDateString() ? "Today" : d0.toDateString() === new Date(now() - 864e5).toDateString() ? "Yesterday" : d0.toLocaleDateString();
+  function step(label, t) { return "<div>" + esc(label) + "<b>" + (t ? hm(t) : "–") + "</b></div>"; }
+  function mins(a, b) { return a && b && b > a ? Math.round((b - a) / 60000) + " min" : "–"; }
+  return '<article class="det" style="--c:' + c + '"><div class="l"><div class="tk">' + (otok(o) || '<span class="chip warn">not printed</span>') + '</div><div class="bd">' + esc(o.brand || typeName(o.type)) + " · " + typeName(o.type) + "</div>" +
+    '<div class="ids">' + idHtml(o) + "<span>KOT <b>" + esc(o.kotNo || "–") + "</b></span></div>" +
+    "<ul>" + items.map(function (i) {
+      return "<li>" + (i.q || 1) + "× " + esc(i.n) + (i.a || []).map(function (a) { return '<i class="ad">+ ' + (a.q || 1) + " × " + esc(a.n) + "</i>"; }).join("") + (i.nt ? '<i class="nt">Note: ' + esc(i.nt) + "</i>" : "") + "</li>";
+    }).join("") + "</ul>" + (o.note ? '<div class="onote"><b>Note</b>' + esc(o.note) + "</div>" : "") + "</div>" +
+    '<div class="r"><div class="rh"><b>' + esc(day) + '</b><span class="chip ' + st[0] + '">' + esc(st[1]) + "</span></div>" +
+    '<div class="tl">' + step("Punched", p) + step("Printed" + (otok(o) ? " · slot " + otok(o) : ""), o.printed) + step("Food ready", o.ready) + step("Picked up", o.dispatched) + step("Delivered", o.delivered) + "</div>" +
+    '<div class="kv"><span>Prep time <b>' + mins(p, o.ready) + "</b></span><span>Rider wait <b>" + mins(o.ready, o.dispatched) + "</b></span>" + (o.readyBy ? "<span>Ready by <b>" + esc(o.readyBy) + "</b></span>" : "") + (o.orderId ? "<span>Full ID <b>" + esc(o.orderId) + "</b></span>" : "") + "</div></div></article>";
+}
+// "Order …0453 [1673]": the last 4 digits, the ones riders say, in a neon box of the brand's colour
+function idHtml(o) {
+  var d = String(o.orderId || "").replace(/\D/g, "");
+  if (d.length < 5) return "<span>Order <b>" + esc(o.orderId || "–") + "</b></span>";
+  return '<span title="' + esc(o.orderId) + '">Order …' + esc(d.slice(-8, -4)) + '<b class="l4">' + esc(d.slice(-4)) + "</b></span>";
+}
 function okey(o) { return o.kot ? String(o.kot) : o.job; }
 function otok(o) { return o.token || o.slot || ""; }
 function dispatchList() {
@@ -217,6 +253,14 @@ function dispatchList() {
 }
 function drawDispatch() {
   var el = $("dlist"); if (!el || !D.data) return;
+  if (searching()) {
+    var f = D.found, n = f ? f.orders.length : 0;
+    $("dcount").textContent = f ? n + " found" : "searching…";
+    el.className = "dfound";
+    el.innerHTML = '<p class="hit">Searching every order of the last 3 days, whatever filter is selected · clear the box to go back</p>' +
+      (!f ? "" : n ? f.orders.map(function (o) { return detailCard(o, f.skew || 0); }).join("") : '<p class="empty">No order of the last 3 days ends with “' + esc(D.q.replace(/\D/g, "")) + "”, and no KOT or slot has that number.</p>");
+    return;
+  }
   var list = dispatchList();
   counts.dispatch = (D.data.orders || []).filter(function (o) { return o.status === "preparing" && !D.hidden[okey(o)]; }).length || "";
   renderRail();
@@ -232,13 +276,13 @@ function drawDispatch() {
     var c = brandColor(o.brand, o.type), start = t0(o), items = (o.items || []).filter(function (i) { return i.s !== -9; });
     return '<article class="dc" style="--c:' + c + '"><div class="t1"><div><div class="tk">' + (otok(o) || '<span class="chip warn" title="No KOT print reached this PC for this order">not printed</span>') + '</div><div class="bd">' + esc(o.brand || typeName(o.type)) + " · " + (o.printOnly ? '<span class="chip warn" title="Petpooja can\'t be read right now: shown from the print">from print</span>' : typeName(o.type)) +
       '</div></div><span class="tm ' + tcls(now() - start) + '" data-t0="' + start + '">' + mmss(now() - start) + "</span></div>" +
-      '<div class="ids"><span>Order <b title="' + esc(o.orderId) + '">' + esc(last(o.orderId, 8) || "–") + "</b></span><span>KOT <b>" + esc(o.kotNo || "–") + "</b> · punched <b>" + hm(o.punched || o.seen) + "</b></span></div>" +
+      '<div class="ids">' + idHtml(o) + "<span>KOT <b>" + esc(o.kotNo || "–") + "</b> · punched <b>" + hm(o.punched || o.seen) + "</b></span></div>" +
       "<ul>" + items.map(function (i) {
         return "<li><span>" + (i.q || 1) + "×</span>" + esc(i.n) +
-          (i.a || []).map(function (a) { return '<i class="ad">+ ' + (a.q || 1) + " × " + esc(a.n) + (a.g ? " · " + esc(a.g) : "") + "</i>"; }).join("") +
+          (i.a || []).map(function (a) { return '<i class="ad" title="' + esc(a.g || "") + '">+ ' + (a.q || 1) + " × " + esc(a.n) + "</i>"; }).join("") +
           (i.nt ? '<i class="nt">Note: ' + esc(i.nt) + "</i>" : "") + "</li>";
       }).join("") + "</ul>" +
-      (o.note ? '<div class="onote"><small>Customer note</small>' + esc(o.note) + "</div>" : "") +
+      (o.note ? '<div class="onote"><b>Note</b>' + esc(o.note) + "</div>" : "") +
       '<div class="ft"><button class="btn g" data-ready="' + esc(okey(o)) + '">Food ready</button></div></article>';
   }).join("");
 }
@@ -320,6 +364,16 @@ function drawPrinters() {
   });
 }
 function toggleIn(arr, v) { var i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); return i < 0; }
+// "Add your own": a category or dish Petpooja hasn't sent yet (a new item); picks the menu doesn't list show here too.
+function ownPicks(r, i) {
+  var cats = {}, items = {}, no = r.itemMode === "none" ? " no" : "";
+  (M.cats || []).forEach(function (c) { cats[c.name.toLowerCase()] = 1; c.items.forEach(function (it) { items[it.toLowerCase()] = 1; }); });
+  var own = r.cats.filter(function (c) { return !cats[c.toLowerCase()]; }).map(function (c) { return '<button class="box' + no + '" data-r="' + i + '" data-c="' + esc(c) + '" aria-pressed="true" title="Category">' + esc(c) + " (category)</button>"; })
+    .concat(r.items.filter(function (it) { return !items[it.toLowerCase()]; }).map(function (it) { return '<button class="box' + no + '" data-r="' + i + '" data-i="' + esc(it) + '" aria-pressed="true" title="Item">' + esc(it) + "</button>"; }));
+  return '<div class="own">' + (own.length ? '<span class="sel">Your own:</span>' + own.join("") : "") +
+    '<input type="text" data-r="' + i + '" data-own placeholder="Add your own: a category or item name, exactly as in Petpooja" aria-label="Add your own category or item">' +
+    '<button class="btn sm" data-r="' + i + '" data-addc>Add as category</button><button class="btn sm" data-r="' + i + '" data-addi>Add as item</button></div>';
+}
 function drawRules() {
   var el = $("rl");
   if (!R.rules.length) { el.innerHTML = '<p class="empty">No rules: every KOT prints on the main printer. Add a rule to send KOTs to other printers.</p>'; return; }
@@ -336,7 +390,7 @@ function drawRules() {
         return '<details class="cat"' + (n ? " open" : "") + '><summary><button class="box' + (r.itemMode === "none" ? " no" : "") + '" data-r="' + i + '" data-c="' + esc(c.name) + '" aria-pressed="' + on + '">' + esc(c.name) + "</button>" +
           '<span class="sel">' + c.items.length + " items" + (n ? " · " + n + " picked" : "") + '</span></summary><div class="items">' +
           c.items.map(function (it) { return '<button class="box' + (r.itemMode === "none" ? " no" : "") + '" data-r="' + i + '" data-i="' + esc(it) + '" aria-pressed="' + (on || r.items.indexOf(it) >= 0) + '"' + (on ? " disabled" : "") + ">" + esc(it) + "</button>"; }).join("") + "</div></details>";
-      }).join("") + ((M.cats || []).length ? "" : '<span class="sel">The menu appears here once Petpooja is connected.</span>') + "</div>";
+      }).join("") + ((M.cats || []).length ? "" : '<span class="sel">The menu appears here once Petpooja is connected.</span>') + ownPicks(r, i) + "</div>";
     }
     var what = r.action === "skip" ? "skip" : r.part === "items" ? "items" : "bill";
     return '<div class="rule' + (r.on ? "" : " off") + '"><div class="rrow"><button class="sw" role="switch" aria-label="Rule on" data-r="' + i + '" data-on aria-checked="' + !!r.on + '"></button>' +
@@ -361,6 +415,13 @@ document.addEventListener("click", function (e) {
   else if ("b" in b.dataset) { toggleIn(r.brands, b.dataset.b); drawRules(); }
   else if ("c" in b.dataset) { e.preventDefault(); toggleIn(r.cats, b.dataset.c); drawRules(); }
   else if ("i" in b.dataset) { toggleIn(r.items, b.dataset.i); drawRules(); }
+  else if ("addc" in b.dataset || "addi" in b.dataset) {
+    var inp = b.parentNode.querySelector("[data-own]"), v = inp ? inp.value.trim().replace(/\s+/g, " ") : "";
+    if (!v) { if (inp) inp.focus(); return; }
+    var arr = "addc" in b.dataset ? r.cats : r.items;
+    if (!arr.some(function (x) { return x.toLowerCase() === v.toLowerCase(); })) arr.push(v);
+    drawRules();
+  }
   else if ("on" in b.dataset) { r.on = !r.on; drawRules(); }
   else if ("del" in b.dataset) { if (confirm("Delete the rule “" + r.name + "”?")) { R.rules.splice(+b.dataset.r, 1); drawRules(); } }
   else if ("up" in b.dataset) { var i = +b.dataset.r; if (i > 0) { R.rules.splice(i - 1, 0, R.rules.splice(i, 1)[0]); drawRules(); } }
