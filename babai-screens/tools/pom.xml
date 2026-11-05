@@ -1,0 +1,9 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
+<!-- The build tools, all from Maven Central (no Android SDK): tools/get-tools.sh -->
+<groupId>babai</groupId><artifactId>screens-tools</artifactId><version>1</version>
+<dependencies>
+<dependency><groupId>org.apktool</groupId><artifactId>apktool-cli</artifactId><version>2.10.0</version>
+  <exclusions><exclusion><groupId>com.android.tools.smali</groupId><artifactId>*</artifactId></exclusion></exclusions></dependency>
+<dependency><groupId>com.android.tools.build</groupId><artifactId>apksig</artifactId><version>2.3.0</version></dependency>
+<dependency><groupId>com.jakewharton.android.repackaged</groupId><artifactId>dalvik-dx</artifactId><version>16.0.1</version></dependency>
+</dependencies></project>

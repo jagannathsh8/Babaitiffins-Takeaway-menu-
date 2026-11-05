@@ -453,6 +453,7 @@ func handleBarkerState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "GET only", http.StatusMethodNotAllowed)
 		return
 	}
+	noteScreen(r, "barker")
 	writeJSON(w, barkState(time.Now()))
 }
 

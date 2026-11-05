@@ -53,5 +53,14 @@ if [ -f "$SAPK" ]; then
   SSUM=$(sha256sum "$OUT/scanner/BabaiScanner.apk" | cut -d' ' -f1)
   printf '{"b":%s,"url":"BabaiScanner.apk","sha256":"%s"}\n' "$SB" "$SSUM" > "$OUT/scanner/version.json"
 fi
-printf 'User-agent: *\nDisallow: /indent/\nDisallow: /hub/\nDisallow: /kds/\nDisallow: /console/\nDisallow: /scanner/\nDisallow: /tv/\nDisallow: /cx/\n' > "$OUT/robots.txt"
-echo "site in $OUT (console $V, KDS build ${B:-none}, Dosa TV build ${TB:-none}, scanner ${SB:-none})"
+# Babai Screens app (versionCode in its build.sh); the Consoles keep a copy and the TVs update from it
+BAPK="$HERE/babai-screens/dist/BabaiScreens.apk"
+if [ -f "$BAPK" ]; then
+  mkdir -p "$OUT/bsapp"
+  BB=$(grep -o '^VERSION_CODE=[0-9]*' "$HERE/babai-screens/build.sh" | grep -o '[0-9]*$')
+  cp "$BAPK" "$OUT/bsapp/"
+  BSUM=$(sha256sum "$OUT/bsapp/BabaiScreens.apk" | cut -d' ' -f1)
+  printf '{"b":%s,"url":"BabaiScreens.apk","sha256":"%s"}\n' "$BB" "$BSUM" > "$OUT/bsapp/version.json"
+fi
+printf 'User-agent: *\nDisallow: /indent/\nDisallow: /hub/\nDisallow: /kds/\nDisallow: /console/\nDisallow: /scanner/\nDisallow: /tv/\nDisallow: /cx/\nDisallow: /bsapp/\n' > "$OUT/robots.txt"
+echo "site in $OUT (console $V, KDS build ${B:-none}, Dosa TV build ${TB:-none}, scanner ${SB:-none}, Babai Screens ${BB:-none})"

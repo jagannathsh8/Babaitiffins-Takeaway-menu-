@@ -194,7 +194,7 @@ body{background:var(--cream);color:var(--black);font:15px/1.4 var(--body);displa
   }
   function load() {
     if (busy) return;
-    fetch("/barker/api/state", { cache: "no-store" }).then(function (r) { return r.json(); }).then(apply).catch(function () {
+    fetch("/barker/api/state" + location.search, { cache: "no-store" }).then(function (r) { return r.json(); }).then(apply).catch(function () {
       if (++failed >= 3) { $("warn").hidden = false; $("warn").textContent = "Can’t reach the Console PC. Check the Wi-Fi; the screen keeps trying."; }
     });
   }
