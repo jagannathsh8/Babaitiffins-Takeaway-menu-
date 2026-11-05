@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dosa order status</title>
+<link rel="stylesheet" href="/screens/common.css">
+<style>
+.dbg{position:absolute;top:0;left:0;right:0;bottom:0}
+.dbg div{position:absolute;top:0;left:0;right:0;bottom:0;background-size:cover;background-position:center;opacity:0;transition:opacity 2s}
+.dbg div.on{opacity:1}
+.dbg::after{content:"";position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(90deg,rgba(18,18,18,.92) 0%,rgba(18,18,18,.78) 45%,rgba(18,18,18,.55) 100%)}
+.dsv{position:absolute;left:0;right:0;top:7rem;bottom:8.6rem;display:flex;gap:1.4rem;padding:1.2rem 1.6rem}
+.dsl,.dsr{background:rgba(23,23,23,.82);border:.15rem solid var(--line);border-radius:1rem;padding:1rem 1.2rem;display:flex;flex-direction:column;gap:.9rem;overflow:hidden}
+.dsl{flex:1.1}.dsr{flex:1}
+.spot{display:flex;flex-direction:column;align-items:center;gap:.2rem;border-radius:1rem;padding:1rem;background:radial-gradient(circle,rgba(63,209,122,.35),rgba(63,209,122,.08) 70%);border:.25rem solid var(--ok);box-shadow:0 0 2rem rgba(63,209,122,.6);position:relative;overflow:hidden}
+.spot::before{content:"";position:absolute;top:0;left:0;right:0;bottom:0;border-radius:1rem;padding:.2rem;background:conic-gradient(from var(--ang),#fff,transparent 25%,transparent 75%,#fff);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:spin 3s linear infinite;opacity:.7}
+.spot .lab{font:800 1rem var(--h2);letter-spacing:.2em;color:#b6f5cf}.spot b{font:800 9rem/1 var(--num);color:#fff;text-shadow:0 0 1.5rem rgba(63,209,122,.9)}.spot .sub{font:600 1.1rem var(--body);color:var(--cream)}
+.idle{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6rem;border-radius:1rem;padding:2.4rem 1rem;border:.2rem dashed var(--line);color:var(--muted);font:600 1.3rem var(--body);text-align:center}
+.rtoks{display:flex;gap:.8rem;flex-wrap:wrap}.rt{font:800 3rem/1 var(--num);padding:.5rem 1.2rem;border-radius:.7rem;border:.2rem solid var(--ok);background:rgba(63,209,122,.14);color:#fff}
+.plist{display:flex;flex-direction:column;gap:.55rem}
+.prw{display:flex;align-items:center;gap:.9rem;background:var(--tv3);border-radius:.7rem;padding:.55rem .8rem}
+.prw b{font:800 2.5rem/1 var(--num);width:6.5rem}.prw .mid{flex:1;display:flex;flex-direction:column;gap:.3rem}.prw .mid span{font:600 .95rem var(--body);color:var(--muted)}
+.bar2{height:.6rem;border-radius:.3rem;background:rgba(255,255,255,.12);overflow:hidden}.bar2 i{display:block;height:100%;background:var(--amber);transition:width 1s}
+.prw em{font-style:normal;font:800 1.5rem var(--num);color:var(--amber);width:7rem;text-align:right}
+.more{font:700 1.1rem var(--h2);color:var(--muted)}
+.dsf{position:absolute;left:0;right:0;bottom:0;height:8.6rem;display:flex;gap:1rem;padding:.9rem 1.6rem 1.2rem;background:linear-gradient(0deg,rgba(18,18,18,.96),rgba(18,18,18,.75))}
+.ft{flex:1;background:rgba(23,23,23,.9);border:.15rem solid rgba(249,188,33,.45);border-radius:.9rem;padding:.6rem 1rem;display:flex;flex-direction:column;justify-content:center;gap:.3rem}
+.ft span{font:800 .9rem var(--h2);letter-spacing:.14em;color:var(--yellow)}.ft b{font:800 2.4rem/1 var(--num)}.ft p{margin:0;font:600 1.15rem/1.35 var(--body)}
+.ft.wide{flex:2.2;background:var(--yellow);border-color:var(--yellow);color:var(--black)}.ft.wide span{color:var(--black)}
+.dots{display:flex;gap:.4rem}.dots i{width:1.4rem;height:1.4rem;border-radius:50%;border:.15rem solid var(--yellow)}.dots i.on{background:var(--yellow);box-shadow:0 0 .7rem var(--yellow)}
+.callpop{position:absolute;top:0;left:0;right:0;bottom:0;z-index:5;background:rgba(10,10,10,.93);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;text-align:center}
+.callpop span{font:800 2rem var(--h2);letter-spacing:.2em;color:var(--yellow)}
+.callpop b{font:800 16rem/1 var(--num);color:#fff;text-shadow:0 0 3rem rgba(249,188,33,.9)}
+.callpop b.many{font-size:9rem}
+.callpop em{font-style:normal;font:800 2.6rem var(--h1);letter-spacing:.06em;color:var(--ok)}
+.bar .spk{margin-left:1.2rem}
+</style>
+</head>
+<body>
+<div class="tv">
+  <div class="dbg" id="bg"></div>
+  <div class="bar"><img src="/screens/logo.webp" alt=""><div class="t">DOSA ORDER STATUS<small>DINE-IN DOSAS · TASTE THE ANDHRA STYLE</small></div>
+    <div class="cnt"><span class="r"><b id="nr">0</b> READY</span><span><b id="np">0</b> PREPARING</span></div>
+    <button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><div class="clock" id="clock"></div></div>
+  <div class="dsv">
+    <div class="dsl"><div class="sh ok">✓ READY · PLEASE COLLECT</div><div id="spot"></div><div class="rtoks" id="rtoks"></div></div>
+    <div class="dsr"><div class="sh pr">⏳ PREPARING · OLDEST FIRST</div><div class="plist" id="plist"></div></div>
+  </div>
+  <div class="dsf">
+    <div class="ft"><span>DOSA WAIT NOW</span><b id="wait">—</b></div>
+    <div class="ft"><span id="tawal">ON THE TAWA</span><div class="dots" id="dots"></div></div>
+    <div class="ft wide"><span>DID YOU KNOW?</span><p id="fact"></p></div>
+  </div>
+  <div class="callpop" id="pop" hidden><span>🔊 TOKEN NUMBER</span><b id="popn"></b><em>DOSA READY · KINDLY COLLECT</em></div>
+</div>
+<script src="/screens/common.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = function (i) { return document.getElementById(i); };
+  var FACTS = ["Pesarattu is Andhra’s green gram dosa, made from whole moong instead of rice batter.", "Karam dosa gets its heat from a red chilli paste spread inside before it is folded.", "Dosa batter is fermented, which makes it light, airy and slightly tangy."];
+  var facts = FACTS.slice(), fi = 0, first = true, known = {}, popT = null, ROUND = 8;
+  BS.clock($("clock"));
+  function plural(n, a, b) { return n + " " + (n === 1 ? a : b); }
+  function spoken(l) { l = String(l); return /^T\d/.test(l) ? "table " + l.slice(1) : l.replace(/^#/, ""); }
+
+  function draw(j) {
+    var T = j.tokens || {}, M = j.meta || {}, rd = [], pr = [];
+    Object.keys(T).forEach(function (k) { var t = T[k]; if (t.s === "r") rd.push(t); else if (t.s === "p") pr.push(t); });
+    rd.sort(function (a, b) { return (b.a || 0) - (a.a || 0); });
+    pr.sort(function (a, b) { return a.pos - b.pos; });
+    $("nr").textContent = rd.length; $("np").textContent = pr.length;
+    $("spot").innerHTML = rd.length ? '<div class="spot"><span class="lab">LATEST READY</span><b>' + BS.esc(rd[0].l) + '</b><span class="sub">' + plural(rd[0].d || 1, "dosa", "dosas") + " · collect at the counter</span></div>"
+      : '<div class="idle">Your token number will appear here when it’s ready</div>';
+    $("rtoks").innerHTML = rd.slice(1, 13).map(function (t, i) { return '<span class="rt" style="opacity:' + Math.max(0.35, 1 - i * 0.12).toFixed(2) + '">' + BS.esc(t.l) + "</span>"; }).join("");
+    var show = pr.slice(0, 8);
+    $("plist").innerHTML = show.map(function (t) {
+      var el = BS.since(t.c || BS.now(), true) / 60, m = t.m > 0 ? t.m : null, pc = m ? Math.min(95, Math.max(4, 100 * el / (el + m))) : 10;
+      return '<div class="prw"><b>' + BS.esc(t.l) + '</b><div class="mid"><span>' + plural(t.d || 1, "dosa", "dosas") + (t.o ? " · next round" : "") + '</span><div class="bar2"><i style="width:' + pc.toFixed(0) + '%"></i></div></div><em>' + (m ? "~" + m + " min" : el >= 1 ? Math.floor(el) + " min" : "just in") + "</em></div>";
+    }).join("") + (pr.length > show.length ? '<div class="more">+ ' + (pr.length - show.length) + " more preparing</div>" : "") + (pr.length ? "" : '<p class="empty">No dosas waiting right now.</p>');
+    $("wait").textContent = M.w || "—";
+    var on = Math.min(ROUND, M.n || 0), dots = "";
+    for (var i = 0; i < ROUND; i++) dots += '<i class="' + (i < on ? "on" : "") + '"></i>';
+    $("dots").innerHTML = dots; $("tawal").textContent = "ON THE TAWA · " + on + " OF " + ROUND;
+    if (M.f && M.f.length) facts = M.f.concat(FACTS);
+    if (!$("fact").textContent) $("fact").textContent = facts[0];
+    calls(rd);
+  }
+  setInterval(function () { fi = (fi + 1) % facts.length; $("fact").textContent = facts[fi]; }, 15000);
+
+  // ---- calls: tokens that turn ready within 3 s are called together, with the full-screen pop-up;
+  // called again once after a minute if still not collected.
+  var pending = [], gatherT = null;
+  function calls(rd) {
+    var now = Date.now(), live = {};
+    rd.forEach(function (t) {
+      live[t.l] = 1;
+      if (!known[t.l]) { known[t.l] = { at: now, n: first ? 2 : 0 }; if (!first) pending.push(t.l); }
+      else if (known[t.l].n === 1 && now - known[t.l].at >= 60000) { known[t.l].n = 2; pending.push(t.l); }
+    });
+    for (var k in known) if (!live[k]) delete known[k];
+    first = false;
+    if (pending.length && !gatherT) gatherT = setTimeout(function () {
+      gatherT = null; var call = pending.filter(function (l) { return known[l]; }); pending = [];
+      if (!call.length) return;
+      call.forEach(function (l) { known[l].n = Math.max(known[l].n, 1); known[l].at = known[l].n === 1 ? Date.now() : known[l].at; });
+      $("popn").textContent = call.join(" · "); $("popn").className = call.length > 2 ? "many" : "";
+      $("pop").hidden = false; clearTimeout(popT); popT = setTimeout(function () { $("pop").hidden = true; }, 7000);
+      BS.say("Token number " + call.map(spoken).join(", ") + ", dosa ready, kindly collect.", true);
+    }, 3000);
+  }
+  var spk = $("spk");
+  function spkUI() { var v = BS.voiceOn(); spk.textContent = v ? "🔊" : "🔇"; spk.setAttribute("aria-pressed", String(v)); }
+  spk.onclick = function () { BS.voiceOn(!BS.voiceOn()); spkUI(); };
+  spkUI();
+
+  // ---- photos behind the screen (the outlet's own, or the built-in dish photos)
+  BS.get("/screens/api/photos", function (err, j) {
+    var list = (j && j.photos && j.photos.length) ? j.photos : ["/screens/bg1.jpg", "/screens/bg2.jpg", "/screens/bg3.jpg"], i = 0;
+    $("bg").innerHTML = list.map(function (u) { return '<div style="background-image:url(\'' + u + '\')"></div>'; }).join("");
+    var ds = $("bg").children; if (ds[0]) ds[0].className = "on";
+    if (ds.length > 1) setInterval(function () { ds[i].className = ""; i = (i + 1) % ds.length; ds[i].className = "on"; }, 8000);
+  });
+
+  BS.poll("/screens/api/dosa", 1500, draw);
+})();
+</script>
+</body>
+</html>

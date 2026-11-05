@@ -33,32 +33,34 @@ import (
 )
 
 const (
-	version     = "4.5"
+	version     = "4.6"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
 
 // Config is saved in config.json in the data folder.
 type Config struct {
-	Server       string   `json:"server"` // Petpooja billing station IP (port 3000 by default)
-	Outlet       string   `json:"outlet"` // outlet name exactly as on the bill, e.g. "VTR", "Sarjapur"
-	Lat          float64  `json:"lat"`    // outlet location (customers' page picks the nearest outlet)
-	Lng          float64  `json:"lng"`
-	AutoClearMin int      `json:"autoClearMin"` // ready tokens leave after this many minutes (TV default 10)
-	Paused       bool     `json:"paused"`       // tray: Pause / Resume
-	DB           string   `json:"db"`           // https://xxx.firebasedatabase.app
-	Secret       string   `json:"secret"`       // Firebase database secret
-	Page         string   `json:"page"`         // customer page address
-	Port         int      `json:"port"`
-	Bridge       string   `json:"bridge,omitempty"`     // Bridge Print address (empty: found on the Petpooja PC)
-	Phones       []Phone  `json:"phones,omitempty"`     // paired Babai Scanner phones
-	Pin          string   `json:"pin,omitempty"`        // hub page PIN (empty = 1234)
-	AutoUpdate   *bool    `json:"autoUpdate,omitempty"` // nil = on
-	HideBrands   []string `json:"hideBrands,omitempty"` // brands kept off the rider screen
-	HideSet      bool     `json:"hideSet,omitempty"`    // false = the default (Go Self Service)
-	CXURL        string   `json:"cxUrl,omitempty"`      // ratings sheet web app (Data > Ratings sheet)
-	CXKey        string   `json:"cxKey,omitempty"`      // its key
-	ScanCOM      string   `json:"scanCom,omitempty"`    // COM-mode barcode scanner on this PC ("" = off)
+	Server       string            `json:"server"` // Petpooja billing station IP (port 3000 by default)
+	Outlet       string            `json:"outlet"` // outlet name exactly as on the bill, e.g. "VTR", "Sarjapur"
+	Lat          float64           `json:"lat"`    // outlet location (customers' page picks the nearest outlet)
+	Lng          float64           `json:"lng"`
+	AutoClearMin int               `json:"autoClearMin"` // ready tokens leave after this many minutes (TV default 10)
+	Paused       bool              `json:"paused"`       // tray: Pause / Resume
+	DB           string            `json:"db"`           // https://xxx.firebasedatabase.app
+	Secret       string            `json:"secret"`       // Firebase database secret
+	Page         string            `json:"page"`         // customer page address
+	Port         int               `json:"port"`
+	Bridge       string            `json:"bridge,omitempty"`     // Bridge Print address (empty: found on the Petpooja PC)
+	Phones       []Phone           `json:"phones,omitempty"`     // paired Babai Scanner phones
+	Pin          string            `json:"pin,omitempty"`        // hub page PIN (empty = 1234)
+	AutoUpdate   *bool             `json:"autoUpdate,omitempty"` // nil = on
+	HideBrands   []string          `json:"hideBrands,omitempty"` // brands kept off the rider screen
+	HideSet      bool              `json:"hideSet,omitempty"`    // false = the default (Go Self Service)
+	CXURL        string            `json:"cxUrl,omitempty"`      // ratings sheet web app (Data > Ratings sheet)
+	CXKey        string            `json:"cxKey,omitempty"`      // its key
+	ScanCOM      string            `json:"scanCom,omitempty"`    // COM-mode barcode scanner on this PC ("" = off)
+	ScreenKeys   map[string]string `json:"screenKeys,omitempty"` // Babai Screens paired with the PIN: key -> device
+	Voice        string            `json:"voice,omitempty"`      // Windows voice for the screens' calls ("" = default)
 }
 
 // Phone is one paired Babai Scanner phone. Key: its private pairing key (in the QR code).
@@ -115,6 +117,7 @@ func runWorker() {
 	go kdsMirrorLoop()
 	go scanner.loop(2 * time.Minute)
 	go tvApp.loop(150 * time.Second)
+	go screensApp.loop(170 * time.Second)
 	go scanQueueLoop()
 	go cxLoop()
 	go metricsLoop()
@@ -127,7 +130,8 @@ func runWorker() {
 	mux.HandleFunc("/hub", localOnly(pinned(handleHome)))
 	consoleRoutes(mux)
 	metricsLANRoutes(mux)
-	barkerRoutes(mux) // the dosa barker screen on the shop Wi-Fi
+	barkerRoutes(mux)  // the dosa barker screen on the shop Wi-Fi
+	screensRoutes(mux) // Babai Screens: rider, dosa, pick-up and kitchen screens
 	mux.HandleFunc("/status.json", localOnly(pinned(handleStatus)))
 	mux.HandleFunc("/settings", localOnly(pinned(handleSettings)))
 	mux.HandleFunc("/test", localOnly(pinned(handleTest)))

@@ -115,7 +115,7 @@ func TestTVAppMirror(t *testing.T) {
 	for _, a := range appsList() {
 		names = append(names, a.Name)
 	}
-	if len(names) != 3 || names[0] != "Dosa TV app" || names[1] != "Rider app" || names[2] != "Scanner app" {
+	if len(names) != 4 || names[0] != "Dosa TV app" || names[1] != "Rider app" || names[2] != "Babai Screens" || names[3] != "Scanner app" {
 		t.Fatal(names)
 	}
 }

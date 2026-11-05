@@ -38,6 +38,9 @@ var (
 	// The Dosa TV app: the outlet's chosen KDS version for the Dosa TVs (no self-update, so the
 	// tablets' KDS build never replaces it).
 	tvApp = &apkMirror{dir: "tv", label: "Dosa TV app", file: "Petpooja_KDS_Dosa_TV.apk", state: "not checked yet"}
+	// Babai Screens: our own app for every screen (rider, dosa, pick-up, kitchen, barker); it
+	// updates itself from here.
+	screensApp = &apkMirror{dir: "bsapp", label: "Babai Screens", file: "BabaiScreens.apk", state: "not checked yet"}
 )
 
 func (m *apkMirror) localDir() string { return filepath.Join(dataDir, m.dir) }
@@ -164,6 +167,12 @@ func (m *apkMirror) info() (kdsInfo, string, string) {
 
 func scannerStatus() string { return scanner.status() }
 
+// screensAppInfo: what the Babai Screens app asks before it updates itself.
+func screensAppInfo() map[string]any {
+	b, p, _ := screensApp.info()
+	return map[string]any{"b": b.B, "ready": b.B > 0 && p != "", "url": "/bsapp/app.apk"}
+}
+
 func apkDownload(u, sum, dir, name string) (string, int64, error) {
 	resp, err := updClient.Get(u)
 	if err != nil {
@@ -209,6 +218,7 @@ func appsList() []appInfo {
 	kdsMu.Unlock()
 	t, tp, ts := tvApp.info()
 	s, sp, ss := scanner.info()
+	b, bp, bs := screensApp.info()
 	size := func(n int64) string {
 		if n <= 0 {
 			return ""
@@ -222,6 +232,8 @@ func appsList() []appInfo {
 			Path: "/tv/app.apk", Build: t.B, Size: size(t.Size), Ready: t.B > 0 && tp != "", State: ts},
 		{Name: "Rider app", What: "For the rider screens and kitchen tablets: KDS, rider screen (Swiggy / Zomato / Ownly with slots), Dosa screens and Prep Live. Updates itself after this.",
 			Path: "/kds/app.apk", Build: k.B, Size: size(k.Size), Ready: k.B > 0 && kp != "", State: ks},
+		{Name: "Babai Screens", What: "Our own screen app (replaces the modified KDS app): rider TV, dosa order status, pick-up TV, kitchen screen and dosa barker. Pick the screen once; it updates itself.",
+			Path: "/bsapp/app.apk", Build: b.B, Size: size(b.Size), Ready: b.B > 0 && bp != "", State: bs},
 		{Name: "Scanner app", What: "Phones and Android boxes that scan KOT barcodes to mark Food Ready.",
 			Path: "/scanner/app.apk", Build: s.B, Size: size(s.Size), Ready: s.B > 0 && sp != "", State: ss},
 	}

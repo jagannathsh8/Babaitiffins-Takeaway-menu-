@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pick-up TV</title>
+<link rel="stylesheet" href="/screens/common.css">
+<style>
+.pkv{position:absolute;left:0;right:0;top:7rem;bottom:0;display:flex;gap:1.2rem;padding:1.2rem 1.6rem}
+.pkc{flex:1;background:var(--tv2);border-radius:1rem;padding:1rem;display:flex;flex-direction:column;gap:.9rem;overflow:hidden}
+.pkg{display:grid;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));gap:.9rem;align-content:start}
+.pk{background:var(--tv3);border-radius:.9rem;padding:.8rem 1rem;display:flex;flex-direction:column;gap:.4rem;font-size:var(--k,1rem)}
+.pk b{font:800 4.4em/1 var(--num)}
+.pk ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:.15em;font:500 1.15em/1.3 var(--body);color:var(--cream)}
+.pk ul li i{font-style:normal;font-weight:700;color:var(--yellow);margin-right:.4em}
+.pk ul li.d{color:var(--muted)}
+.pkc.ok .pk{background:rgba(63,209,122,.15);border:.18rem solid var(--ok);box-shadow:0 0 1.2rem rgba(63,209,122,.5)}
+.pkc.ok .pk b{text-shadow:0 0 1rem rgba(63,209,122,.8)}
+.more{font:700 1.1rem var(--h2);color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="tv">
+  <div class="bar"><img src="/screens/logo.webp" alt=""><div class="t">PICK-UP ORDERS<small>WAIT FOR YOUR TOKEN · COLLECT AT THE COUNTER</small></div>
+    <button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><div class="clock" id="clock"></div></div>
+  <div class="pkv">
+    <div class="pkc ok"><div class="sh ok">✓ READY · COLLECT NOW</div><div class="pkg" id="ready"></div></div>
+    <div class="pkc"><div class="sh pr">⏳ WAITING</div><div class="pkg" id="wait"></div></div>
+  </div>
+</div>
+<script src="/screens/common.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = function (i) { return document.getElementById(i); };
+  var known = {}, first = true;
+  BS.clock($("clock"));
+  // cards get smaller and add columns as the list grows, so every token shows
+  function grid(el, list, max) {
+    var n = list.length, cols = n <= 4 ? 2 : n <= 9 ? 3 : 4, k = n <= 4 ? 1 : n <= 9 ? 0.8 : 0.62, show = list.slice(0, max);
+    el.style.setProperty("--cols", cols); el.style.setProperty("--k", k + "rem");
+    el.innerHTML = show.map(function (o) {
+      return '<div class="pk"><b>' + BS.esc(o.tk) + "</b><ul>" + (o.i || []).slice(0, 6).map(function (i) { return '<li class="' + (i.s ? "d" : "") + '"><i>' + i.q + "×</i>" + BS.esc(i.n) + "</li>"; }).join("") + ((o.i || []).length > 6 ? "<li>…</li>" : "") + "</ul></div>";
+    }).join("") + (n > show.length ? '<div class="more">+ ' + (n - show.length) + " more</div>" : "") + (n ? "" : '<p class="empty">' + (el.id === "ready" ? "Ready tokens show here." : "No pick-up orders waiting.") + "</p>");
+  }
+  function draw(j) {
+    var all = j.orders || [], rd = all.filter(function (o) { return o.r; }).sort(function (a, b) { return (b.ra || 0) - (a.ra || 0); });
+    var wt = all.filter(function (o) { return !o.r; }).sort(function (a, b) { return a.c - b.c; });
+    grid($("ready"), rd, 16); grid($("wait"), wt, 16);
+    var now = Date.now(), live = {}, call = [];
+    rd.forEach(function (o) { live[o.tk] = 1; if (!known[o.tk]) { known[o.tk] = now; if (!first) call.push(o.tk); } });
+    for (var k in known) if (!live[k]) delete known[k];
+    first = false;
+    if (call.length) BS.say("Pick up token " + call.map(function (t) { return String(t).replace(/^#/, ""); }).join(", ") + ", your order is ready.", true);
+  }
+  var spk = $("spk");
+  function spkUI() { var v = BS.voiceOn(); spk.textContent = v ? "🔊" : "🔇"; spk.setAttribute("aria-pressed", String(v)); }
+  spk.onclick = function () { BS.voiceOn(!BS.voiceOn()); spkUI(); };
+  spkUI();
+  BS.poll("/screens/api/pickup", 2000, draw);
+})();
+</script>
+</body>
+</html>

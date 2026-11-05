@@ -169,7 +169,7 @@ func handleRider(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"v": 1, "hub": version, "now": now.UnixMilli(), "pp": ppAt, "ok": fresh,
+		"v": 1, "hub": version, "now": now.UnixMilli(), "skew": clockSkew(), "pp": ppAt, "ok": fresh,
 		"bridge": brOK, "outlet": getConfig().Outlet, "orders": orders, "hide": hiddenBrands(),
 	})
 }

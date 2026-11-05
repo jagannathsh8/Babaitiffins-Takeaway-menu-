@@ -33,7 +33,7 @@ function brandColor(name, type) {
 function last(s, n) { s = String(s || ""); return s.length > n ? "…" + s.slice(-n) : s; }
 
 var AREAS = {
-  bridge: { label: "Bridge Print", items: [["overview", "Overview"], ["dispatch", "Dispatch"], ["rules", "Printers & rules"], ["timing", "Print timing"], ["alerts", "Alerts"], ["apps", "Apps"], ["barker", "Dosa barker"]] },
+  bridge: { label: "Bridge Print", items: [["overview", "Overview"], ["dispatch", "Dispatch"], ["rules", "Printers & rules"], ["timing", "Print timing"], ["alerts", "Alerts"], ["apps", "Apps"], ["screens", "Screens"], ["barker", "Dosa barker"]] },
   hub: { label: "Hub", items: [["status", "Status"], ["petpooja", "Petpooja & Firebase"], ["scanners", "Scanners & rider"], ["pcscan", "PC scanner"], ["customers", "Customers' page"], ["pc", "This PC & updates"]] },
   metrics: { label: "Metrics", items: [["cx", "CX metrics"], ["ops", "Ops metrics"]], open: true },
   data: { label: "Data", items: [["metrics", "Metrics"], ["prep", "Prep Live"], ["planner", "Indent planner"], ["cxsheet", "Ratings sheet"], ["sources", "Connections"]] }
@@ -494,6 +494,26 @@ VIEWS.apps = {
           return '<div class="panel"><h2>' + esc(a.Name) + '</h2><p class="help">' + esc(a.What) + "</p>" + (a.Ready ? '<p><span class="chip ok">Build ' + a.Build + " · " + esc(a.Size) + "</span></p>" : '<p><span class="chip warn">' + esc(a.State) + "</span></p>") + "</div>";
         }).join("");
       if (link && window.QRCode) new QRCode($("qrall"), { text: link, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M });
+    }).catch(function () {});
+  }
+};
+
+// ---- Bridge: Babai Screens (TVs and tablets running the Babai Screens app or a screen page) -------
+VIEWS.screens = {
+  every: 10000,
+  html: function () {
+    return '<div class="panel"><h2>Babai Screens</h2><p class="help">Every TV, tablet or monitor showing a Babai screen, and when it last checked in. Install the <b>Babai Screens</b> app from the Apps page (or by USB), open it, and pick the screen once. A kitchen screen asks for the Console PIN once.</p><div id="scl"></div></div>' +
+      '<div class="panel"><h2>Screens</h2><div class="tw"><table><thead><tr><th>Screen</th><th>Device</th><th>App</th><th>Address</th><th>Last seen</th></tr></thead><tbody id="sct"></tbody></table></div></div>';
+  },
+  load: function () {
+    getJ("/console/api/screens").then(function (d) {
+      var base = (d.links || [])[0] || "";
+      $("scl").innerHTML = base ? '<p>Screens in a browser: <b>' + esc(base) + '/screens/</b> · App update: ' + (d.app && d.app.ready ? "build " + d.app.b + " ready" : "not downloaded yet") + "</p>" : '<p class="help">No network address: is this PC on the shop Wi-Fi?</p>';
+      var names = { rider: "Rider TV", dosa: "Dosa order status", pickup: "Pick-up TV", kitchen: "Kitchen", barker: "Dosa barker", hello: "Setting up" };
+      $("sct").innerHTML = (d.screens || []).map(function (s) {
+        var ago = Math.round((d.now - s.at) / 1000), off = ago > 60;
+        return "<tr><td>" + esc(names[s.screen] || s.screen || "—") + (s.paired ? ' <span class="chip ok">paired</span>' : "") + "</td><td>" + esc(s.name || s.dev) + "</td><td>" + esc(s.app || "browser") + "</td><td>" + esc(s.ip) + '</td><td><span class="chip ' + (off ? "bad" : "ok") + '">' + (ago < 60 ? "now" : ago < 3600 ? Math.round(ago / 60) + " min ago" : Math.round(ago / 3600) + " h ago") + "</span></td></tr>";
+      }).join("") || '<tr><td colspan="5" class="help">No screens yet.</td></tr>';
     }).catch(function () {});
   }
 };

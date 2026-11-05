@@ -1,0 +1,32 @@
+/* Babai Screens: shared look. 1rem = 1% of the 16:9 screen width (set by common.js), so a TV
+   layout keeps its shape on any TV, tablet or monitor. */
+:root{--yellow:#F9BC21;--black:#171717;--green:#568B60;--cream:#FFF6DF;--orange:#B66A29;--white:#fff;
+  --tv:#121212;--tv2:#1c1c1c;--tv3:#262626;--line:rgba(255,246,223,.14);--muted:#bdb6a6;
+  --ok:#3fd17a;--amber:#ffb020;--late:#ff5a4e;
+  --swiggy:#FC8019;--zomato:#E23744;--ownly:#7B5CE6;--toing:#E8743B;--eatin:#14A3A3;--other:#64748b;
+  --h1:"League Spartan","Arial Black",sans-serif;--h2:"Montserrat","Segoe UI",Roboto,sans-serif;--body:"Poppins","Segoe UI",Roboto,sans-serif;--num:"Inter","Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:#000;color:var(--white);font-family:var(--body)}
+@property --ang{syntax:"<angle>";initial-value:0deg;inherits:false}
+@keyframes spin{to{--ang:360deg}}
+@keyframes pulse{50%{opacity:.55}}
+@keyframes fade{0%,28%{opacity:1}33%,95%{opacity:0}100%{opacity:1}}
+.tv{position:absolute;left:50%;top:50%;width:100rem;height:56.25rem;transform:translate(-50%,-50%);background:var(--tv);overflow:hidden}
+.bar{position:absolute;left:0;right:0;top:0;height:7rem;display:flex;align-items:center;gap:1.2rem;padding:0 1.6rem;background:var(--yellow);color:var(--black);z-index:2}
+.bar img{width:5.2rem;height:5.2rem;object-fit:contain}
+.bar .t{font:800 2.8rem/1 var(--h1);letter-spacing:.03em}
+.bar .t small{display:block;font:700 .95rem var(--h2);letter-spacing:.16em;margin-top:.35rem}
+.bar .clock{margin-left:auto;font:800 2.6rem var(--num);font-variant-numeric:tabular-nums}
+.cnt{display:flex;gap:.6rem;margin-left:2rem}
+.cnt span{font:800 1.25rem var(--num);padding:.3rem .8rem;border-radius:.5rem;background:var(--black);color:var(--white)}
+.cnt span b{color:var(--yellow)}
+.cnt span.r{background:#0f5132}.cnt span.r b{color:#7dffb0}
+.spk{margin-left:1.2rem;width:4rem;height:4rem;border-radius:50%;border:.2rem solid var(--black);background:var(--white);font-size:1.9rem;cursor:pointer;display:grid;place-items:center;padding:0}
+.spk[aria-pressed=false]{background:var(--black)}
+.spk:focus{outline:.35rem solid var(--ok);outline-offset:.2rem}
+.sh{display:flex;align-items:center;gap:.8rem;font:800 1.35rem var(--h2);letter-spacing:.1em}
+.sh.ok{color:var(--ok)}.sh.pr{color:var(--amber)}.sh i{font-style:normal;color:var(--muted);font-size:1rem;letter-spacing:.06em}
+.warn{position:fixed;left:0;right:0;bottom:0;z-index:50;background:#b91c1c;color:#fff;font:700 15px var(--h2);padding:8px 14px;text-align:center}
+.empty{color:var(--muted);font:600 1.4rem var(--body);text-align:center;padding:3rem 0;margin:0}

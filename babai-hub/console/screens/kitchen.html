@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kitchen screen</title>
+<link rel="stylesheet" href="/screens/common.css">
+<style>
+html,body{overflow:auto}
+body{background:#f3f5f8;color:#16202b;font:15px/1.4 var(--body)}
+.kcbar{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px;background:var(--yellow)}
+.kcbar img{width:38px;height:38px;object-fit:contain}.kcbar>b{font:800 22px var(--h1)}
+.kcsub{font:600 12px var(--h2);color:#3b3b3b}
+.kcn{margin-left:auto;font:700 13px var(--h2)}
+.clk{font:800 18px var(--num)}
+.gear{font:700 18px var(--h2);width:40px;height:40px;border-radius:10px;border:2px solid var(--black);background:#fff;cursor:pointer}
+.gear[aria-expanded=true]{background:var(--black);color:var(--yellow)}
+.gear:focus,.kd button:focus,.kd input:focus,.kw:focus,.kall:focus{outline:3px solid var(--green);outline-offset:2px}
+.kset{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;padding:14px;background:#fff;border-bottom:2px solid var(--black)}
+.kgrp{display:flex;flex-direction:column;gap:6px}.kgrp h5{margin:0 0 2px;font:800 12px var(--h2);letter-spacing:.1em;text-transform:uppercase}
+.kgrp label{display:flex;align-items:flex-start;gap:8px;font:500 14px/1.4 var(--body)}.kgrp input[type=number]{width:56px;font:inherit;padding:2px 4px}.kgrp select{font:inherit}
+.cats{max-height:200px;overflow:auto}
+.kfoot{grid-column:1/-1;margin:0;font:12.5px var(--body);color:#555}
+.pair{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#fff7df;border-bottom:2px solid var(--yellow);padding:10px 14px;font:600 14px var(--h2)}
+.pair input{font:800 18px var(--num);width:120px;padding:4px 8px;letter-spacing:.2em}
+.pair button{font:700 14px var(--h2);border:none;border-radius:8px;padding:8px 14px;background:var(--black);color:var(--yellow);cursor:pointer}
+.pair .msg{color:#b91c1c}
+.kcg{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;padding:14px;align-content:start}
+.kd{background:#fff;border:1px solid #e2e7ed;border-top:5px solid var(--bc);border-radius:12px;display:flex;flex-direction:column;user-select:none;-webkit-user-select:none;transition:opacity .25s,transform .25s}
+.kd.rdy{border-color:#3fbf73;border-top-color:#15803d;box-shadow:0 0 0 2px rgba(21,128,61,.25)}
+.kd.gone{opacity:0;transform:scale(.94)}
+.kd .h{display:flex;align-items:flex-start;gap:8px;padding:10px 12px 6px}
+.kd .h .kn{font:800 26px/1 var(--num)}.kd .h .bd{font:700 11px var(--h2);letter-spacing:.06em;color:var(--bc);text-transform:uppercase}
+.kd .h .tm{margin-left:auto;font:700 14px var(--num);background:#eef1f5;border-radius:6px;padding:2px 7px}
+.kd .h .tm.y{background:#ffe7a3}.kd .h .tm.r{background:#fdd;color:#b91c1c}
+.kd .id{padding:0 12px 8px;font:12px var(--num);color:#5e6b79;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #eef1f5}
+.kd .id .l4{border:2px solid var(--bc);border-radius:6px;padding:0 5px;font:800 14px var(--num);color:#16202b;box-shadow:0 0 6px var(--bc)}
+.kd .id .sl{background:var(--yellow);color:var(--black);border-radius:5px;padding:0 6px;font:800 13px var(--num)}
+.kd ul{margin:0;padding:8px 12px;list-style:none;display:flex;flex-direction:column;gap:4px}
+.kd li label{display:flex;align-items:center;gap:8px;font:500 15px var(--body);cursor:pointer}
+.kd li input{width:20px;height:20px;accent-color:#15803d;flex:none}
+.kd li.done label{color:#8a94a0;text-decoration:line-through}
+.kd li.wait label{opacity:.6}
+.ad{position:relative;display:block;margin:2px 0 2px 28px;padding:2px 8px;font:600 12.5px var(--body);color:#7a5200;background:#fff7df;border-radius:6px}
+.ad::before{content:"";position:absolute;top:0;left:0;right:0;bottom:0;border-radius:6px;padding:1.5px;background:conic-gradient(from var(--ang),var(--yellow),#fff3c4,var(--yellow) 40%,transparent 55%,transparent 85%,var(--yellow));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:spin 2.4s linear infinite}
+.inote{display:block;margin:2px 0 2px 28px;font:600 12.5px var(--body);color:#7c2d12}
+.kd .nt{margin:0 12px 6px;padding:3px 8px;border-left:3px solid var(--orange);background:#fdf1e6;color:#7c2d12;font:600 12.5px var(--body)}
+.kd .ft2{display:flex;align-items:center;gap:8px;padding:8px 12px 12px;border-top:1px solid #eef1f5;margin-top:auto}
+.kd .chip{font:700 11px var(--h2);padding:3px 9px;border-radius:999px;background:#fff7df;color:#7a5200}.kd.rdy .chip{background:#dcf5e5;color:#15803d}
+.kd button{margin-left:auto;font:700 15px var(--h2);border:none;border-radius:8px;padding:9px 16px;cursor:pointer;background:#15803d;color:#fff}
+.kd.rdy button{background:var(--black);color:var(--yellow)}
+.kd button:disabled{opacity:.5}
+.kcempty{grid-column:1/-1;text-align:center;color:#5e6b79;padding:40px 0;font:600 16px var(--body)}
+.kitem{grid-template-columns:1fr}
+.krow{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e7ed;border-radius:12px;padding:10px 14px;flex-wrap:wrap}
+.kq{font:800 30px/1 var(--num);min-width:56px}
+.kin{display:flex;flex-direction:column}.kin b{font:700 17px var(--body)}.kin span{font:600 11px var(--h2);letter-spacing:.08em;color:#5e6b79;text-transform:uppercase}
+.kws{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.kw{font:800 14px var(--num);border:2px solid var(--bc);background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer}
+.kall{font:700 14px var(--h2);border:none;border-radius:8px;padding:8px 14px;background:#15803d;color:#fff;cursor:pointer}
+.kready{grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#dcf5e5;border-radius:12px;padding:10px 14px}
+.kready span{font:800 12px var(--h2);letter-spacing:.1em;color:#15803d}
+.kready button{font:700 14px var(--h2);border:none;border-radius:8px;padding:6px 12px;background:var(--black);color:var(--yellow);cursor:pointer}
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--black);color:#fff;font:700 15px var(--h2);border-radius:12px;padding:10px 16px;z-index:9;display:flex;gap:12px;align-items:center}
+.toast button{font:800 14px var(--h2);background:var(--yellow);border:0;border-radius:8px;padding:6px 12px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="kcbar"><img src="/screens/logo.webp" alt=""><b>Kitchen</b><span class="kcsub" id="sub"></span><span class="kcn" id="cnt"></span><span class="clk" id="clock"></span>
+  <button class="gear" id="gear" aria-expanded="false" aria-label="Screen settings">⚙</button></div>
+<div class="pair" id="pair" hidden>🔒 Pair this screen once to mark Food ready: <input id="pin" type="password" inputmode="numeric" placeholder="Console PIN" aria-label="Console PIN"><button id="pairbtn">Pair</button><span class="msg" id="pmsg" role="status"></span></div>
+<div class="kset" id="set" hidden>
+  <div class="kgrp"><h5>Show cards</h5>
+    <label><input type="radio" name="kv" value="order"> Whole order</label>
+    <label><input type="radio" name="kv" value="cat"> By category (one card per station)</label>
+    <label><input type="radio" name="kv" value="item"> By item (all orders added up)</label></div>
+  <div class="kgrp"><h5>Order types</h5>
+    <label><input type="checkbox" name="kt" value="D"> Delivery</label>
+    <label><input type="checkbox" name="kt" value="P"> Pick up</label>
+    <label><input type="checkbox" name="kt" value="I"> Dine in</label>
+    <label><input type="checkbox" name="kt" value="S"> Self service</label></div>
+  <div class="kgrp"><h5>Categories on this screen</h5><label><input type="checkbox" id="kallc"> All categories</label><div class="cats" id="cats"></div></div>
+  <div class="kgrp"><h5>Behaviour</h5>
+    <label><input type="checkbox" id="kd"> Double-click a card = Food ready</label>
+    <label><input type="checkbox" id="kn"> Show notes and add-ons</label>
+    <label style="align-items:center">Sort <select id="ks"><option value="old">Oldest first</option><option value="new">Newest first</option></select></label>
+    <label style="align-items:center">Timer amber after <input id="ky" type="number" min="1" max="60"> min</label>
+    <label style="align-items:center">Timer red after <input id="kr" type="number" min="1" max="90"> min</label></div>
+  <p class="kfoot">Saved on this screen: each kitchen TV or tablet keeps its own setup. A tick marks that dish ready in Petpooja; when every dish of an order is ready, the order is Food ready. Dispatch takes it off the kitchen screens (Petpooja is not changed).</p>
+</div>
+<div class="kcg" id="g"></div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="/screens/common.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = function (i) { return document.getElementById(i); };
+  var CH = { D: "Delivery", P: "Pick up", I: "Dine in", S: "Self service" }, CC = { P: "var(--yellow)", I: "var(--green)", S: "#64748b" };
+  var KC = { view: "order", types: ["D", "P", "I", "S"], cats: [], auto: true, dbl: true, notes: true, sort: "old", amber: 10, red: 15 };
+  try { var sv = JSON.parse(BS.store("bs.kitchen") || "null"); if (sv) for (var k in sv) KC[k] = sv[k]; } catch (e) {}
+  function save() { BS.store("bs.kitchen", JSON.stringify(KC)); }
+  var D = { cards: [], cats: [] }, paired = false, pend = {}; // item id -> marked here, waiting for Petpooja
+  BS.clock($("clock"));
+  function dev() { if (BS.q.dev) return BS.q.dev; var d = BS.store("bs.dev"); if (!d) { d = "browser-" + Math.random().toString(36).slice(2, 8); BS.store("bs.dev", d); } return d; }
+
+  function shown(it) { return !KC.cats.length || KC.cats.indexOf(it.c) >= 0; }
+  function done(it) { return it.r || pend[it.id]; }
+  function color(c) { return c.ch === "D" ? BS.brand(c.app).c : CC[c.ch] || "#64748b"; }
+  function who(c) { return c.ch === "D" ? (c.app || "Online") + " · Delivery" : CH[c.ch] + (c.tb ? " · Table " + c.tb : ""); }
+  function mins(c) { return BS.since(c.c, true) / 60; }
+  function tc(c) { var m = mins(c); return m >= KC.red ? "r" : m >= KC.amber ? "y" : ""; }
+  function live() {
+    var l = D.cards.filter(function (c) { return KC.types.indexOf(c.ch) >= 0 && c.i.some(shown); });
+    l.sort(function (a, b) { return KC.sort === "old" ? a.c - b.c : b.c - a.c; });
+    return l;
+  }
+  function li(c, it) {
+    var d = done(it);
+    return '<li class="' + (d ? "done" : "") + (pend[it.id] && !it.r ? " wait" : "") + '"><label><input type="checkbox" data-k="' + c.k + '" data-it="' + it.id + '"' + (d ? " checked disabled" : "") + ">" + it.q + "× " + BS.esc(it.n) + "</label>" +
+      (KC.notes ? (it.a || []).map(function (a) { return '<i class="ad">+ ' + a.q + " × " + BS.esc(a.n) + "</i>"; }).join("") + (it.nt ? '<i class="inote">Note: ' + BS.esc(it.nt) + "</i>" : "") : "") + "</li>";
+  }
+  function card(c, items, cat) {
+    var all = c.i.every(done), part = items.every(done), rdy = c.r || all;
+    return '<article class="kd' + (rdy ? " rdy" : "") + '" data-k="' + c.k + '" data-items="' + items.map(function (it) { return it.id; }).join(",") + '" style="--bc:' + color(c) + '"><div class="h"><div><div class="kn">' + BS.esc(c.kn) + '</div><div class="bd">' + BS.esc(who(c)) + (cat ? " · " + BS.esc(cat) : "") + '</div></div><span class="tm ' + tc(c) + '" data-c="' + c.c + '">' + BS.mmss(mins(c) * 60) + "</span></div>" +
+      (c.l4 || c.slot ? '<div class="id">' + (c.l4 ? '<span>Order <span class="l4">' + BS.esc(c.l4) + "</span></span>" : "") + (c.slot ? '<span>Slot <span class="sl">' + BS.esc(c.slot) + "</span></span>" : "") + "</div>" : "") +
+      "<ul>" + items.map(function (it) { return li(c, it); }).join("") + "</ul>" + (KC.notes && c.nt && !cat ? '<div class="nt">NOTE ' + BS.esc(c.nt) + "</div>" : "") +
+      '<div class="ft2"><span class="chip">' + (rdy ? "Food ready" : part ? "This part done" : "Preparing") + "</span>" + (rdy ? '<button data-disp="' + c.k + '">Dispatch</button>' : part ? "" : '<button data-ready="' + c.k + '">Food ready</button>') + "</div></article>";
+  }
+  function draw() {
+    var g = $("g"), l = live();
+    $("cnt").textContent = l.filter(function (c) { return !(c.r || c.i.every(done)); }).length + " preparing · " + l.filter(function (c) { return c.r || c.i.every(done); }).length + " ready";
+    $("sub").textContent = { order: "Whole orders", cat: "By category", item: "By item" }[KC.view] + " · " + (KC.types.length === 4 ? "all order types" : KC.types.map(function (t) { return CH[t]; }).join(", ")) + (KC.cats.length ? " · " + KC.cats.join(", ") : "");
+    var focus = document.activeElement && document.activeElement.getAttribute && (document.activeElement.getAttribute("data-ready") || document.activeElement.getAttribute("data-disp"));
+    if (!l.length) { g.className = "kcg"; g.innerHTML = '<p class="kcempty">Nothing for this screen right now.</p>'; return; }
+    var readyStrip = [];
+    if (KC.view === "item") {
+      var agg = {};
+      l.forEach(function (c) {
+        if (c.r || c.i.every(done)) { readyStrip.push(c); return; }
+        c.i.forEach(function (it) { if (!shown(it) || done(it)) return; var a = agg[it.n] || (agg[it.n] = { n: it.n, c: it.c, q: 0, w: [] }); a.q += it.q; a.w.push({ k: c.k, id: it.id, kn: c.kn, q: it.q, col: color(c) }); });
+      });
+      var rows = Object.keys(agg).map(function (n) { return agg[n]; }).sort(function (a, b) { return b.q - a.q; });
+      g.className = "kcg kitem";
+      g.innerHTML = rows.map(function (a) {
+        return '<div class="krow"><b class="kq">' + a.q + '×</b><div class="kin"><b>' + BS.esc(a.n) + "</b><span>" + BS.esc(a.c) + '</span></div><div class="kws">' + a.w.map(function (w) { return '<button class="kw" style="--bc:' + w.col + '" data-k="' + w.k + '" data-it="' + w.id + '" title="Ready for this order">' + BS.esc(w.kn) + (w.q > 1 ? " ×" + w.q : "") + "</button>"; }).join("") +
+          '</div><button class="kall" data-all="' + a.w.map(function (w) { return w.k + ":" + w.id; }).join(",") + '">All done</button></div>';
+      }).join("") + (rows.length ? "" : '<p class="kcempty">Every item here is done.</p>');
+    } else {
+      g.className = "kcg";
+      var html = [];
+      l.forEach(function (c) {
+        var items = c.i.filter(shown), rdy = c.r || c.i.every(done);
+        if (KC.view === "cat") {
+          if (rdy) { readyStrip.push(c); return; }
+          var cats = []; items.forEach(function (it) { if (cats.indexOf(it.c) < 0) cats.push(it.c); });
+          cats.forEach(function (cat) { var its = items.filter(function (it) { return it.c === cat; }); if (!its.every(done)) html.push(card(c, its, cat)); }); // a station's card leaves once its part is done
+        } else if (rdy) { if (items.length === c.i.length) html.push(card(c, items, "")); else readyStrip.push(c); }
+        else if (!items.every(done)) html.push(card(c, items, "")); // this screen's part done: off until the order is ready
+      });
+      g.innerHTML = html.join("") || '<p class="kcempty">All done on this screen.</p>';
+    }
+    if (readyStrip.length) g.innerHTML += '<div class="kready"><span>READY TO DISPATCH</span>' + readyStrip.map(function (c) { return '<button data-disp="' + c.k + '">' + BS.esc(c.kn) + " · Dispatch</button>"; }).join("") + "</div>";
+    if (focus) { var f = g.querySelector('[data-ready="' + focus + '"],[data-disp="' + focus + '"]'); if (f) f.focus(); }
+  }
+  setInterval(function () { document.querySelectorAll("[data-c]").forEach(function (e) { var s = BS.since(+e.getAttribute("data-c"), true); e.textContent = BS.mmss(s); e.className = "tm " + (s / 60 >= KC.red ? "r" : s / 60 >= KC.amber ? "y" : ""); }); }, 1000);
+
+  // ---- actions (sent to the Console; it marks them in Petpooja)
+  var toastT = null;
+  function toast(m, undoK) {
+    var t = $("toast"); t.hidden = false; t.innerHTML = "<span>" + BS.esc(m) + "</span>" + (undoK ? '<button id="undo">Undo</button>' : "");
+    clearTimeout(toastT); toastT = setTimeout(function () { t.hidden = true; }, undoK ? 8000 : 4000);
+    var u = $("undo"); if (u) u.onclick = function () { t.hidden = true; BS.post("/screens/api/dispatch", { kot: +undoK, undo: true }, refresh); };
+  }
+  function needPair() { if (paired) return false; $("pair").hidden = false; $("pin").focus(); toast("Pair this screen first (Console PIN)."); return true; }
+  function ready(kot, ids) {
+    if (needPair()) return;
+    ids.forEach(function (id) { pend[id] = Date.now(); }); draw();
+    BS.post("/screens/api/ready", { kot: +kot, items: ids.map(Number) }, function (err, j) {
+      if (err || !j.ok) { ids.forEach(function (id) { delete pend[id]; }); draw(); if (j && j.pair) { paired = false; needPair(); } else toast(err ? "Not sent: can’t reach the Console." : j.msg); return; }
+      refresh();
+    });
+  }
+  function dispatch(kot, el) {
+    if (needPair()) return;
+    if (el) el.classList.add("gone");
+    BS.post("/screens/api/dispatch", { kot: +kot }, function (err, j) {
+      if (err || !j.ok) { toast(err ? "Not sent: can’t reach the Console." : j.msg); return; }
+      D.cards = D.cards.filter(function (c) { return String(c.k) !== String(kot); }); draw(); toast("Dispatched.", kot);
+    });
+  }
+  var G = $("g");
+  G.addEventListener("change", function (e) { var t = e.target; if (t.getAttribute("data-it") && t.checked) ready(t.getAttribute("data-k"), [t.getAttribute("data-it")]); });
+  G.addEventListener("click", function (e) {
+    var w = e.target.closest(".kw"); if (w) { ready(w.getAttribute("data-k"), [w.getAttribute("data-it")]); return; }
+    var al = e.target.closest("[data-all]"); if (al) { var by = {}; al.getAttribute("data-all").split(",").forEach(function (p) { var q = p.split(":"); (by[q[0]] = by[q[0]] || []).push(q[1]); }); for (var kk in by) ready(kk, by[kk]); return; }
+    var d = e.target.closest("[data-disp]"); if (d) { dispatch(d.getAttribute("data-disp"), d.closest(".kd")); return; }
+    var r = e.target.closest("[data-ready]"); if (r) { var c = r.closest(".kd"); ready(c.getAttribute("data-k"), c.getAttribute("data-items").split(",")); }
+  });
+  G.addEventListener("dblclick", function (e) {
+    var c = e.target.closest(".kd"); if (!c || !KC.dbl || e.target.closest("input,button,label")) return;
+    if (c.classList.contains("rdy")) return;
+    ready(c.getAttribute("data-k"), c.getAttribute("data-items").split(","));
+  });
+  $("pairbtn").onclick = function () {
+    BS.post("/screens/api/pair", { pin: $("pin").value, dev: dev() }, function (err, j) {
+      $("pin").value = "";
+      if (err || !j.ok) { $("pmsg").textContent = err ? "Can’t reach the Console." : j.msg; return; }
+      BS.setKey(j.key); paired = true; $("pair").hidden = true; toast("Paired. This screen can mark Food ready.");
+    });
+  };
+
+  // ---- settings
+  function setUI() {
+    document.querySelectorAll('[name="kv"]').forEach(function (r) { r.checked = r.value === KC.view; });
+    document.querySelectorAll('[name="kt"]').forEach(function (r) { r.checked = KC.types.indexOf(r.value) >= 0; });
+    var cats = D.cats.slice(); KC.cats.forEach(function (c) { if (cats.indexOf(c) < 0) cats.push(c); });
+    $("cats").innerHTML = cats.map(function (c) { return '<label><input type="checkbox" name="kc" value="' + BS.esc(c) + '"' + (KC.cats.indexOf(c) >= 0 ? " checked" : "") + (KC.cats.length ? "" : " disabled") + "> " + BS.esc(c) + "</label>"; }).join("");
+    $("kallc").checked = !KC.cats.length;
+    $("kd").checked = KC.dbl; $("kn").checked = KC.notes; $("ks").value = KC.sort; $("ky").value = KC.amber; $("kr").value = KC.red;
+  }
+  $("set").addEventListener("change", function (e) {
+    KC.view = document.querySelector('[name="kv"]:checked').value;
+    KC.types = [].map.call(document.querySelectorAll('[name="kt"]:checked'), function (r) { return r.value; });
+    if (e.target.id === "kallc") KC.cats = $("kallc").checked ? [] : D.cats.slice();
+    else if (e.target.name === "kc") KC.cats = [].map.call(document.querySelectorAll('[name="kc"]:checked'), function (r) { return r.value; });
+    KC.dbl = $("kd").checked; KC.notes = $("kn").checked; KC.sort = $("ks").value; KC.amber = +$("ky").value || 10; KC.red = +$("kr").value || 15;
+    save(); setUI(); draw();
+  });
+  $("gear").onclick = function () { var p = $("set"); p.hidden = !p.hidden; this.setAttribute("aria-expanded", String(!p.hidden)); if (!p.hidden) setUI(); };
+  window.babaiBack = function () { if (!$("set").hidden) { $("gear").click(); return true; } return false; };
+
+  var timer = null;
+  function onData(j) {
+    D = j; paired = !!j.paired; $("pair").hidden = paired;
+    var ids = {}; (j.cards || []).forEach(function (c) { c.i.forEach(function (it) { if (it.r) delete pend[it.id]; ids[it.id] = 1; }); });
+    for (var p in pend) if (!ids[p] || Date.now() - pend[p] > 20000) delete pend[p];
+    draw();
+  }
+  function refresh() { BS.get("/screens/api/kitchen", function (err, j) { if (!err) onData(j); }); }
+  timer = BS.poll("/screens/api/kitchen", 2000, onData);
+})();
+</script>
+</body>
+</html>
