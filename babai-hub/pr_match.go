@@ -52,6 +52,7 @@ func noteKotsForPrint(kots []Kot, now time.Time) {
 	mkWake = make(chan struct{})
 	mkMu.Unlock()
 	updateJobsFromKots(kots, now)
+	directOnKots(kots, now) // the Console's own KOT slips (direct.go)
 }
 
 // pollNow reads Petpooja right away (prints wait for it).

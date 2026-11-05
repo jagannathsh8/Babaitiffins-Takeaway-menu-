@@ -23,6 +23,7 @@ const (
 var procSetThreadExecutionState = windows.NewLazySystemDLL("kernel32.dll").NewProc("SetThreadExecutionState")
 
 func keepAwake() {
+	go ensureWatchTask()   // and the service starts again if someone stops it
 	runtime.LockOSThread() // the state belongs to this thread: it must never change or end
 	if r, _, err := procSetThreadExecutionState.Call(esContinuous | esSystemRequired); r == 0 {
 		log.Printf("keep awake: %v", err)

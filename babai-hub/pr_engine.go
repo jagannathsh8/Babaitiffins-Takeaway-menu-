@@ -262,6 +262,9 @@ func processJob(j *Job, raw []byte) {
 			orderPrinted(kot, j)
 		}
 	}
+	if !directBridgeHold(j) {
+		return // the Console prints this order itself (direct.go)
+	}
 	printJob(j, raw)
 }
 
@@ -408,6 +411,10 @@ func requeue(id string, allowed ...string) (bool, string) {
 	j.Status, j.Error = "queued", ""
 	saveJobLocked(j)
 	prMu.Unlock()
+	if j.Source == "console" {
+		go directReprint(j) // the Console's own slip: drawn again
+		return true, ""
+	}
 	if raw, err := jobBytes(j); err == nil {
 		go processJob(j, raw)
 	}

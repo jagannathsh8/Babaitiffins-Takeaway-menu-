@@ -93,6 +93,8 @@ func platformMain() bool {
 		runService()
 	case hasArg("--window"):
 		runAgent(hasArg("--show"))
+	case hasArg("--watch"):
+		watchService() // every minute (scheduled task): start the service if someone stopped it
 	case hasArg("--install"):
 		if err := doInstall(); err != nil {
 			msgBox("Babai Console couldn't be installed:\n\n"+err.Error(), true)
@@ -338,13 +340,46 @@ func startService() error {
 		return err
 	}
 	defer s.Close()
+	_ = os.Remove(stopMarker())
 	if st, err := s.Query(); err == nil && st.State == svc.Running {
 		return nil
 	}
 	return s.Start()
 }
 
+// ---- the watch: a scheduled task (SYSTEM, every minute) that starts the service again if it
+// was stopped (Services, Task Manager ...). An install or uninstall in progress leaves a marker,
+// so the watch never fights it; a marker older than 10 minutes is ignored.
+const watchTask = "Babai Console watch"
+
+func stopMarker() string { return filepath.Join(appDataDir(), "service-stopping") }
+
+func watchService() {
+	if st, err := os.Stat(stopMarker()); err == nil && time.Since(st.ModTime()) < 10*time.Minute {
+		return
+	}
+	if !serviceInstalled() {
+		return
+	}
+	_ = startService()
+}
+
+// ensureWatchTask: created (or repaired) by the Console when it starts; removed by uninstall.
+func ensureWatchTask() {
+	if err := hidden("schtasks", "/Query", "/TN", watchTask).Run(); err == nil {
+		return
+	}
+	err := hidden("schtasks", "/Create", "/F", "/TN", watchTask, "/SC", "MINUTE", "/MO", "1", "/RU", "SYSTEM", "/RL", "HIGHEST",
+		"/TR", `"`+programExe()+`" --watch`).Run()
+	if err != nil {
+		log.Printf("watch task: %v", err)
+	} else {
+		log.Printf("watch task: the service starts again within a minute if it is stopped")
+	}
+}
+
 func stopService(limit time.Duration) error {
+	_ = os.WriteFile(stopMarker(), []byte(time.Now().Format(time.RFC3339)), 0o644)
 	m, err := mgr.Connect()
 	if err != nil {
 		return err
@@ -483,6 +518,7 @@ func doUninstall() {
 	if !confirmBox("Remove Babai Console from this PC?\n\nKOT printing with tokens, the Dispatch screen and the customers' dosa page stop until it is installed again.") {
 		return
 	}
+	_ = hidden("schtasks", "/Delete", "/F", "/TN", watchTask).Run() // first, so it can't start the service again
 	_ = stopService(30 * time.Second)
 	if m, err := mgr.Connect(); err == nil {
 		if s, err := m.OpenService(serviceName); err == nil {

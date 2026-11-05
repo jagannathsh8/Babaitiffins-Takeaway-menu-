@@ -33,7 +33,7 @@ function brandColor(name, type) {
 function last(s, n) { s = String(s || ""); return s.length > n ? "…" + s.slice(-n) : s; }
 
 var AREAS = {
-  bridge: { label: "Bridge Print", items: [["overview", "Overview"], ["dispatch", "Dispatch"], ["rules", "Printers & rules"], ["timing", "Print timing"], ["alerts", "Alerts"], ["apps", "Apps"], ["screens", "Screens"], ["barker", "Dosa barker"]] },
+  bridge: { label: "Bridge Print", items: [["overview", "Overview"], ["dispatch", "Dispatch"], ["kotprint", "KOT printing"], ["rules", "Printers & rules"], ["timing", "Print timing"], ["alerts", "Alerts"], ["apps", "Apps"], ["screens", "Screens"], ["barker", "Dosa barker"]] },
   hub: { label: "Hub", items: [["status", "Status"], ["petpooja", "Petpooja & Firebase"], ["scanners", "Scanners & rider"], ["pcscan", "PC scanner"], ["customers", "Customers' page"], ["pc", "This PC & updates"]] },
   metrics: { label: "Metrics", items: [["cx", "CX metrics"], ["ops", "Ops metrics"]], open: true },
   data: { label: "Data", items: [["metrics", "Metrics"], ["prep", "Prep Live"], ["planner", "Indent planner"], ["cxsheet", "Ratings sheet"], ["sources", "Connections"]] }
@@ -497,6 +497,80 @@ VIEWS.apps = {
     }).catch(function () {});
   }
 };
+
+// ---- Bridge: KOT printing by the Console (direct.go) -------------------------------------------------
+var KP = null, KPmsg = null;
+VIEWS.kotprint = {
+  html: function () { return '<div id="kp"><p class="help">Loading…</p></div>'; },
+  load: function () { getJ("/console/api/direct").then(function (d) { KP = d; KP.cfg.lines = KP.cfg.lines || []; KP.cfg.mainBackups = KP.cfg.mainBackups || []; KP.cfg.types = KP.cfg.types || []; kpDraw(); }).catch(function () {}); }
+};
+function kpSel(val, cls, attr) {
+  var o = '<option value="">Choose a printer</option>' + (KP.printers || []).map(function (p) { return '<option value="' + esc(p.name) + '"' + (p.name === val ? " selected" : "") + ">" + esc(p.label) + "</option>"; }).join("");
+  if (val && !(KP.printers || []).some(function (p) { return p.name === val; })) o += '<option value="' + esc(val) + '" selected>' + esc(val) + " (not found)</option>";
+  return '<select class="kp-sel ' + (cls || "") + '" ' + (attr || "") + ">" + o + "</select>";
+}
+function kpState(name) {
+  var p = (KP.printers || []).filter(function (x) { return x.name === name; })[0];
+  if (!name) return "";
+  if (!p) return '<span class="kp-st bad">● not found</span>';
+  return p.problem ? '<span class="kp-st bad">● ' + esc(p.problem) + "</span>" : '<span class="kp-st ok">● Ready · ' + p.mm + " mm · auto cut</span>";
+}
+function kpBackups(list, where) {
+  return '<div class="kp-row"><span class="kp-lbl">Backup</span>' + list.map(function (b, i) { return '<span class="kp-bk">' + (i + 1) + " · " + kpSel(b, "", 'data-bk="' + where + ":" + i + '"') + '<button class="kp-x" data-bkdel="' + where + ":" + i + '" aria-label="Remove backup">×</button></span>'; }).join("") +
+    (list.length < 3 ? '<button class="kp-add" data-bkadd="' + where + '">+ Backup</button>' : "") + "</div>";
+}
+function kpDraw() {
+  var c = KP.cfg, T = { P: "Pick up", I: "Dine in", S: "Self service" }, t = KP.today || {};
+  var modes = [["bridge", "Bridge Print only"], ["console", "Console only"], ["both", "Console + Bridge backup"]];
+  var h = '<div class="panel"><h2>KOT printing</h2><div class="kp-row"><div class="kp-seg">' + modes.map(function (m) { return '<button data-mode="' + m[0] + '" aria-pressed="' + (c.mode === m[0]) + '">' + m[1] + "</button>"; }).join("") + "</div>" +
+    '<span class="mute kp-hint">' + { bridge: "Petpooja's slip through Bridge Print, as before", console: "Only the Console's slip prints", both: "Console prints; if it fails, Bridge Print prints" }[c.mode] + "</span></div>" +
+    '<div class="kp-row kp-chips"><span class="kp-chip on">✓ Delivery / Online <i>always</i></span>' + ["P", "I", "S"].map(function (x) { return '<button class="kp-chip' + (c.types.indexOf(x) >= 0 ? " on" : "") + '" data-type="' + x + '">' + (c.types.indexOf(x) >= 0 ? "✓ " : "") + T[x] + "</button>"; }).join("") +
+    '<button class="kp-chip all" data-type="all">All</button></div>' +
+    '<p class="mute kp-today">Today: ' + (t.console || 0) + " slips by the Console · " + (t.bridge || 0) + " by Bridge Print · " + (t.skipped || 0) + " Petpooja slips not needed</p></div>";
+  h += '<div class="panel"><h2>Main printer</h2><div class="kp-row">' + kpSel(c.main, "kp-main", 'data-main="1"') + kpState(c.main) + '<label class="kp-sw"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + '> Print the whole order</label><button class="btn ghost sm kp-test" data-test="' + esc(c.main || "") + '">Test print</button></div>' + kpBackups(c.mainBackups, "main") + "</div>";
+  h += '<div class="panel"><h2>Category & item printers</h2>' + c.lines.map(function (l, i) {
+    var opts = (l.kind === "item" ? KP.items : KP.cats) || [];
+    return '<div class="kp-line"><div class="kp-row"><div class="kp-seg sm"><button data-kind="' + i + ':cat" aria-pressed="' + (l.kind !== "item") + '">Category</button><button data-kind="' + i + ':item" aria-pressed="' + (l.kind === "item") + '">Item</button></div>' +
+      '<div class="kp-tags">' + (l.values || []).map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-tagdel="' + i + ":" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
+      '<select class="kp-sel kp-addval" data-addval="' + i + '"><option value="">+ ' + (l.kind === "item" ? "item" : "category") + "</option>" + opts.filter(function (o) { return (l.values || []).indexOf(o) < 0; }).map(function (o) { return '<option value="' + esc(o) + '">' + esc(o) + "</option>"; }).join("") + "</select></div>" +
+      kpSel(l.printer, "", 'data-lp="' + i + '"') + '<button class="kp-del" data-ldel="' + i + '" aria-label="Delete line">🗑</button></div>' + kpBackups(l.backups || [], String(i)) + "</div>";
+  }).join("") + '<div class="kp-row"><button class="kp-add" id="kpAddLine">+ Add line</button></div></div>';
+  h += '<div class="panel"><h2>Always on</h2><p class="help">✓ Starts with Windows, before anyone logs in &nbsp; ✓ Restarts within 2 s if it stops &nbsp; ✓ Starts again within a minute if someone stops it in Services &nbsp; ✓ This PC never sleeps or hibernates while the Console runs (the display may turn off)</p>' +
+    '<p class="help">One-time job per PC: in the BIOS set <b>“Restore on AC power loss: Power On”</b>, so the PC switches itself on after a power cut.</p></div>';
+  h += '<div class="kp-save"><button class="btn" id="kpSave">Save</button><span class="msg' + (KPmsg ? (KPmsg.ok ? " ok" : " bad") : "") + '" id="kpMsg">' + (KPmsg ? esc(KPmsg.msg) : "") + '</span><a class="mute" href="/console/api/direct/test" target="_blank" rel="noopener">See a sample slip</a></div>';
+  $("kp").innerHTML = h;
+}
+document.addEventListener("click", function (e) {
+  if (!KP || !$("kp") || !$("kp").contains(e.target)) return;
+  var c = KP.cfg, b = e.target.closest("button"); if (!b) return;
+  var d = b.dataset;
+  if (d.mode) c.mode = d.mode;
+  else if (d.type) { if (d.type === "all") c.types = c.types.length === 3 ? [] : ["P", "I", "S"]; else { var i = c.types.indexOf(d.type); if (i >= 0) c.types.splice(i, 1); else c.types.push(d.type); } }
+  else if (d.bkadd) { var L = d.bkadd === "main" ? c.mainBackups : (c.lines[+d.bkadd].backups = c.lines[+d.bkadd].backups || []); if (L.length < 3) L.push(""); }
+  else if (d.bkdel) { var p = d.bkdel.split(":"); (p[0] === "main" ? c.mainBackups : c.lines[+p[0]].backups).splice(+p[1], 1); }
+  else if (d.kind) { var q = d.kind.split(":"); if (c.lines[+q[0]].kind !== q[1]) { c.lines[+q[0]].kind = q[1]; c.lines[+q[0]].values = []; } }
+  else if (d.tagdel) { var r = d.tagdel.split(":"); c.lines[+r[0]].values.splice(+r[1], 1); }
+  else if (d.ldel) c.lines.splice(+d.ldel, 1);
+  else if (b.id === "kpAddLine") c.lines.push({ kind: "cat", values: [], printer: "", backups: [] });
+  else if (d.test !== undefined) { post("/console/api/direct/test", { Printer: c.main }).then(function (r) { $("kpMsg").textContent = r.msg; $("kpMsg").className = "msg " + (r.ok ? "ok" : "bad"); }); return; }
+  else if (b.id === "kpSave") {
+    var out = JSON.parse(JSON.stringify(c)); out.mainBackups = out.mainBackups.filter(Boolean); out.lines = out.lines.filter(function (l) { return l.printer || (l.values || []).length; }).map(function (l) { l.backups = (l.backups || []).filter(Boolean); return l; });
+    post("/console/api/direct", out).then(function (r) { KPmsg = r; kpDraw(); if (r.ok) VIEWS.kotprint.load(); setTimeout(function () { KPmsg = null; }, 4000); });
+    return;
+  } else return;
+  kpDraw();
+});
+document.addEventListener("change", function (e) {
+  if (!KP || !$("kp") || !$("kp").contains(e.target)) return;
+  var c = KP.cfg, t = e.target, d = t.dataset;
+  if (d.main) c.main = t.value;
+  else if (d.bk) { var p = d.bk.split(":"); (p[0] === "main" ? c.mainBackups : c.lines[+p[0]].backups)[+p[1]] = t.value; }
+  else if (d.lp !== undefined) c.lines[+d.lp].printer = t.value;
+  else if (d.addval !== undefined) { if (t.value) c.lines[+d.addval].values.push(t.value); }
+  else if (t.id === "kpWhole") c.mainRest = !t.checked;
+  else return;
+  kpDraw();
+});
 
 // ---- Bridge: Babai Screens (TVs and tablets running the Babai Screens app or a screen page) -------
 VIEWS.screens = {
