@@ -122,6 +122,7 @@ func runWorker() {
 	go cxLoop()
 	go metricsLoop()
 	go comScanLoop()
+	go keepAwake()        // the PC never sleeps while the Console runs (the display may)
 	go menuSeenSnapshot() // read the saved menu (or build it from the order history) before the first Petpooja read needs it
 
 	mux := http.NewServeMux()

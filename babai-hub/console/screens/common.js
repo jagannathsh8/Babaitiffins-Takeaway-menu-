@@ -64,16 +64,16 @@
   // ---- "can't reach the Console" bar; the screen keeps its last picture meanwhile
   var warn = document.createElement("div"); warn.className = "warn"; warn.hidden = true; warn.setAttribute("role", "status");
   document.addEventListener("DOMContentLoaded", function () { document.body.appendChild(warn); });
-  BS.warn = function (msg) { warn.hidden = !msg; warn.textContent = msg || ""; };
+  BS.warn = function (msg, sub) { warn.hidden = !msg; warn.innerHTML = msg ? BS.esc(msg) + (sub ? "<small>" + BS.esc(sub) + "</small>" : "") : ""; };
   BS.poll = function (path, ms, onData) {
-    var fails = 0, busy = false;
+    var fails = 0, busy = false, lostAt = 0;
     function tick() {
       if (busy) return; busy = true;
       BS.get(path, function (err, j) {
         busy = false;
-        if (err) { if (++fails >= 3) BS.warn("Reconnecting to the Babai Console… (showing the last orders)"); return; }
+        if (err) { if (!fails) lostAt = Date.now(); if (++fails >= 3) BS.warn("⚠ CONSOLE OFFLINE · orders are not updating", "Lost " + BS.mmss((Date.now() - lostAt) / 1000) + " ago · showing the last orders · check that the Console PC is on"); return; }
         fails = 0;
-        BS.warn(j.ok === false ? "The Console can’t read Petpooja right now. New orders will show when it can." : "");
+        BS.warn(j.ok === false ? "⚠ PETPOOJA NOT READING · new orders will show when it can" : "", j.ok === false ? "The Console is on, but can’t read the Petpooja billing PC" : "");
         BS.skew = j.skew || 0; BS.srv = j.now ? j.now - Date.now() : 0;
         onData(j);
       });
