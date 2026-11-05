@@ -127,17 +127,33 @@ body.t-genz .prw em{color:#a6ff00}
 body.t-genz .dsf{background:transparent}
 body.t-genz .ft{background:rgba(255,255,255,.08);border:.12rem solid rgba(255,255,255,.22);border-radius:1.2rem}
 body.t-genz .ft span{color:#ffb3f0}
-body.t-genz .ft.wide{background:linear-gradient(90deg,#ff4fd8,#7b5ce6);border:0;color:#fff}body.t-genz .ft.wide span{color:#F9BC21}
+body.t-genz .ft.wide{background:linear-gradient(90deg,#F9BC21,#ffd96b);border:0;color:#171717;box-shadow:0 0 1.4rem rgba(249,188,33,.45)}body.t-genz .ft.wide span{color:#a3127f}
 body.t-genz .callpop{background:radial-gradient(50rem 30rem at 50% 50%,rgba(255,79,216,.35),transparent 70%),rgba(20,10,38,.96)}
 body.t-genz .callpop b{background:linear-gradient(90deg,#F9BC21,#ff4fd8,#29d3ff);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none}
 body.t-genz .callpop em{color:#a6ff00}
+/* the 🔊 and 🎨 buttons fade away after 10 s untouched; any key, touch or mouse brings them back */
+.bar .spk{transition:opacity .6s}
+body.hushed .bar .spk{opacity:0;pointer-events:none}
+body.hushed{cursor:none}
+/* busy hours: everything still fits */
+.plist.c2,.plist.c3{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem .7rem}
+.plist.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.plist.c2 .prw,.plist.c3 .prw{padding:.35rem .6rem;gap:.6rem}
+.plist.c2 .prw b{font-size:1.9rem;width:4.4rem}.plist.c3 .prw b{font-size:1.6rem;width:3.6rem}
+.plist.c2 .prw .mid span,.plist.c3 .prw .mid span{font-size:.8rem}
+.plist.c2 .prw em{font-size:1.2rem;width:5rem}.plist.c3 .prw em{font-size:.95rem;width:auto;white-space:nowrap}
+.plist.c3{gap:.3rem .5rem}.plist.c3 .prw{padding:.25rem .5rem;gap:.45rem}.plist.c3 .prw b{width:3.2rem}.plist.c3 .prw .mid span{display:none}
+.plist.c2 .bar2,.plist.c3 .bar2{height:.45rem}
+.plist.c2 .more,.plist.c3 .more{grid-column:1/-1}
+.rtoks.sm{gap:.55rem}.rtoks.sm .rt{font-size:2.1rem;padding:.4rem .8rem}
+.rtoks.xs{gap:.4rem}.rtoks.xs .rt{font-size:1.6rem;padding:.3rem .6rem}
+#spot.small .spot{padding:.5rem;flex-direction:row;justify-content:center;gap:1.4rem}#spot.small .spot b{font-size:5.5rem}
 </style>
 </head>
 <body>
 <div class="tv">
   <div class="dbg" id="bg"></div>
   <div class="bar"><img src="/screens/logo.webp" alt=""><div class="t">DOSA ORDER STATUS<small>DINE-IN DOSAS · TASTE THE ANDHRA STYLE</small></div>
-    <div class="cnt"><span class="r"><b id="nr">0</b> READY</span><span><b id="np">0</b> PREPARING</span></div>
     <button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><button class="spk" id="thm" aria-label="Choose the screen theme">🎨</button><div class="clock" id="clock"></div></div>
   <div class="dsv">
     <div class="dsl neon"><div class="sh ok" id="hr">✓ READY · PLEASE COLLECT</div><div id="spot"></div><div class="rtoks" id="rtoks"></div></div>
@@ -205,11 +221,15 @@ body.t-genz .callpop em{color:#a6ff00}
     Object.keys(T).forEach(function (k) { var t = T[k]; if (t.s === "r") rd.push(t); else if (t.s === "p") pr.push(t); });
     rd.sort(function (a, b) { return (b.a || 0) - (a.a || 0); });
     pr.sort(function (a, b) { return a.pos - b.pos; });
-    $("nr").textContent = rd.length; $("np").textContent = pr.length;
     $("spot").innerHTML = rd.length ? '<div class="spot"><span class="lab">LATEST READY</span><b>' + BS.esc(rd[0].l) + '</b><span class="sub">' + plural(rd[0].d || 1, "dosa", "dosas") + " · " + words[3] + "</span></div>"
       : '<div class="idle">Your token number will appear here when it’s ready</div>';
-    $("rtoks").innerHTML = rd.slice(1, 13).map(function (t, i) { return '<span class="rt" style="opacity:' + Math.max(0.35, 1 - i * 0.12).toFixed(2) + '">' + BS.esc(t.l) + "</span>"; }).join("");
-    var show = pr.slice(0, 8);
+    // every ready token shows: smaller as the list grows (a customer must always find theirs)
+    var more = rd.slice(1, 41), rk = more.length > 24 ? " xs" : more.length > 8 ? " sm" : "";
+    $("rtoks").className = "rtoks" + rk; $("spot").className = rd.length > 10 ? "small" : "";
+    $("rtoks").innerHTML = more.map(function (t, i) { return '<span class="rt" style="opacity:' + Math.max(0.55, 1 - i * 0.04).toFixed(2) + '">' + BS.esc(t.l) + "</span>"; }).join("") + (rd.length > 41 ? '<span class="more">+' + (rd.length - 41) + "</span>" : "");
+    // every preparing token shows: 1 column up to 8, then 2 columns (compact), then 3
+    var cols = pr.length <= 8 ? 1 : pr.length <= 20 ? 2 : 3, show = pr.slice(0, cols === 3 ? 33 : 20);
+    $("plist").className = "plist c" + cols;
     $("plist").innerHTML = show.map(function (t) {
       var el = BS.since(t.c || BS.now(), true) / 60, m = t.m > 0 ? t.m : null, pc = m ? Math.min(95, Math.max(4, 100 * el / (el + m))) : 10;
       return '<div class="prw"><b>' + BS.esc(t.l) + '</b><div class="mid"><span>' + plural(t.d || 1, "dosa", "dosas") + (t.o ? " · next round" : "") + '</span><div class="bar2"><i style="width:' + pc.toFixed(0) + '%"></i></div></div><em>' + (m ? "~" + m + " min" : el >= 1 ? Math.floor(el) + " min" : "just in") + "</em></div>";
@@ -250,6 +270,10 @@ body.t-genz .callpop em{color:#a6ff00}
   function spkUI() { var v = BS.voiceOn(); spk.textContent = v ? "🔊" : "🔇"; spk.setAttribute("aria-pressed", String(v)); }
   spk.onclick = function () { BS.voiceOn(!BS.voiceOn()); spkUI(); };
   spkUI();
+  var idleT = null;
+  function wake() { document.body.classList.remove("hushed"); clearTimeout(idleT); idleT = setTimeout(function () { if ($("tpick").hidden) document.body.classList.add("hushed"); else wake(); }, 10000); }
+  ["keydown", "mousemove", "pointerdown", "touchstart"].forEach(function (ev) { document.addEventListener(ev, wake, true); });
+  wake();
   setTheme(BS.q.theme || BS.store("bs.theme.dosa") || "black");
 
   // ---- photos behind the screen (the outlet's own, or the built-in dish photos)
