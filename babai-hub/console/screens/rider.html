@@ -65,7 +65,7 @@
       var fs = Math.min(cw / 8.4, ch / 1.3, w / 14);
       if (fs > best.fs) best = { cols: cols, fs: fs };
     }
-    el.style.setProperty("--fs", best.fs.toFixed(1) + "px");
+    el.style.setProperty("--fs", (best.fs / BS.zoom).toFixed(1) + "px"); // px fonts are zoomed by the TV
     el.style.gridTemplateColumns = "repeat(" + best.cols + ",minmax(0,1fr))";
     el.innerHTML = list.map(function (o) {
       var br = BS.brand(o.p), t = ready ? o.ra || o.c : o.c;

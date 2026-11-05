@@ -17,7 +17,23 @@
   BS.store = ls;
 
   // 1rem = 1% of the largest 16:9 box that fits the screen
-  function unit() { var w = window.innerWidth, h = window.innerHeight; document.documentElement.style.fontSize = Math.min(w / 100, h * 16 / 9 / 100) + "px"; }
+  // Android TVs with a large system font size zoom every font of the page (the web view's text
+  // zoom), which pushed the screen past the TV's edges: measure that zoom and cancel it.
+  function textZoom() {
+    var d = document.createElement("div");
+    d.style.cssText = "position:absolute;visibility:hidden;left:-999px;top:0;font-size:100px;line-height:1;height:1em;padding:0;border:0";
+    (document.body || document.documentElement).appendChild(d);
+    var z = d.offsetHeight / 100;
+    d.parentNode.removeChild(d);
+    return z > 0.5 && z < 4 ? z : 1;
+  }
+  BS.zoom = 1;
+  function unit() {
+    var w = window.innerWidth, h = window.innerHeight;
+    BS.zoom = textZoom();
+    document.documentElement.style.fontSize = Math.min(w / 100, h * 16 / 9 / 100) / BS.zoom + "px";
+  }
+  document.addEventListener("DOMContentLoaded", function () { unit(); if (BS.onresize) BS.onresize(); });
   unit(); window.addEventListener("resize", function () { unit(); if (BS.onresize) BS.onresize(); });
 
   BS.url = function (path) {

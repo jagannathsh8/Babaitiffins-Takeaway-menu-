@@ -158,6 +158,7 @@ public class MainActivity extends Activity {
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
+        s.setTextZoom(100); // the TV's system font size must not zoom the screen past its edges
         web.addJavascriptInterface(new Bridge(), "BabaiApp");
         web.setWebChromeClient(new WebChromeClient());
         web.setWebViewClient(new WebViewClient() {
