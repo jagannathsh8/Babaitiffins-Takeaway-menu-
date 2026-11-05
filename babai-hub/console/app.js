@@ -33,7 +33,7 @@ function brandColor(name, type) {
 function last(s, n) { s = String(s || ""); return s.length > n ? "…" + s.slice(-n) : s; }
 
 var AREAS = {
-  bridge: { label: "Bridge Print", items: [["overview", "Overview"], ["dispatch", "Dispatch"], ["rules", "Printers & rules"], ["timing", "Print timing"], ["alerts", "Alerts"], ["apps", "Apps"]] },
+  bridge: { label: "Bridge Print", items: [["overview", "Overview"], ["dispatch", "Dispatch"], ["rules", "Printers & rules"], ["timing", "Print timing"], ["alerts", "Alerts"], ["apps", "Apps"], ["barker", "Dosa barker"]] },
   hub: { label: "Hub", items: [["status", "Status"], ["petpooja", "Petpooja & Firebase"], ["scanners", "Scanners & rider"], ["pcscan", "PC scanner"], ["customers", "Customers' page"], ["pc", "This PC & updates"]] },
   metrics: { label: "Metrics", items: [["cx", "CX metrics"], ["ops", "Ops metrics"]], open: true },
   data: { label: "Data", items: [["metrics", "Metrics"], ["prep", "Prep Live"], ["planner", "Indent planner"], ["cxsheet", "Ratings sheet"], ["sources", "Connections"]] }
@@ -494,6 +494,22 @@ VIEWS.apps = {
           return '<div class="panel"><h2>' + esc(a.Name) + '</h2><p class="help">' + esc(a.What) + "</p>" + (a.Ready ? '<p><span class="chip ok">Build ' + a.Build + " · " + esc(a.Size) + "</span></p>" : '<p><span class="chip warn">' + esc(a.State) + "</span></p>") + "</div>";
         }).join("");
       if (link && window.QRCode) new QRCode($("qrall"), { text: link, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M });
+    }).catch(function () {});
+  }
+};
+
+// ---- Bridge: Dosa barker (the dosa master's tawa screen, on any TV / tablet on the shop Wi-Fi) -----
+VIEWS.barker = {
+  html: function () {
+    return '<div class="panel"><h2>Dosa barker on a TV or tablet</h2><p class="help">Open this address in the browser of any TV, tablet or monitor on the shop Wi-Fi. Tawas, channels and rules are set with ⚙ on the screen (the Console PIN is asked there).</p><div id="bkl"></div><div class="qr" id="bkqr"></div>' +
+      '<p class="help">One tawa per screen: add <b>?tawa=2</b> to the address. Foot pedal: a USB / Bluetooth foot switch set to type 1 for Tawa 1, 2 for Tawa 2 … (any key on a one-tawa screen).</p></div>' +
+      '<iframe class="frame" style="min-height:760px;border:1px solid var(--line);border-radius:12px" src="/barker" title="Dosa barker"></iframe>';
+  },
+  load: function () {
+    getJ("/console/api/apps").then(function (d) {
+      var link = ((d.links || [])[0] || "").replace(/\/apps$/, "/barker");
+      $("bkl").innerHTML = link ? '<p><b>' + esc(link) + '</b></p><p class="help">Tawa 1 only: ' + esc(link) + '?tawa=1 · Tawa 2 only: ' + esc(link) + '?tawa=2</p>' : '<p class="help">No network address: is this PC on the shop Wi-Fi?</p>';
+      if (link && window.QRCode) new QRCode($("bkqr"), { text: link, width: 140, height: 140, correctLevel: QRCode.CorrectLevel.M });
     }).catch(function () {});
   }
 };

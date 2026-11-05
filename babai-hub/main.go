@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "4.4"
+	version     = "4.5"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -127,6 +127,7 @@ func runWorker() {
 	mux.HandleFunc("/hub", localOnly(pinned(handleHome)))
 	consoleRoutes(mux)
 	metricsLANRoutes(mux)
+	barkerRoutes(mux) // the dosa barker screen on the shop Wi-Fi
 	mux.HandleFunc("/status.json", localOnly(pinned(handleStatus)))
 	mux.HandleFunc("/settings", localOnly(pinned(handleSettings)))
 	mux.HandleFunc("/test", localOnly(pinned(handleTest)))

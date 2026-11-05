@@ -94,6 +94,8 @@ func serveConsoleFile(name string) http.HandlerFunc {
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		case strings.HasSuffix(name, ".css"):
 			w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		case strings.HasSuffix(name, ".webp"):
+			w.Header().Set("Content-Type", "image/webp")
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Write(b)

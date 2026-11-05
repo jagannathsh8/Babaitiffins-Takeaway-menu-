@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dosa barker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@700;800&family=Montserrat:wght@600;700;800&family=Poppins:wght@500;600;800&family=Inter:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--yellow:#F9BC21;--black:#171717;--green:#568B60;--cream:#FFF6DF;--orange:#B66A29;--mute:#5e6b79;--line:#cfd5dc;
+  --h1:"League Spartan","Arial Black",sans-serif;--h2:"Montserrat","Segoe UI",Roboto,sans-serif;--body:"Poppins","Segoe UI",Roboto,sans-serif;--num:"Inter","Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{background:var(--cream);color:var(--black);font:15px/1.4 var(--body);display:flex;flex-direction:column}
+.bar{display:flex;align-items:center;gap:12px;padding:8px 14px;background:var(--yellow);flex-wrap:wrap}
+.bar img{height:40px;width:40px;object-fit:contain}
+.bar h1{margin:0;font:800 24px/1 var(--h1)}
+.sub{font:600 13px var(--h2)}
+.cnt{margin-left:auto;font:800 14px var(--num)}
+.clock{font:800 20px var(--num);font-variant-numeric:tabular-nums}
+.bar button{font:800 18px var(--h2);width:42px;height:40px;border:2px solid var(--black);border-radius:10px;background:#fff;cursor:pointer}
+.bar button:focus-visible,.dc:focus-visible,.set button:focus-visible{outline:3px solid var(--green);outline-offset:2px}
+.warn{background:#b91c1c;color:#fff;font:700 14px var(--h2);padding:6px 14px}
+.cols{flex:1;display:grid;gap:12px;padding:12px;align-items:start;overflow:auto}
+.tcol{background:#fff;border-radius:12px;border:1px solid #e2e7ed;display:grid;gap:8px;padding:10px;min-width:0;align-content:start}
+.tcol.hit{box-shadow:0 0 0 4px var(--yellow)}
+.th{display:flex;align-items:center;gap:8px;padding:2px 2px 6px;border-bottom:2px solid var(--yellow);flex-wrap:wrap}
+.th b{font:800 20px var(--h1);white-space:nowrap}
+.th .chs{font:700 11px var(--h2);letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--black);color:var(--yellow)}
+.th .ped{font:700 12px var(--h2);color:var(--mute)}
+.th em{margin-left:auto;font:700 13px var(--h2);font-style:normal;color:var(--mute)}
+.th em b{font:800 15px var(--num);color:var(--black)}
+.th em b.full{color:#b91c1c}
+.empty{color:var(--mute);font:500 14px var(--body);text-align:center;padding:16px 0;margin:0}
+.dc{display:grid;gap:4px;border-radius:8px;padding:8px 10px;background:#fff;border:1.5px solid var(--line);cursor:pointer;user-select:none;-webkit-user-select:none;position:relative;transition:opacity .25s,transform .25s}
+.dc.nx{border-left:6px solid var(--yellow)}
+.dc.nx::before{content:"NEXT · pedal " attr(data-ped);position:absolute;left:10px;top:-9px;font:800 10px var(--h2);letter-spacing:.06em;background:var(--yellow);color:var(--black);border-radius:999px;padding:1px 8px}
+.dc.on{background:#e3e6ea;border-color:#9aa3ad}
+.dc.on::after{content:"ON TAWA · tap when done";position:absolute;right:10px;top:-9px;font:800 10px var(--h2);letter-spacing:.06em;background:#3b4250;color:#fff;border-radius:999px;padding:1px 8px}
+.dc.gone{opacity:0;transform:scale(.95)}
+.dc.no{animation:shk .35s}@keyframes shk{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.hd{display:flex;align-items:baseline;gap:8px}
+.hd .q{font:800 26px/1 var(--num)}
+.hd .nm{font:800 18px/1.15 var(--body)}
+.hd .nm small{font:600 11px var(--h2);color:var(--mute);margin-left:6px}
+.tm{margin-left:auto;font:800 16px var(--num);font-variant-numeric:tabular-nums}
+.tm.y{color:#a15c00}.tm.r{color:#b91c1c}
+.ln{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid #edf0f3;padding-top:4px;font:500 14px var(--body)}
+.dc.on .ln{border-top-color:#cfd4da}
+.ln .lq{font:800 15px var(--num);min-width:26px}
+.ln .kb{font:800 13.5px var(--num);border:1.5px solid var(--black);border-radius:4px;padding:0 5px}
+.ln .who b{font:800 15px var(--num)}
+.ln .help{font:800 10px var(--h2);background:#e8f4ec;color:#1d6b3a;border-radius:999px;padding:1px 7px}
+.ln .lt{margin-left:auto;font:600 12.5px var(--num);color:var(--mute);font-variant-numeric:tabular-nums}
+.ln .nt{flex-basis:100%;font:600 13px var(--body);color:#7c2d12}
+.one .dc{padding:12px 14px}.one .hd .q{font-size:36px}.one .hd .nm{font-size:26px}.one .tm{font-size:22px}.one .ln{font-size:17px}.one .ln .who b,.one .ln .lq{font-size:18px}
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--black);color:#fff;font:700 15px var(--h2);border-radius:12px;padding:10px 16px;display:flex;gap:12px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:9}
+.toast button{font:800 14px var(--h2);background:var(--yellow);border:0;border-radius:8px;padding:6px 12px;cursor:pointer}
+.set{background:#fff;border-bottom:2px solid var(--black);padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;max-height:70vh;overflow:auto}
+.set h5{margin:0 0 6px;font:800 12px var(--h2);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.set label{display:flex;align-items:center;gap:8px;font:500 14px var(--body);margin-bottom:6px}
+.set select,.set input[type=number],.set input[type=password]{font:inherit;padding:4px 6px}
+.set input[type=number]{width:60px}
+.nums{display:flex;gap:6px}.nums button{font:800 15px var(--num);width:38px;height:34px;border:2px solid var(--black);border-radius:8px;background:#fff;cursor:pointer}
+.nums button[aria-pressed=true]{background:var(--black);color:var(--yellow)}
+.tw b{width:64px}
+.cats{max-height:180px;overflow:auto;border:1px solid #e2e7ed;border-radius:8px;padding:6px 8px}
+.foot{font:500 12.5px var(--body);color:var(--mute);margin:4px 0 0}
+.acts{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.acts button{font:800 14px var(--h2);border:2px solid var(--black);border-radius:10px;padding:8px 16px;background:var(--yellow);cursor:pointer}
+.acts button.ghost{background:#fff}
+.acts .msg{font:600 14px var(--h2)}.msg.bad{color:#b91c1c}.msg.ok{color:#1d6b3a}
+@media (max-width:700px){.cols{grid-template-columns:1fr!important}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <img src="/barker/logo.webp" alt="Babai Tiffins">
+  <h1>Dosa barker</h1><span class="sub" id="sub"></span>
+  <span class="cnt" id="cnt"></span><span class="clock" id="clock"></span>
+  <button id="fs" aria-label="Full screen" title="Full screen">⛶</button>
+  <button id="gear" aria-label="Tawa settings" aria-expanded="false" title="Tawa settings">⚙</button>
+</div>
+<div class="warn" id="warn" hidden></div>
+<form class="set" id="set" hidden>
+  <div><h5>Day</h5><select id="day"></select><p class="foot">Each day keeps its own tawa plan. “Every other day” is used when a day has none.</p></div>
+  <div><h5>Tawas running</h5><div class="nums" id="nums"></div></div>
+  <div><h5>Each tawa cooks for</h5><div id="tws"></div><p class="foot">Two tawas on the same channels share the KOTs by load.</p></div>
+  <div><h5>Rules</h5>
+    <label>Tawa holds <input type="number" id="cap" min="1" max="30"> dosas at a time</label>
+    <label><input type="checkbox" id="merge"> Add up the same dosa ordered close together</label>
+    <label>within <input type="number" id="win" min="1" max="30"> min, max <input type="number" id="max" min="1" max="30"> per card</label>
+    <label><input type="checkbox" id="help"> An empty tawa helps when the others are full</label>
+    <p class="foot">A KOT is never split: all its dosas go to one tawa.</p></div>
+  <div><h5>Foot pedal</h5>
+    <label><input type="radio" name="chain" value="1"> One press: finish the grey card and put the next one on</label>
+    <label><input type="radio" name="chain" value="0"> One press does one step (on, then done)</label>
+    <p class="foot">Pedal keys: 1 for Tawa 1, 2 for Tawa 2 … On a one-tawa screen (…/barker?tawa=2) any pedal key works: Enter, Space, Page Down.</p></div>
+  <div><h5>Categories on the tawas</h5><label><input type="checkbox" id="auto"> Automatic: categories with “dosa” in the name</label><div class="cats" id="cats"></div></div>
+  <div class="acts"><button type="submit">Save</button><button type="button" class="ghost" id="close">Close</button>
+    <span id="pinbox" hidden><input type="password" id="pin" inputmode="numeric" placeholder="Console PIN" aria-label="Console PIN" size="10"> <button type="button" id="pinok">Unlock</button></span>
+    <span class="msg" id="smsg" role="status"></span></div>
+</form>
+<div class="cols" id="cols"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script>
+(function () {
+  "use strict";
+  var CH = { D: "Delivery", P: "Pick up", I: "Dine in", S: "Self service" };
+  var OPTS = [["A", "All channels"], ["D", "Delivery"], ["I", "Dine in"], ["P", "Pick up"], ["S", "Self service"], ["PS", "Pick up + Self service"], ["IS", "Dine in + Self service"], ["DP", "Delivery + Pick up"], ["PI", "Pick up + Dine in"]];
+  var DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  var one = +(new URLSearchParams(location.search).get("tawa") || 0); // one tawa only (1-based)
+  var D = null, got = 0, busy = false, failed = 0, edit = null, editDay = "";
+  function $(i) { return document.getElementById(i); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function nowMs() { return D ? D.now + (Date.now() - got) : Date.now(); }
+  function age(u) { return Math.max(0, (nowMs() - u.c) / 1000); }
+  function fmt(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ":" + ("0" + s % 60).slice(-2); }
+  function chName(c) { return c === "A" ? "All" : c.split("").map(function (x) { return CH[x]; }).join(" + "); }
+  function post(url, body) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Babai-Hub": "1" }, body: JSON.stringify(body), credentials: "same-origin" })
+      .then(function (r) { return r.json().then(function (j) { j._status = r.status; return j; }); });
+  }
+
+  // ---- cards: grey first (in the order they went on), then oldest first. The same dosa ordered
+  // within cfg.win minutes of the card's first order is added up, never more than cfg.max per card.
+  function cards(list) {
+    var c = D.cfg, out = [], open = {};
+    list.slice().sort(function (a, b) {
+      return (a.st === "on" ? 0 : 1) - (b.st === "on" ? 0 : 1) || (a.st === "on" ? (a.at - b.at || a.g - b.g) : a.c - b.c) || a.o - b.o;
+    }).forEach(function (u) {
+      var k = u.st === "on" ? "g" + u.g : "w" + u.n.toLowerCase(), cd = open[k];
+      if (cd && (u.st === "on" || (c.merge && (u.c - cd.us[0].c) / 60000 <= c.win && cd.q + u.q <= c.max))) { cd.us.push(u); cd.q += u.q; return; }
+      cd = { us: [u], st: u.st, q: u.q }; out.push(cd);
+      if (u.st === "on" || c.merge) open[k] = cd;
+    });
+    return out;
+  }
+  function onQty(t) { return D.units.reduce(function (a, u) { return a + (u.st === "on" && u.t === t ? u.q : 0); }, 0); }
+  function line(u) {
+    var who = u.ch === "D" ? esc(u.app) + (u.ref ? " <b>" + esc(u.ref) + "</b>" : "") : esc(CH[u.ch]) + (u.ref ? " · <b>" + esc(u.ref) + "</b>" : "");
+    return '<div class="ln"><span class="lq">' + u.q + '×</span><span class="kb">' + esc(u.kn) + '</span><span class="who">' + who + "</span>" + (u.h ? '<span class="help">helping</span>' : "") +
+      '<span class="lt" data-c="' + u.c + '">' + fmt(age(u)) + "</span>" + (u.nt ? '<span class="nt">Note: ' + esc(u.nt) + "</span>" : "") + "</div>";
+  }
+  var CARDS = {}; // card key -> unit ids, for taps
+  function draw() {
+    if (!D) return;
+    var P = D.plan, live = D.units.filter(function (u) { return u.st !== "done"; }), cols = $("cols"), idx = [];
+    for (var t = 0; t < P.length; t++) if (!one || one === t + 1) idx.push(t);
+    if (!idx.length) idx = [0];
+    cols.className = "cols" + (idx.length === 1 ? " one" : "");
+    cols.style.gridTemplateColumns = "repeat(" + idx.length + ",minmax(260px,1fr))";
+    $("sub").textContent = D.day + " · " + P.length + " tawa" + (P.length > 1 ? "s" : "") + " · " + P.map(function (c, i) { return "T" + (i + 1) + " " + chName(c); }).join(", ");
+    var sum = function (st) { return live.reduce(function (a, u) { return a + (u.st === st ? u.q : 0); }, 0); };
+    $("cnt").textContent = sum("on") + " on tawas · " + sum("wait") + " waiting";
+    CARDS = {};
+    var focusKey = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.key : "";
+    cols.innerHTML = idx.map(function (t) {
+      var cs = cards(live.filter(function (u) { return u.t === t; })), dz = 0, nx = null, oq = onQty(t);
+      cs.forEach(function (cd) { if (!nx && cd.st === "wait") nx = cd; });
+      var html = cs.map(function (cd) {
+        dz += cd.q;
+        var oldest = cd.us[0], key = cd.us.map(function (u) { return u.id; }).join("|");
+        cd.us.forEach(function (u) { if (u.c < oldest.c) oldest = u; });
+        CARDS[key] = cd.us.map(function (u) { return u.id; });
+        return '<div class="dc' + (cd.st === "on" ? " on" : "") + (cd === nx ? " nx" : "") + '" data-ped="' + (t + 1) + '" data-key="' + esc(key) + '" data-t="' + t + '" tabindex="0" role="button"><div class="hd"><span class="q">' + cd.q + '×</span><span class="nm">' + esc(cd.us[0].n) +
+          (cd.us.length > 1 ? "<small>" + cd.us.length + " orders</small>" : "") + '</span><span class="tm" data-c="' + oldest.c + '">' + fmt(age(oldest)) + "</span></div>" + cd.us.map(line).join("") + "</div>";
+      }).join("");
+      return '<div class="tcol" data-tcol="' + t + '"><div class="th"><b>Tawa ' + (t + 1) + '</b><span class="chs">' + esc(chName(P[t])) + '</span><span class="ped">🦶 ' + (one ? "any key" : t + 1) + '</span><em>On tawa <b class="' + (oq >= D.cfg.cap ? "full" : "") + '">' + oq + "/" + D.cfg.cap + "</b> · " + dz + " dosa" + (dz === 1 ? "" : "s") + "</em></div>" +
+        (html || '<p class="empty">Nothing waiting for this tawa.</p>') + "</div>";
+    }).join("");
+    if (focusKey) { var f = cols.querySelector('[data-key="' + focusKey.replace(/"/g, '\\"') + '"]'); if (f) f.focus(); }
+    tick();
+  }
+  function tick() {
+    $("clock").textContent = new Date().toTimeString().slice(0, 5);
+    document.querySelectorAll("[data-c]").forEach(function (e) {
+      var s = Math.max(0, (nowMs() - +e.dataset.c) / 1000); e.textContent = fmt(s);
+      if (e.classList.contains("tm")) e.className = "tm" + (s >= 900 ? " r" : s >= 600 ? " y" : "");
+    });
+  }
+
+  // ---- data
+  function apply(j) {
+    if (!j || !j.units) return;
+    D = j; got = Date.now(); failed = 0;
+    var w = $("warn");
+    if (j.ppAge < 0 || j.ppAge > 30000) { w.hidden = false; w.textContent = "Not reading Petpooja" + (j.ppAge > 0 ? " for " + Math.round(j.ppAge / 60000) + " min" : "") + ". New orders won’t show until the Console PC reads Petpooja again."; }
+    else w.hidden = true;
+    if (!$("set").hidden && !edit) openSet();
+    draw();
+  }
+  function load() {
+    if (busy) return;
+    fetch("/barker/api/state", { cache: "no-store" }).then(function (r) { return r.json(); }).then(apply).catch(function () {
+      if (++failed >= 3) { $("warn").hidden = false; $("warn").textContent = "Can’t reach the Console PC. Check the Wi-Fi; the screen keeps trying."; }
+    });
+  }
+  function send(body, el) {
+    busy = true;
+    return post("/barker/api/tap", body).then(function (j) {
+      busy = false;
+      if (j.msg) { toast(j.msg); if (el) { el.classList.remove("no"); void el.offsetWidth; el.classList.add("no"); } }
+      apply(j); return j;
+    }).catch(function () { busy = false; toast("Not saved: can’t reach the Console PC."); });
+  }
+
+  // ---- tap and pedal
+  var lastDone = null;
+  function done(ids, label) {
+    lastDone = ids;
+    return send({ done: ids }).then(function () { toast("Done: " + label, true); });
+  }
+  function labelOf(ids) { var us = D.units.filter(function (u) { return ids.indexOf(u.id) >= 0; }); return us.reduce(function (a, u) { return a + u.q; }, 0) + "× " + (us[0] ? us[0].n : ""); }
+  function tap(el) {
+    var ids = CARDS[el.dataset.key]; if (!ids) return;
+    if (el.classList.contains("on")) { el.classList.add("gone"); var l = labelOf(ids); setTimeout(function () { done(ids, l); }, 220); }
+    else send({ on: ids }, el);
+  }
+  function pedal(t) {
+    if (!D || t < 0 || t >= D.plan.length) return;
+    var col = document.querySelector('[data-tcol="' + t + '"]'); if (!col) return;
+    var on = col.querySelector(".dc.on"), nx = col.querySelector(".dc.nx"), body = {};
+    if (on) { body.done = CARDS[on.dataset.key]; lastDone = body.done; } // one step: a grey card is finished first
+    if (nx && (D.cfg.chain || !on)) body.on = CARDS[nx.dataset.key];
+    if (!body.done && !body.on) return;
+    var l = body.done ? labelOf(body.done) : "";
+    col.classList.add("hit"); setTimeout(function () { col.classList.remove("hit"); }, 300);
+    send(body, nx).then(function (j) { if (j && l && !j.msg) toast("Done: " + l, true); });
+  }
+  $("cols").addEventListener("click", function (e) { var c = e.target.closest(".dc"); if (c) tap(c); });
+  document.addEventListener("keydown", function (e) {
+    if (!$("set").hidden || /INPUT|SELECT|TEXTAREA|BUTTON/.test(e.target.tagName)) return;
+    var c = e.target.closest && e.target.closest(".dc");
+    if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); tap(c); return; }
+    if (/^[1-6]$/.test(e.key)) { e.preventDefault(); pedal(one ? one - 1 : +e.key - 1); return; }
+    if (one && (e.key === "Enter" || e.key === " " || e.key === "PageDown" || e.key === "PageUp")) { e.preventDefault(); pedal(one - 1); }
+  });
+  var toastT = null;
+  function toast(msg, undo) {
+    var t = $("toast"); t.hidden = false;
+    t.innerHTML = "<span>" + esc(msg) + "</span>" + (undo && lastDone ? '<button type="button" id="undo">Undo</button>' : "");
+    clearTimeout(toastT); toastT = setTimeout(function () { t.hidden = true; }, undo ? 8000 : 4000);
+    var u = $("undo"); if (u) u.onclick = function () { var ids = lastDone; lastDone = null; t.hidden = true; send({ undo: ids }); };
+  }
+
+  // ---- settings
+  function planFor(day) { return (edit.plans[day] || edit.plans["default"] || ["A"]).slice(); }
+  function openSet() {
+    edit = JSON.parse(JSON.stringify(D.cfg)); editDay = D.day in edit.plans ? D.day : "default";
+    $("day").innerHTML = [["default", "Every other day"]].concat(DAYS.map(function (d) { return [d, d]; })).map(function (d) { return '<option value="' + d[0] + '"' + (d[0] === editDay ? " selected" : "") + ">" + d[1] + (edit.plans[d[0]] ? " ✓" : "") + "</option>"; }).join("");
+    $("cap").value = edit.cap; $("win").value = edit.win; $("max").value = edit.max; $("merge").checked = edit.merge; $("help").checked = edit.help;
+    document.querySelector('[name="chain"][value="' + (edit.chain ? 1 : 0) + '"]').checked = true;
+    var cats = (D.menuCats || []).slice(); (edit.cats || []).forEach(function (c) { if (cats.indexOf(c) < 0) cats.push(c); });
+    $("auto").checked = !(edit.cats && edit.cats.length);
+    $("cats").innerHTML = cats.length ? cats.map(function (c) { var on = edit.cats && edit.cats.length ? edit.cats.indexOf(c) >= 0 : /dosa/i.test(c); return '<label><input type="checkbox" name="cat" value="' + esc(c) + '"' + (on ? " checked" : "") + ">" + esc(c) + "</label>"; }).join("") : '<p class="foot">The menu’s categories show here after the Console has read Petpooja.</p>';
+    catsState(); drawPlan();
+  }
+  function catsState() { document.querySelectorAll('[name="cat"]').forEach(function (x) { x.disabled = $("auto").checked; }); }
+  function drawPlan() {
+    var P = planFor(editDay);
+    $("nums").innerHTML = [1, 2, 3, 4, 5, 6].map(function (n) { return '<button type="button" data-n="' + n + '" aria-pressed="' + (n === P.length) + '">' + n + "</button>"; }).join("");
+    $("tws").innerHTML = P.map(function (c, i) { return '<label class="tw"><b>Tawa ' + (i + 1) + '</b><select data-tw="' + i + '">' + OPTS.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === c ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>"; }).join("");
+  }
+  $("gear").onclick = function () { var s = $("set"); s.hidden = !s.hidden; this.setAttribute("aria-expanded", String(!s.hidden)); if (!s.hidden) { openSet(); $("smsg").textContent = ""; } else edit = null; };
+  $("close").onclick = function () { $("set").hidden = true; edit = null; $("gear").setAttribute("aria-expanded", "false"); };
+  $("day").onchange = function () { editDay = this.value; drawPlan(); };
+  $("nums").onclick = function (e) { var b = e.target.closest("[data-n]"); if (!b) return; var P = planFor(editDay), n = +b.dataset.n; while (P.length < n) P.push("A"); P.length = n; edit.plans[editDay] = P; drawPlan(); };
+  $("tws").onchange = function (e) { var s = e.target; if (!s.dataset.tw) return; var P = planFor(editDay); P[+s.dataset.tw] = s.value; edit.plans[editDay] = P; };
+  $("auto").onchange = catsState;
+  function save() {
+    edit.cap = +$("cap").value; edit.win = +$("win").value; edit.max = +$("max").value; edit.merge = $("merge").checked; edit.help = $("help").checked;
+    edit.chain = document.querySelector('[name="chain"]:checked').value === "1";
+    edit.cats = $("auto").checked ? [] : [].map.call(document.querySelectorAll('[name="cat"]:checked'), function (x) { return x.value; });
+    post("/barker/api/config", edit).then(function (j) {
+      if (j.locked) { $("pinbox").hidden = false; $("pin").focus(); $("smsg").className = "msg bad"; $("smsg").textContent = j.msg; return; }
+      $("smsg").className = "msg " + (j.ok ? "ok" : "bad"); $("smsg").textContent = j.ok ? "Saved. Waiting KOTs are shared out again." : j.msg;
+      if (j.ok) { edit = null; apply(j); openSet(); }
+    }).catch(function () { $("smsg").className = "msg bad"; $("smsg").textContent = "Not saved: can’t reach the Console PC."; });
+  }
+  $("set").onsubmit = function (e) { e.preventDefault(); save(); };
+  $("pinok").onclick = function () {
+    post("/barker/unlock", { Pin: $("pin").value }).then(function (j) { $("pin").value = ""; if (j.ok) { $("pinbox").hidden = true; save(); } else { $("smsg").className = "msg bad"; $("smsg").textContent = j.msg || "Wrong PIN."; } });
+  };
+  $("fs").onclick = function () { var d = document.documentElement; if (!document.fullscreenElement && d.requestFullscreen) d.requestFullscreen(); else if (document.exitFullscreen) document.exitFullscreen(); };
+
+  load(); setInterval(load, 2000); setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>
