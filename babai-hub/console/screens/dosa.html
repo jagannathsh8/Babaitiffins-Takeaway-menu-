@@ -58,6 +58,41 @@ body.light .dsf{background:linear-gradient(0deg,rgba(255,255,255,.97),rgba(255,2
 body.light .ft{background:#fff;border-color:#f3d27a;color:#171717}body.light .ft span{color:#a16207}
 body.light .ft.wide{background:var(--yellow);border-color:var(--yellow)}body.light .ft.wide span{color:var(--black)}
 body.light .callpop{background:rgba(255,255,255,.96)}body.light .callpop b{color:#171717;text-shadow:0 0 2.4rem rgba(249,188,33,.9)}body.light .callpop em{color:#15803d}body.light .callpop span{color:#a16207}
+/* brand themes: leaf (cream + banana-leaf green), turmeric (brand yellow), forest (deep green), spice (terracotta) */
+body.t-leaf .dsl.neon{--nc:#568B60}body.t-leaf .dsr.neon{--nc:#B66A29}
+body.t-leaf .sh.ok{color:#3f6b48}body.t-leaf .sh.pr,body.t-leaf .prw em{color:#B66A29}
+body.t-leaf .spot{background:radial-gradient(circle,rgba(86,139,96,.22),rgba(86,139,96,.04) 70%);border-color:#568B60;box-shadow:0 0 1.6rem rgba(86,139,96,.35)}
+body.t-leaf .spot .lab{color:#3f6b48}body.t-leaf .spot b{color:#2f5a39;text-shadow:0 0 1.2rem rgba(86,139,96,.45)}
+body.t-leaf .rt{color:#2f5a39;background:#eef5ef;border-color:#568B60}
+body.t-leaf .bar2 i{background:#B66A29}body.t-leaf .ft span{color:#568B60}body.t-leaf .ft{border-color:#cfe0d2}
+body.t-leaf .ft.wide{background:#568B60;border-color:#568B60;color:#FFF6DF}body.t-leaf .ft.wide span{color:#F9BC21}
+body.t-turmeric .tv{background:#F9BC21}
+body.t-turmeric .bar{background:#171717;color:#F9BC21}body.t-turmeric .bar .spk{border-color:#F9BC21}
+body.t-turmeric .dbg::after{background:linear-gradient(90deg,rgba(249,188,33,.95),rgba(249,188,33,.9) 45%,rgba(249,188,33,.82))}
+body.t-turmeric .dsl,body.t-turmeric .dsr{background:#FFF6DF;border-color:#e8a90f}
+body.t-turmeric .dsl.neon{--nc:#568B60}body.t-turmeric .dsr.neon{--nc:#B66A29}
+body.t-turmeric .prw{background:#fff}body.t-turmeric .bar2{background:#f3e3b8}body.t-turmeric .bar2 i{background:#B66A29}body.t-turmeric .sh.pr,body.t-turmeric .prw em{color:#9a4f12}
+body.t-turmeric .dsf{background:transparent}
+body.t-turmeric .ft{background:#FFF6DF;border-color:#e8a90f}body.t-turmeric .ft span{color:#9a4f12}
+body.t-turmeric .ft.wide{background:#171717;border-color:#171717;color:#FFF6DF}body.t-turmeric .ft.wide span{color:#F9BC21}
+body.t-turmeric .callpop{background:rgba(249,188,33,.97)}body.t-turmeric .callpop span{color:#171717}body.t-turmeric .callpop b{text-shadow:0 0 2.4rem rgba(255,255,255,.9)}body.t-turmeric .callpop em{color:#2f5a39}
+body.t-forest .tv{background:#132a1b}
+body.t-forest .dbg::after{background:linear-gradient(90deg,rgba(19,42,27,.95),rgba(19,42,27,.85) 45%,rgba(19,42,27,.66))}
+body.t-forest .dsl,body.t-forest .dsr{background:rgba(26,56,36,.88);border-color:rgba(255,246,223,.14)}
+body.t-forest .prw{background:rgba(255,246,223,.07)}body.t-forest .dsl.neon{--nc:#9be37a}body.t-forest .dsr.neon{--nc:#F9BC21}
+body.t-forest .dsf{background:linear-gradient(0deg,rgba(19,42,27,.97),rgba(19,42,27,.8))}
+body.t-forest .ft{background:rgba(26,56,36,.95);border-color:rgba(249,188,33,.5)}
+body.t-forest .ft.wide{background:#F9BC21;border-color:#F9BC21;color:#171717}body.t-forest .ft.wide span{color:#2f5a39}
+body.t-forest .callpop{background:rgba(13,30,19,.95)}
+body.t-spice .tv{background:#2a1608}
+body.t-spice .dbg::after{background:linear-gradient(90deg,rgba(42,22,8,.95),rgba(42,22,8,.85) 45%,rgba(42,22,8,.66))}
+body.t-spice .dsl,body.t-spice .dsr{background:rgba(74,38,14,.85);border-color:rgba(249,188,33,.2)}
+body.t-spice .prw{background:rgba(255,246,223,.07)}body.t-spice .dsr.neon{--nc:#F9BC21}body.t-spice .dsl.neon{--nc:var(--ok)}
+body.t-spice .bar2 i{background:#F9BC21}body.t-spice .prw em{color:#F9BC21}
+body.t-spice .dsf{background:linear-gradient(0deg,rgba(42,22,8,.97),rgba(42,22,8,.8))}
+body.t-spice .ft{background:rgba(74,38,14,.95);border-color:rgba(249,188,33,.5)}
+body.t-spice .ft.wide{background:#B66A29;border-color:#B66A29;color:#FFF6DF}body.t-spice .ft.wide span{color:#F9BC21}
+body.t-spice .callpop{background:rgba(35,18,6,.95)}
 </style>
 </head>
 <body>
@@ -87,7 +122,9 @@ body.light .callpop{background:rgba(255,255,255,.96)}body.light .callpop b{color
   BS.clock($("clock"));
   var theme = BS.q.theme || BS.store("bs.theme.dosa") || "dark";
   if (BS.q.theme) BS.store("bs.theme.dosa", BS.q.theme);
-  if (theme === "white" || theme === "cream") { document.body.className = "light"; document.documentElement.style.setProperty("--bgc", theme === "white" ? "#ffffff" : "#FFF6DF"); }
+  var LIGHT = { white: "#ffffff", cream: "#FFF6DF", leaf: "#FFF6DF", turmeric: "#F9BC21" };
+  if (LIGHT[theme]) { document.body.className = "light t-" + theme; document.documentElement.style.setProperty("--bgc", LIGHT[theme]); }
+  else if (theme === "forest" || theme === "spice") document.body.className = "t-" + theme;
   function plural(n, a, b) { return n + " " + (n === 1 ? a : b); }
   function spoken(l) { l = String(l); return /^T\d/.test(l) ? "table " + l.slice(1) : l.replace(/^#/, ""); }
 
