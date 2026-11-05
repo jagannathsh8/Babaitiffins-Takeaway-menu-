@@ -586,3 +586,32 @@ func barkSetConfig(c barkCfg) string {
 	barkDirty = true
 	return ""
 }
+
+// barkOnTawa: dosas on the tawas now, as the dosa master marked them on the barker; -1 when the
+// barker isn't in use (nothing tapped in the last 30 minutes), so the dosa screen shows "preparing".
+func barkOnTawa(now time.Time) int {
+	barkMu.Lock()
+	barkLoad()
+	used := false
+	for _, m := range barkMarks {
+		if now.UnixMilli()-m.At < 30*60_000 {
+			used = true
+			break
+		}
+	}
+	barkMu.Unlock()
+	if !used {
+		return -1
+	}
+	kots, _ := barkKots()
+	barkMu.Lock()
+	defer barkMu.Unlock()
+	_, _, us := barkSnapshot(kots, now)
+	n := 0
+	for _, u := range us {
+		if u.St == "on" {
+			n += u.Q
+		}
+	}
+	return n
+}

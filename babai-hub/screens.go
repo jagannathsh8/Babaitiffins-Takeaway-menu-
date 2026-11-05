@@ -262,7 +262,7 @@ func handleScreenDosa(w http.ResponseWriter, r *http.Request) {
 		meta = []byte("{}")
 	}
 	writeJSON(w, map[string]any{"ok": ppFresh(), "now": time.Now().UnixMilli(), "skew": clockSkew(),
-		"tokens": json.RawMessage(toks), "meta": json.RawMessage(meta), "outlet": getConfig().Outlet})
+		"tokens": json.RawMessage(toks), "meta": json.RawMessage(meta), "outlet": getConfig().Outlet, "tawa": barkOnTawa(time.Now())})
 }
 
 // ---- pick-up TV ------------------------------------------------------------------------------
