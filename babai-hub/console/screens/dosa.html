@@ -190,7 +190,8 @@ body.hushed{cursor:none}
     theme = t;
     var LIGHT = { white: "#ffffff", cream: "#FFF6DF", leaf: "#FFF6DF", turmeric: "#F9BC21" };
     var cls = { green: "t-forest", black: "", genz: "t-genz", spice: "t-spice" }[t];
-    document.body.className = LIGHT[t] ? "light t-" + t : cls || "";
+    var hushed = document.body.classList.contains("hushed"); // keep the faded buttons faded
+    document.body.className = (LIGHT[t] ? "light t-" + t : cls || "") + (hushed ? " hushed" : "");
     if (LIGHT[t]) document.documentElement.style.setProperty("--bgc", LIGHT[t]);
     words = t === "genz" ? TEXT.genz : TEXT.def;
     $("hr").textContent = words[0]; $("hp").textContent = words[1]; $("pope").textContent = words[2];
