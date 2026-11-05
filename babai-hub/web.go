@@ -346,10 +346,8 @@ a{color:var(--accent)}
 <p class="hint">Finished KOTs are also saved on this PC in <code id="dir"></code>\days</p>
 <h3>Updates</h3><p class="hint" id="updst" style="white-space:pre-line">–</p>
 <div class="row"><button type="button" class="ghost" id="updCheck">Check now</button><button type="button" class="ghost" id="updNow">Update now</button><button type="button" class="ghost" id="updToggle">Turn off</button></div><p id="updmsg" class="msg"></p>
-<h3>PIN</h3><p class="hint">The page asks for the PIN (first time: 1234) and stays open in this browser for 12 hours.</p>
-<form id="fpin"><label for="pold">Current PIN</label><input type="password" id="pold" inputmode="numeric" maxlength="8" autocomplete="off">
-<label for="pnew">New PIN (4 to 8 digits)</label><input type="password" id="pnew" inputmode="numeric" maxlength="8" autocomplete="off">
-<div class="row"><button>Change PIN</button><button type="button" class="ghost" id="lockBtn">Lock now</button></div></form><p id="pinmsg" class="msg"></p>
+<h3>PIN</h3><p class="hint">The PIN is 1234 on every Console and every Babai screen. The page stays open in this browser for 12 hours.</p>
+<div class="row"><button type="button" class="ghost" id="lockBtn">Lock now</button></div>
 </section>
 </div>
 
@@ -511,7 +509,7 @@ $("updNow").addEventListener("click",function(){post("/update",{Op:"now"}).then(
 $("updToggle").addEventListener("click",function(){post("/update",{Op:updOn?"off":"on"}).then(function(r){show($("updmsg"),r);loadUpd()})});
 loadUpd();setInterval(loadUpd,30000);
 
-$("fpin").addEventListener("submit",function(e){e.preventDefault();post("/pin",{Old:$("pold").value,New:$("pnew").value}).then(function(r){show($("pinmsg"),r);if(r.ok){$("pold").value="";$("pnew").value=""}})});
+
 $("lockBtn").addEventListener("click",function(){post("/lock",{}).then(function(){location.reload()})});
 if(location.hash==="#scanners")setTimeout(function(){$("scanners").scrollIntoView()},300);
 

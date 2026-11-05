@@ -222,7 +222,7 @@ func TestTargetsSaveAndPrune(t *testing.T) {
 
 func TestMetricsOnTheWiFi(t *testing.T) {
 	defer metricsEnv(t)()
-	cfg = Config{Outlet: "Whitefield", Pin: "4321"}
+	cfg = Config{Outlet: "Whitefield", Pin: "4321"} // an old saved PIN is ignored: always 1234
 	pinMu.Lock()
 	pinWrong, pinBlocked = 0, time.Time{} // wrong PINs typed by other tests don't count here
 	pinMu.Unlock()
@@ -249,7 +249,10 @@ func TestMetricsOnTheWiFi(t *testing.T) {
 	if w := lan("POST", "/metrics/unlock", `{"Pin":"1111"}`, ""); !strings.Contains(w.Body.String(), `"ok":false`) {
 		t.Fatal("wrong PIN accepted")
 	}
-	w := lan("POST", "/metrics/unlock", `{"Pin":"4321"}`, "")
+	if w := lan("POST", "/metrics/unlock", `{"Pin":"4321"}`, ""); !strings.Contains(w.Body.String(), `"ok":false`) {
+		t.Fatal("an old changed PIN must not work any more")
+	}
+	w := lan("POST", "/metrics/unlock", `{"Pin":"1234"}`, "")
 	var tok string
 	for _, c := range w.Result().Cookies() {
 		if c.Name == pinCookie {

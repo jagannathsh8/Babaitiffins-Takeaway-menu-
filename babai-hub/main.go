@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "4.6"
+	version     = "4.7"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -52,7 +52,7 @@ type Config struct {
 	Port         int               `json:"port"`
 	Bridge       string            `json:"bridge,omitempty"`     // Bridge Print address (empty: found on the Petpooja PC)
 	Phones       []Phone           `json:"phones,omitempty"`     // paired Babai Scanner phones
-	Pin          string            `json:"pin,omitempty"`        // hub page PIN (empty = 1234)
+	Pin          string            `json:"pin,omitempty"`        // no longer used: the PIN is always 1234
 	AutoUpdate   *bool             `json:"autoUpdate,omitempty"` // nil = on
 	HideBrands   []string          `json:"hideBrands,omitempty"` // brands kept off the rider screen
 	HideSet      bool              `json:"hideSet,omitempty"`    // false = the default (Go Self Service)
@@ -145,7 +145,6 @@ func runWorker() {
 	mux.HandleFunc("/phones", localOnly(pinned(handlePhones)))
 	mux.HandleFunc("/unlock", localOnly(handleUnlock))
 	mux.HandleFunc("/lock", localOnly(handleLock))
-	mux.HandleFunc("/pin", localOnly(pinned(handlePinChange)))
 	mux.HandleFunc("/kds/", handleKDS) // KDS app update for the screens on the Wi-Fi
 	mux.HandleFunc("/bridge/find", localOnly(pinned(handleBridgeFind)))
 	mux.HandleFunc("/hide", localOnly(pinned(handleHide)))

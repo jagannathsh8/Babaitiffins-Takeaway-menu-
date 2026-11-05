@@ -29,12 +29,9 @@ var (
 	pinBlocked time.Time
 )
 
-func currentPin() string {
-	if p := strings.TrimSpace(getConfig().Pin); p != "" {
-		return p
-	}
-	return defaultPin
-}
+// currentPin: the same PIN, 1234, on every Console and every screen (the owner's choice; it can't
+// be changed, so nobody at an outlet is ever locked out of a TV or the Console).
+func currentPin() string { return defaultPin }
 
 func newToken() string {
 	b := make([]byte, 24)
@@ -131,32 +128,6 @@ func handleLock(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{Name: pinCookie, Value: "", Path: "/", MaxAge: -1})
 	reply(w, true, "Locked.")
-}
-
-// handlePinChange: POST {old, new} (4-8 digits).
-func handlePinChange(w http.ResponseWriter, r *http.Request) {
-	if !fromOwnPage(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	var in struct{ Old, New string }
-	_ = json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&in)
-	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(in.Old)), []byte(currentPin())) != 1 {
-		reply(w, false, "The current PIN is not right.")
-		return
-	}
-	n := strings.TrimSpace(in.New)
-	if len(n) < 4 || len(n) > 8 || digitsOnly(n) != n {
-		reply(w, false, "The new PIN must be 4 to 8 digits.")
-		return
-	}
-	c := getConfig()
-	c.Pin = n
-	if err := saveConfig(c); err != nil {
-		reply(w, false, "Couldn't save: "+err.Error())
-		return
-	}
-	reply(w, true, "PIN changed.")
 }
 
 const pinHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

@@ -357,11 +357,12 @@ public class MainActivity extends Activity {
         col.addView(tawaRow, lp(-1, -2, 6));
 
         // 3. name, PIN, start
-        col.addView(head("3. Name and Console PIN"), lp(-1, -2, 18));
+        col.addView(head("3. Name of this screen (Console PIN 1234 is filled in)"), lp(-1, -2, 18));
         nameIn = edit("Name of this screen, e.g. Rider TV door", InputType.TYPE_CLASS_TEXT);
         nameIn.setText(P.getString("name", Build.MODEL));
         col.addView(nameIn, lp(-1, -2, 6));
         pinIn = edit("Console PIN", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        pinIn.setText("1234"); // the same PIN on every Console and screen
         col.addView(pinIn, lp(-1, -2, 6));
         msg = text("", 16, RED, true);
         col.addView(msg, lp(-1, -2, 6));
