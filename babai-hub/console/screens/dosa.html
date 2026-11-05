@@ -93,6 +93,44 @@ body.t-spice .dsf{background:linear-gradient(0deg,rgba(42,22,8,.97),rgba(42,22,8
 body.t-spice .ft{background:rgba(74,38,14,.95);border-color:rgba(249,188,33,.5)}
 body.t-spice .ft.wide{background:#B66A29;border-color:#B66A29;color:#FFF6DF}body.t-spice .ft.wide span{color:#F9BC21}
 body.t-spice .callpop{background:rgba(35,18,6,.95)}
+/* a thin neon border, changing colour, running round the whole screen */
+.frame{position:absolute;top:0;left:0;right:0;bottom:0;z-index:7;pointer-events:none;padding:.28rem;
+  background:conic-gradient(from var(--ang),#F9BC21,#ff4fd8,#29d3ff,#3fd17a,#F9BC21,#B66A29,#ff4fd8,#F9BC21);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  animation:spin 6s linear infinite,hue 9s linear infinite;filter:drop-shadow(0 0 .5rem rgba(255,255,255,.5))}
+@keyframes hue{to{filter:hue-rotate(360deg) drop-shadow(0 0 .5rem rgba(255,255,255,.5))}}
+.bar #thm{margin-left:.8rem}
+/* theme picker */
+.tpick{position:absolute;top:0;left:0;right:0;bottom:0;z-index:6;background:rgba(10,10,10,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.6rem}
+.tpick>span{font:800 1.6rem var(--h2);letter-spacing:.2em;color:var(--yellow)}
+.tpick small{font:600 1.1rem var(--body);color:var(--muted)}
+.tps{display:flex;gap:1.4rem}
+.tp{width:15rem;border-radius:1.2rem;border:.25rem solid transparent;background:#222;color:#fff;padding:.8rem;cursor:pointer;display:flex;flex-direction:column;gap:.6rem;font:800 1.3rem var(--h2)}
+.tp i{display:block;height:7rem;border-radius:.7rem}
+.tp[aria-pressed=true]{border-color:var(--yellow)}
+.tp:focus{outline:none;border-color:#29d3ff;box-shadow:0 0 1.4rem #29d3ff}
+/* Gen-Z: neon blobs, glass panels, gradient numbers, emoji */
+body.t-genz .tv{background:radial-gradient(40rem 30rem at 12% 20%,rgba(255,79,216,.38),transparent 70%),radial-gradient(40rem 30rem at 88% 30%,rgba(41,211,255,.32),transparent 70%),radial-gradient(36rem 26rem at 55% 95%,rgba(249,188,33,.3),transparent 70%),#140a26}
+body.t-genz .dbg{display:none}
+body.t-genz .bar{background:linear-gradient(90deg,#F9BC21,#ff8a3d 45%,#ff4fd8)}
+body.t-genz .dsl,body.t-genz .dsr{background:rgba(255,255,255,.08);border:.12rem solid rgba(255,255,255,.22);border-radius:1.6rem;-webkit-backdrop-filter:blur(.8rem);backdrop-filter:blur(.8rem)}
+body.t-genz .neon::after{border-radius:1.75rem}
+body.t-genz .dsl.neon{--nc:#29d3ff}body.t-genz .dsr.neon{--nc:#ff4fd8}
+body.t-genz .sh.ok{color:#7dffb0}body.t-genz .sh.pr{color:#ffb3f0}
+body.t-genz .spot{background:rgba(255,255,255,.06);border:.2rem solid #29d3ff;border-radius:1.4rem;box-shadow:0 0 2rem rgba(41,211,255,.55),inset 0 0 2rem rgba(255,79,216,.25)}
+body.t-genz .spot .lab{color:#29d3ff}
+body.t-genz .spot b{background:linear-gradient(90deg,#F9BC21,#ff4fd8 55%,#29d3ff);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;filter:drop-shadow(0 0 1rem rgba(255,79,216,.6))}
+body.t-genz .rt{border-radius:999px;border-color:#29d3ff;background:rgba(41,211,255,.12);box-shadow:0 0 .8rem rgba(41,211,255,.5)}
+body.t-genz .prw{background:rgba(255,255,255,.07);border-radius:1rem}
+body.t-genz .bar2{background:rgba(255,255,255,.12)}body.t-genz .bar2 i{background:linear-gradient(90deg,#a6ff00,#29d3ff)}
+body.t-genz .prw em{color:#a6ff00}
+body.t-genz .dsf{background:transparent}
+body.t-genz .ft{background:rgba(255,255,255,.08);border:.12rem solid rgba(255,255,255,.22);border-radius:1.2rem}
+body.t-genz .ft span{color:#ffb3f0}
+body.t-genz .ft.wide{background:linear-gradient(90deg,#ff4fd8,#7b5ce6);border:0;color:#fff}body.t-genz .ft.wide span{color:#F9BC21}
+body.t-genz .callpop{background:radial-gradient(50rem 30rem at 50% 50%,rgba(255,79,216,.35),transparent 70%),rgba(20,10,38,.96)}
+body.t-genz .callpop b{background:linear-gradient(90deg,#F9BC21,#ff4fd8,#29d3ff);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none}
+body.t-genz .callpop em{color:#a6ff00}
 </style>
 </head>
 <body>
@@ -100,17 +138,19 @@ body.t-spice .callpop{background:rgba(35,18,6,.95)}
   <div class="dbg" id="bg"></div>
   <div class="bar"><img src="/screens/logo.webp" alt=""><div class="t">DOSA ORDER STATUS<small>DINE-IN DOSAS · TASTE THE ANDHRA STYLE</small></div>
     <div class="cnt"><span class="r"><b id="nr">0</b> READY</span><span><b id="np">0</b> PREPARING</span></div>
-    <button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><div class="clock" id="clock"></div></div>
+    <button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><button class="spk" id="thm" aria-label="Choose the screen theme">🎨</button><div class="clock" id="clock"></div></div>
   <div class="dsv">
-    <div class="dsl neon"><div class="sh ok">✓ READY · PLEASE COLLECT</div><div id="spot"></div><div class="rtoks" id="rtoks"></div></div>
-    <div class="dsr neon"><div class="sh pr">⏳ PREPARING · OLDEST FIRST</div><div class="plist" id="plist"></div></div>
+    <div class="dsl neon"><div class="sh ok" id="hr">✓ READY · PLEASE COLLECT</div><div id="spot"></div><div class="rtoks" id="rtoks"></div></div>
+    <div class="dsr neon"><div class="sh pr" id="hp">⏳ PREPARING · OLDEST FIRST</div><div class="plist" id="plist"></div></div>
   </div>
   <div class="dsf">
     <div class="ft"><span>DOSA WAIT NOW</span><b id="wait">—</b></div>
     <div class="ft"><span id="tawal">PREPARING NOW</span><b id="tawan">—</b></div>
     <div class="ft wide"><span>DID YOU KNOW?</span><p id="fact"></p></div>
   </div>
-  <div class="callpop" id="pop" hidden><span>🔊 TOKEN NUMBER</span><b id="popn"></b><em>DOSA READY · KINDLY COLLECT</em></div>
+  <div class="callpop" id="pop" hidden><span>🔊 TOKEN NUMBER</span><b id="popn"></b><em id="pope">DOSA READY · KINDLY COLLECT</em></div>
+  <div class="tpick" id="tpick" hidden role="dialog" aria-label="Screen theme"><span>🎨 SCREEN THEME</span><div class="tps" id="tps"></div><small>Arrows to move · OK to choose · Back to close. Kept on this screen.</small></div>
+  <div class="frame" aria-hidden="true"></div>
 </div>
 <script src="/screens/common.js"></script>
 <script>
@@ -120,21 +160,53 @@ body.t-spice .callpop{background:rgba(35,18,6,.95)}
   var FACTS = ["Pesarattu is Andhra’s green gram dosa, made from whole moong instead of rice batter.", "Karam dosa gets its heat from a red chilli paste spread inside before it is folded.", "Dosa batter is fermented, which makes it light, airy and slightly tangy."];
   var facts = FACTS.slice(), fi = 0, first = true, known = {}, popT = null;
   BS.clock($("clock"));
-  var theme = BS.q.theme || BS.store("bs.theme.dosa") || "dark";
-  if (BS.q.theme) BS.store("bs.theme.dosa", BS.q.theme);
-  var LIGHT = { white: "#ffffff", cream: "#FFF6DF", leaf: "#FFF6DF", turmeric: "#F9BC21" };
-  if (LIGHT[theme]) { document.body.className = "light t-" + theme; document.documentElement.style.setProperty("--bgc", LIGHT[theme]); }
-  else if (theme === "forest" || theme === "spice") document.body.className = "t-" + theme;
+  // themes the screen can pick with 🎨 (kept on this screen); ?theme= also works
+  var THEMES = [["green", "Green", "linear-gradient(135deg,#132a1b,#2f5a39 60%,#F9BC21)"], ["white", "White", "linear-gradient(135deg,#fff,#f3f4f6 60%,#F9BC21)"],
+    ["black", "Black", "linear-gradient(135deg,#121212,#262626 60%,#F9BC21)"], ["turmeric", "Turmeric", "linear-gradient(135deg,#F9BC21,#e8a90f 60%,#171717)"],
+    ["genz", "Gen-Z ✨", "linear-gradient(135deg,#ff4fd8,#7b5ce6 45%,#29d3ff 75%,#F9BC21)"]];
+  var ALIAS = { forest: "green", dark: "black", night: "black" };
+  var TEXT = { def: ["✓ READY · PLEASE COLLECT", "⏳ PREPARING · OLDEST FIRST", "DOSA READY · KINDLY COLLECT", "collect at the counter"],
+    genz: ["✨ READY · COME GRAB IT", "🔥 ON THE TAWA · YOUR TURN SOON", "YOUR DOSA IS READY 🎉", "come grab it 🙌"] };
+  var theme = "black", words = TEXT.def;
+  function setTheme(t) {
+    t = ALIAS[t] || t;
+    if (!THEMES.some(function (x) { return x[0] === t; }) && ["cream", "leaf", "spice"].indexOf(t) < 0) t = "black";
+    theme = t;
+    var LIGHT = { white: "#ffffff", cream: "#FFF6DF", leaf: "#FFF6DF", turmeric: "#F9BC21" };
+    var cls = { green: "t-forest", black: "", genz: "t-genz", spice: "t-spice" }[t];
+    document.body.className = LIGHT[t] ? "light t-" + t : cls || "";
+    if (LIGHT[t]) document.documentElement.style.setProperty("--bgc", LIGHT[t]);
+    words = t === "genz" ? TEXT.genz : TEXT.def;
+    $("hr").textContent = words[0]; $("hp").textContent = words[1]; $("pope").textContent = words[2];
+    BS.store("bs.theme.dosa", t);
+    if (window.LAST) draw(window.LAST);
+  }
+  function openPick() {
+    $("tps").innerHTML = THEMES.map(function (x) { return '<button class="tp" data-t="' + x[0] + '" aria-pressed="' + (x[0] === theme) + '"><i style="background:' + x[2] + '"></i>' + x[1] + "</button>"; }).join("");
+    $("tpick").hidden = false;
+    var cur = $("tps").querySelector('[aria-pressed="true"]') || $("tps").firstChild; cur.focus();
+  }
+  function closePick() { $("tpick").hidden = true; $("thm").focus(); }
+  $("thm").onclick = openPick;
+  $("tps").addEventListener("click", function (e) { var b = e.target.closest(".tp"); if (b) { setTheme(b.getAttribute("data-t")); closePick(); } });
+  document.addEventListener("keydown", function (e) {
+    if ($("tpick").hidden) return;
+    var bs = [].slice.call($("tps").children), i = bs.indexOf(document.activeElement);
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); bs[(i + (e.key === "ArrowRight" ? 1 : bs.length - 1) + bs.length) % bs.length].focus(); }
+    else if (e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack") { e.preventDefault(); closePick(); }
+  });
+  window.babaiBack = function () { if (!$("tpick").hidden) { closePick(); return true; } return false; };
   function plural(n, a, b) { return n + " " + (n === 1 ? a : b); }
   function spoken(l) { l = String(l); return /^T\d/.test(l) ? "table " + l.slice(1) : l.replace(/^#/, ""); }
 
   function draw(j) {
+    window.LAST = j;
     var T = j.tokens || {}, M = j.meta || {}, rd = [], pr = [];
     Object.keys(T).forEach(function (k) { var t = T[k]; if (t.s === "r") rd.push(t); else if (t.s === "p") pr.push(t); });
     rd.sort(function (a, b) { return (b.a || 0) - (a.a || 0); });
     pr.sort(function (a, b) { return a.pos - b.pos; });
     $("nr").textContent = rd.length; $("np").textContent = pr.length;
-    $("spot").innerHTML = rd.length ? '<div class="spot"><span class="lab">LATEST READY</span><b>' + BS.esc(rd[0].l) + '</b><span class="sub">' + plural(rd[0].d || 1, "dosa", "dosas") + " · collect at the counter</span></div>"
+    $("spot").innerHTML = rd.length ? '<div class="spot"><span class="lab">LATEST READY</span><b>' + BS.esc(rd[0].l) + '</b><span class="sub">' + plural(rd[0].d || 1, "dosa", "dosas") + " · " + words[3] + "</span></div>"
       : '<div class="idle">Your token number will appear here when it’s ready</div>';
     $("rtoks").innerHTML = rd.slice(1, 13).map(function (t, i) { return '<span class="rt" style="opacity:' + Math.max(0.35, 1 - i * 0.12).toFixed(2) + '">' + BS.esc(t.l) + "</span>"; }).join("");
     var show = pr.slice(0, 8);
@@ -178,6 +250,7 @@ body.t-spice .callpop{background:rgba(35,18,6,.95)}
   function spkUI() { var v = BS.voiceOn(); spk.textContent = v ? "🔊" : "🔇"; spk.setAttribute("aria-pressed", String(v)); }
   spk.onclick = function () { BS.voiceOn(!BS.voiceOn()); spkUI(); };
   spkUI();
+  setTheme(BS.q.theme || BS.store("bs.theme.dosa") || "black");
 
   // ---- photos behind the screen (the outlet's own, or the built-in dish photos)
   BS.get("/screens/api/photos", function (err, j) {
