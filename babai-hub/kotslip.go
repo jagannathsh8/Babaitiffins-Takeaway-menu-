@@ -244,13 +244,13 @@ func (c *slipCanvas) dash() {
 	c.y += 12
 }
 
-// orderLine: "Order 2524756551 [3136]" centred, the last 4 white on black.
+// orderLine: "Order 2524756551 3136" centred, the last 4 big and bold.
 func (c *slipCanvas) orderLine(id string) {
 	head, last := id, ""
 	if len(id) > 4 {
 		head, last = id[:len(id)-4], id[len(id)-4:]
 	}
-	fl, fh, fb := c.face("r", 26), c.face("r", 28), c.face("b", 40)
+	fl, fh, fb := c.face("r", 26), c.face("r", 28), c.face("b", 56)
 	pad := int(8 * c.scale)
 	w := textWidth(fl, "Order ") + textWidth(fh, head) + textWidth(fb, last) + 2*pad
 	for w > c.w && len(head) > 2 { // a long ID on narrow paper: keep its end
@@ -268,8 +268,7 @@ func (c *slipCanvas) orderLine(id string) {
 	x += textWidth(fl, "Order ")
 	c.drawText(fh, head, x, base, color.Gray{0})
 	x += textWidth(fh, head)
-	draw.Draw(c.img, image.Rect(x, c.y-2, x+textWidth(fb, last)+2*pad, base+desc+2), image.Black, image.Point{}, draw.Src)
-	c.drawText(fb, last, x+pad, base, color.Gray{255})
+	c.drawText(fb, last, x+pad/2, base, color.Gray{0}) // the last 4: big and bold, no box
 	c.y += asc + desc + 12
 }
 
@@ -368,7 +367,7 @@ func drawSlip(d slipData, w int) *image.Gray {
 		c.text(fmt.Sprint(d.Token), "b", big, "c", false, 0)
 	}
 	if d.Station != "" {
-		c.text(strings.ToUpper(d.Station), "b", 34, "c", true, 0)
+		c.text(strings.ToUpper(d.Station), "b", 40, "c", false, 0)
 	}
 	c.text(d.When.Format("02/01/06 15:04")+"   ·   KOT "+d.KotNo, "r", 26, "c", false, 0)
 	if d.Brand != "" {
@@ -378,7 +377,7 @@ func drawSlip(d slipData, w int) *image.Gray {
 		c.orderLine(d.OrderID)
 	}
 	if d.Type != "" {
-		c.text(d.Type, "b", 40, "c", true, 0)
+		c.text(d.Type, "b", 40, "c", false, 0)
 	}
 	c.row("ITEM", "QTY", "b", 24, "b", 24, 0)
 	c.dash()

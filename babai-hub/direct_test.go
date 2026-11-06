@@ -66,3 +66,54 @@ func TestPaperDots(t *testing.T) {
 		}
 	}
 }
+
+func TestDirectSubMainsAndSwitches(t *testing.T) {
+	dosaBill := Kot{ID: 1, OrderType: 1, Online: true, Platform: "Swiggy", POID: "252475655137731", Items: []KItem{
+		{N: "Masala Dosa", C: "Dosa", Q: 2}, {N: "Idli", C: "Idli", Q: 1}}}
+	idliBill := Kot{ID: 2, OrderType: 1, Online: true, Platform: "Zomato", Items: []KItem{{N: "Idli", C: "Idli", Q: 1}}}
+	dineDosa := Kot{ID: 3, OrderType: 3, Items: []KItem{{N: "Masala Dosa", C: "Dosa", Q: 1}}}
+	c := cleanDirect(DirectCfg{Mode: "both", Types: []string{"I"}, Main: "EPSON",
+		Subs:  []SubMain{{Cats: []string{"Dosa"}, Printer: "TVS"}},
+		Lines: []DirectLine{{Kind: "cat", Values: []string{"Dosa"}, Printer: "DOSA"}}})
+	p := directPlan(c, dosaBill)
+	if p[0].name != "Sub main 1" || p[0].printers[0] != "TVS" || len(p[0].items) != 2 {
+		t.Fatalf("a bill with dosa prints whole on the sub main: %+v", p[0])
+	}
+	if s := slipFor(dosaBill, 47, p[0], false); s.Token != 47 || s.Station != "" {
+		t.Fatal("the bill slip has the slot")
+	}
+	if s := slipFor(dosaBill, 47, p[1], false); s.Token != 0 || s.Station != "Dosa" {
+		t.Fatal("the station slip has no slot")
+	}
+	if p := directPlan(c, idliBill); p[0].name != "Main printer" || len(p) != 1 {
+		t.Fatalf("other bills: main: %+v", p)
+	}
+	// sub main switched off: its bills go to the main
+	c.Subs[0].Off = true
+	if p := directPlan(c, dosaBill); p[0].printers[0] != "EPSON" {
+		t.Fatal("sub main off: the main prints the bill")
+	}
+	c.Subs[0].Off = false
+	// sub main not for dine in: dine-in dosa bills go to the main
+	c.Subs[0].Skip = []string{"I"}
+	if p := directPlan(c, dineDosa); p[0].printers[0] != "EPSON" {
+		t.Fatal("sub main skips dine in")
+	}
+	// a line switched off / not for this order type prints nothing
+	c.Lines[0].Off = true
+	if p := directPlan(c, dosaBill); len(p) != 1 {
+		t.Fatal("line off")
+	}
+	c.Lines[0].Off, c.Lines[0].Skip = false, []string{"D"}
+	if p := directPlan(c, dosaBill); len(p) != 1 {
+		t.Fatal("line skips delivery")
+	}
+	// main switched off: an idli bill has no bill printer, so Bridge Print prints it
+	c.MainOff = true
+	if directWants(c, idliBill) {
+		t.Fatal("main off: Bridge Print prints the bill")
+	}
+	if !directWants(c, dosaBill) {
+		t.Fatal("the sub main still takes dosa bills")
+	}
+}

@@ -36,6 +36,19 @@ type DirectLine struct {
 	Values  []string `json:"values"` // category or item names
 	Printer string   `json:"printer"`
 	Backups []string `json:"backups,omitempty"` // up to 3, in order
+	Off     bool     `json:"off,omitempty"`     // switched off (the setup is kept)
+	Skip    []string `json:"skip,omitempty"`    // order types it doesn't print for: D P I S
+}
+
+// SubMain: bills that contain any of its categories or items print whole (with the slot) here
+// instead of on the main printer. Checked in order; a bill goes to the first it matches.
+type SubMain struct {
+	Cats    []string `json:"cats,omitempty"`
+	Items   []string `json:"items,omitempty"`
+	Printer string   `json:"printer"`
+	Backups []string `json:"backups,omitempty"`
+	Off     bool     `json:"off,omitempty"`
+	Skip    []string `json:"skip,omitempty"`
 }
 
 type DirectCfg struct {
@@ -44,8 +57,34 @@ type DirectCfg struct {
 	Main        string       `json:"main"`
 	MainBackups []string     `json:"mainBackups,omitempty"`
 	MainRest    bool         `json:"mainRest,omitempty"` // main prints only what no line takes (off: the whole order)
+	MainOff     bool         `json:"mainOff,omitempty"`
+	MainSkip    []string     `json:"mainSkip,omitempty"`
+	Subs        []SubMain    `json:"subs,omitempty"`
 	Lines       []DirectLine `json:"lines,omitempty"`
 }
+
+func cleanSkip(l []string) []string {
+	var out []string
+	for _, x := range l {
+		if (x == "D" || x == "P" || x == "I" || x == "S") && !containsStr(out, x) {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func cleanNames(l []string) []string {
+	var v []string
+	for _, x := range l {
+		if x = strings.TrimSpace(x); x != "" && !containsStr(v, x) && len(v) < 100 {
+			v = append(v, x)
+		}
+	}
+	return v
+}
+
+// printsFor: a printer that is on and not switched off for this order type.
+func printsFor(off bool, skip []string, ch string) bool { return !off && !containsStr(skip, ch) }
 
 const (
 	directBackupWait = 10 * time.Second // "both": Petpooja's slip waits this long for the Console's
@@ -89,6 +128,16 @@ func cleanDirect(c DirectCfg) DirectCfg {
 	}
 	c.Types = t
 	c.MainBackups = cleanBackups(c.Main, c.MainBackups)
+	c.MainSkip = cleanSkip(c.MainSkip)
+	var subs []SubMain
+	for _, sm := range c.Subs {
+		sm.Cats, sm.Items, sm.Skip = cleanNames(sm.Cats), cleanNames(sm.Items), cleanSkip(sm.Skip)
+		sm.Backups = cleanBackups(sm.Printer, sm.Backups)
+		if len(subs) < 10 {
+			subs = append(subs, sm)
+		}
+	}
+	c.Subs = subs
 	var lines []DirectLine
 	for _, l := range c.Lines {
 		if l.Kind != "item" {
@@ -102,6 +151,7 @@ func cleanDirect(c DirectCfg) DirectCfg {
 		}
 		l.Values = v
 		l.Backups = cleanBackups(l.Printer, l.Backups)
+		l.Skip = cleanSkip(l.Skip)
 		if len(lines) < 30 {
 			lines = append(lines, l)
 		}
@@ -129,13 +179,38 @@ func containsStr(l []string, s string) bool {
 	return false
 }
 
-// directWants: the Console prints this KOT itself.
+// directWants: the Console prints this KOT itself: its order type is chosen and a main or sub
+// main printer takes its bill (else Bridge Print prints it, e.g. the main printer switched off).
 func directWants(c DirectCfg, k Kot) bool {
-	if c.Mode == "bridge" || c.Main == "" && len(c.Lines) == 0 {
+	if c.Mode == "bridge" {
 		return false
 	}
 	ch := barkChannel(k)
-	return ch == "D" || containsStr(c.Types, ch)
+	if ch != "D" && !containsStr(c.Types, ch) {
+		return false
+	}
+	_, ok := billPrinter(c, k)
+	return ok
+}
+
+// billPrinter: where the whole bill (with the slot) prints: the first sub main the bill matches,
+// else the main printer.
+func billPrinter(c DirectCfg, k Kot) (directSlip, bool) {
+	ch := barkChannel(k)
+	for i, sm := range c.Subs {
+		if sm.Printer == "" || !printsFor(sm.Off, sm.Skip, ch) {
+			continue
+		}
+		for _, it := range k.Items {
+			if it.S >= 0 && (containsStr(sm.Items, it.N) || containsStr(sm.Cats, strings.TrimSpace(it.C))) {
+				return directSlip{name: fmt.Sprintf("Sub main %d", i+1), printers: append([]string{sm.Printer}, sm.Backups...)}, true
+			}
+		}
+	}
+	if c.Main != "" && printsFor(c.MainOff, c.MainSkip, ch) {
+		return directSlip{name: "Main printer", printers: append([]string{c.Main}, c.MainBackups...)}, true
+	}
+	return directSlip{}, false
 }
 
 // ---- what goes to which printer ----------------------------------------------------------------
@@ -183,19 +258,21 @@ func directPlan(c DirectCfg, k Kot) []directSlip {
 		}
 	}
 	var out []directSlip
-	if c.Main != "" {
+	ch := barkChannel(k)
+	if bill, ok := billPrinter(c, k); ok {
 		var mine []KItem
 		for i, it := range items {
-			if !c.MainRest || taken[i] == 0 {
+			if !c.MainRest || taken[i] == 0 || !lineOn(c.Lines[taken[i]-1], ch) {
 				mine = append(mine, it)
 			}
 		}
 		if len(mine) > 0 {
-			out = append(out, directSlip{name: "Main printer", printers: append([]string{c.Main}, c.MainBackups...), items: mine})
+			bill.items = mine
+			out = append(out, bill)
 		}
 	}
 	for li, l := range c.Lines {
-		if l.Printer == "" {
+		if !lineOn(l, ch) {
 			continue
 		}
 		var mine, rest []KItem
@@ -212,6 +289,8 @@ func directPlan(c DirectCfg, k Kot) []directSlip {
 	}
 	return out
 }
+
+func lineOn(l DirectLine, ch string) bool { return l.Printer != "" && printsFor(l.Off, l.Skip, ch) }
 
 func slipFor(k Kot, token int, s directSlip, cancel bool) slipData {
 	ch := barkChannel(k)
@@ -238,6 +317,7 @@ func slipFor(k Kot, token int, s directSlip, cancel bool) slipData {
 		d.Items = append(d.Items, slipItem{N: it.N, Q: it.Q, A: it.A, Nt: it.Nt})
 	}
 	if s.station != "" {
+		d.Token = 0 // the slot prints only on the main / sub main slip
 		d.Note = ""
 		var also []string
 		for _, it := range s.also {
@@ -683,7 +763,7 @@ func handleDirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c = cleanDirect(c)
-	if c.Mode != "bridge" && c.Main == "" && len(c.Lines) == 0 {
+	if c.Mode != "bridge" && c.Main == "" && len(c.Subs) == 0 {
 		reply(w, false, "Choose the main printer first.")
 		return
 	}
