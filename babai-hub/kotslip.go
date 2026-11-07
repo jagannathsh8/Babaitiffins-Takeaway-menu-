@@ -48,6 +48,8 @@ type slipData struct {
 	Items   []slipItem
 	Note    string // the customer's note
 	Also    string // what else is on the order (a station slip)
+	OTP     string // the rider's OTP / delivery passcode (bill slips, online orders)
+	OTPName string // "OTP" (Zomato) or "Delivery Passcode" (Swiggy)
 }
 
 var (
@@ -375,6 +377,13 @@ func drawSlip(d slipData, w int) *image.Gray {
 	}
 	if d.OrderID != "" {
 		c.orderLine(d.OrderID)
+	}
+	if d.OTP != "" {
+		name := d.OTPName
+		if name == "" {
+			name = "OTP"
+		}
+		c.text(name+" : "+d.OTP, "b", 36, "c", false, 0)
 	}
 	if d.Type != "" {
 		c.text(d.Type, "b", 40, "c", false, 0)
