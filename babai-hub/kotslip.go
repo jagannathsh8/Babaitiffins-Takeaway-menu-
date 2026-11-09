@@ -5,7 +5,7 @@ package main
 // the same on every thermal printer (Epson, TVS, Retsol ...), then the printer cuts.
 //
 //	Laid out like Petpooja's own KOT (4.12), with the slot on top:
-//	SLOT 14 · date · KOT - n · "Zomato : 8816162299" (last 4 bold) · OTP · Delivery · Item / Qty. ·
+//	SLOT 14 (delivery only) · date · KOT - n (pick up / dine in: "Token - n" instead) · "Zomato : 8816162299" (last 4 bold) · OTP · Delivery · Item / Qty. ·
 //	items with add-ons and notes · total · Customer Notes · "Scan to Mark food ready" + barcode
 //	(the order ID on delivery; the KOT's own code on dine in / pick up / self service).
 
@@ -390,7 +390,8 @@ func drawSlip(d slipData, w int) *image.Gray {
 	if d.Cancel {
 		c.text("CANCELLED", "b", 64, "c", true, 0)
 	}
-	if d.Token > 0 {
+	token := d.OrderID == "" && d.Label != "SLOT" // pick up / dine in / self service: the KOT number is the token
+	if d.Token > 0 && !token {
 		big := 110.0
 		if w < 500 {
 			big = 96 / c.scale // the number stays large on 58 mm
@@ -401,7 +402,11 @@ func drawSlip(d slipData, w int) *image.Gray {
 		c.text(strings.ToUpper(d.Station), "b", 40, "c", false, 0)
 	}
 	c.text(d.When.Format("02/01/06 15:04"), "m", 28, "c", false, 0)
-	c.text("KOT - "+d.KotNo, "m", 28, "c", false, 0)
+	if token {
+		c.text("Token - "+d.KotNo, "b", 44, "c", false, 0) // bigger than the rest, not slot-sized
+	} else {
+		c.text("KOT - "+d.KotNo, "m", 28, "c", false, 0)
+	}
 	switch {
 	case d.OrderID != "":
 		c.idLine(d.Brand+" : ", d.OrderID)
