@@ -505,7 +505,8 @@ VIEWS.kotprint = {
   load: function () {
     getJ("/console/api/direct").then(function (d) {
       KP = d; KPdirty = false; var c = KP.cfg;
-      c.lines = c.lines || []; c.subs = c.subs || []; c.mainBackups = c.mainBackups || []; c.types = c.types || []; c.mainSkip = c.mainSkip || [];
+      c.lines = c.lines || []; c.subs = c.subs || []; c.types = c.types || []; c.mains = c.mains || [];
+      c.mains.forEach(function (x) { x.backups = x.backups || []; x.skip = x.skip || []; });
       c.subs.forEach(function (x) { x.cats = x.cats || []; x.items = x.items || []; x.backups = x.backups || []; x.skip = x.skip || []; });
       c.lines.forEach(function (x) { x.values = x.values || []; x.backups = x.backups || []; x.skip = x.skip || []; });
       kpDraw();
@@ -515,14 +516,14 @@ VIEWS.kotprint = {
 var KP_OT = [["D", "Delivery"], ["P", "Pick up"], ["I", "Dine in"], ["S", "Self service"]];
 var KP_HELP = [
   ["1 · Choose who prints the KOTs", ["<b>Bridge Print only</b>: as before; Petpooja's slip prints through Bridge Print with the slot.", "<b>Console only</b>: only the Console's new slip prints; Petpooja's copy is not printed.", "<b>Console + Bridge backup</b> (start with this): the Console prints; if its slip doesn't go out in 10 seconds, Petpooja's slip prints instead, with the same slot."]],
-  ["2 · Which orders the Console prints", ["<b>Delivery / Online</b> is always on. Tap <b>Pick up</b>, <b>Dine in</b>, <b>Self service</b> to add them, or <b>All</b>.", "Order types left off keep printing through Bridge Print."]],
-  ["3 · Main and sub main printers (the whole bill with the slot)", ["Pick the <b>Main</b> printer: it prints <b>all other bills</b>.", "Press <b>+ Add sub main printer</b>, add categories or items (e.g. Dosa) and pick its printer: any bill that contains one of them prints <b>whole</b> on the sub main instead.", "Sub mains are checked top to bottom; a bill goes to the first one it matches. Each bill prints once.", "<b>Print the whole order</b> (on the main): off = the bill slip leaves out what a category / item printer already prints."]],
+  ["2 · Which orders the Console prints", ["<b>Delivery / Online</b> is on by default; tap it to turn it off. Tap <b>Pick up</b>, <b>Dine in</b>, <b>Self service</b> to add them, or <b>All</b>.", "Order types left off keep printing through Bridge Print."]],
+  ["3 · Main and sub main printers (the whole bill with the slot)", ["Pick a <b>Main</b> printer: it prints <b>all other bills</b>. <b>+ Add main printer</b> adds another (e.g. packing): every main prints its own copy; 🗑 deletes one.", "Press <b>+ Add sub main printer</b>, add categories or items (e.g. Dosa) and pick its printer: any bill that contains one of them prints <b>whole</b> on the sub main instead.", "Sub mains are checked top to bottom; a bill goes to the first one it matches. Each bill prints once.", "<b>Print the whole order</b> (on the main): off = the bill slip leaves out what a category / item printer already prints."]],
   ["4 · Category & item printers (a station's part, no slot)", ["<b>+ Add line</b>, choose <b>Category</b> or <b>Item</b>, add the names from the list (your Petpooja menu), pick the printer.", "That printer gets only those dishes, under the station name (e.g. DOSA), without the slot, with “Also on this order”.", "A dish named in an item line goes there, not to a category line."]],
   ["5 · “Prints for” buttons", ["Every printer has Delivery · Pick up · Dine in · Self service. Tap one to turn it off: that printer then skips those orders.", "A new printer starts with all on."]],
   ["6 · Backup printers (up to 3)", ["<b>+ Backup</b> adds one. They are tried in order when the printer is offline, out of paper or stuck; Alerts shows each time."]],
-  ["7 · On / Off switch", ["Off pauses a printer and keeps its setup.", "A sub main that is off: its bills go to the Main. A line that is off: its dishes stay only on the bill slip.", "The Main off: bills no sub main takes print through Bridge Print, so nothing is lost."]],
+  ["7 · On / Off switch", ["Off pauses a printer and keeps its setup.", "A sub main that is off: its bills go to the Main. A line that is off: its dishes stay only on the bill slip.", "Every main off: bills no sub main takes print through Bridge Print, so nothing is lost."]],
   ["8 · Test print, paper size and cutting", ["<b>Test print</b> sends a sample slip. 80 or 58 mm is found from the printer's name; the printer cuts after each slip (printers without a cutter leave it to tear)."]],
-  ["9 · What the slip shows", ["Bill slip (main / sub main): the big SLOT (online) or TOKEN, date and KOT, brand, order ID with the <b>last 4 big and bold</b>, DELIVERY / PICK UP / DINE IN, items with <b>add-ons in thin boxes</b> and notes, total, customer note, barcode “Scan to mark Food ready”.", "Station slip: the same without the slot, under the station name.", "A cancelled order prints a CANCELLED slip on the same printers."]],
+  ["9 · What the slip shows", ["Bill slip (main / sub main): the big SLOT (online) or TOKEN, date and KOT, brand, order ID with the <b>last 4 big and bold</b>, DELIVERY / PICK UP / DINE IN, items with <b>add-ons in thin boxes</b> and notes, total, customer note, barcode “Scan to mark Food ready”.", "Online orders: the rider's <b>OTP</b> (Zomato) or <b>Delivery Passcode</b> (Swiggy) under the order ID, on every main and sub main slip.", "Station slip: the same without the slot and OTP, under the station name.", "A cancelled order prints a CANCELLED slip on the same printers."]],
   ["10 · If something goes wrong", ["<b>A printer is offline</b>: its backup prints; see Alerts.", "<b>Nothing prints</b>: is the Console reading Petpooja (top bar)? With Console + Bridge backup, Petpooja's slip prints anyway.", "<b>Two slips for one order</b>: a reprint from Petpooja (2 minutes or more later) prints on purpose."]]
 ];
 function kpSel(val, cls, attr) {
@@ -539,8 +540,7 @@ function kpState(name) {
 // the printer objects by key: "m" main, "s0" sub main, "l0" line
 function kpObj(k) {
   var c = KP.cfg;
-  if (k === "m") return { get off() { return c.mainOff; }, set off(v) { c.mainOff = v; }, get skip() { return c.mainSkip; }, get backups() { return c.mainBackups; } };
-  return k[0] === "s" ? c.subs[+k.slice(1)] : c.lines[+k.slice(1)];
+  return (k[0] === "m" ? c.mains : k[0] === "s" ? c.subs : c.lines)[+k.slice(1)];
 }
 function kpSwitch(k, off) { return '<button class="kp-tg' + (off ? "" : " on") + '" data-tog="' + k + '" aria-pressed="' + !off + '" aria-label="Printer on / off"><i></i></button><span class="kp-tgl' + (off ? " off" : "") + '">' + (off ? "Off" : "On") + "</span>"; }
 function kpTypes(k, skip) {
@@ -557,13 +557,13 @@ function kpPick(attr, taken, cats, items) {
   return '<select class="kp-sel kp-addval" ' + attr + ">" + o + "</select>";
 }
 function kpDraw() {
-  var c = KP.cfg, T = { P: "Pick up", I: "Dine in", S: "Self service" }, t = KP.today || {};
+  var c = KP.cfg, T = { D: "Delivery / Online", P: "Pick up", I: "Dine in", S: "Self service" }, t = KP.today || {};
   var modes = [["bridge", "Bridge Print only"], ["console", "Console only"], ["both", "Console + Bridge backup"]];
   var h = '<div class="panel"><div class="kp-hd"><h2>KOT printing</h2><button class="kp-help' + (KPhelp ? " on" : "") + '" id="kpHelp" aria-expanded="' + KPhelp + '">❓ Help</button><button class="kp-savebtn' + (KPdirty ? " dirty" : "") + '" data-save="1">' + (KPdirty ? "Save changes" : "Saved ✓") + "</button></div>" +
     (KPmsg ? '<p class="msg kp-topmsg ' + (KPmsg.ok ? "ok" : "bad") + '">' + esc(KPmsg.msg) + "</p>" : "") +
     '<div class="kp-row"><div class="kp-seg">' + modes.map(function (m) { return '<button data-mode="' + m[0] + '" aria-pressed="' + (c.mode === m[0]) + '">' + m[1] + "</button>"; }).join("") + "</div>" +
     '<span class="mute kp-hint">' + { bridge: "Petpooja's slip through Bridge Print, as before", console: "Only the Console's slip prints", both: "Console prints; if it fails, Bridge Print prints" }[c.mode] + "</span></div>" +
-    '<div class="kp-row kp-chips"><span class="kp-chip on">✓ Delivery / Online <i>always</i></span>' + ["P", "I", "S"].map(function (x) { return '<button class="kp-chip' + (c.types.indexOf(x) >= 0 ? " on" : "") + '" data-type="' + x + '">' + (c.types.indexOf(x) >= 0 ? "✓ " : "") + T[x] + "</button>"; }).join("") +
+    '<div class="kp-row kp-chips"><span class="kp-lbl">Order types</span>' + ["D", "P", "I", "S"].map(function (x) { return '<button class="kp-chip' + (c.types.indexOf(x) >= 0 ? " on" : "") + '" data-type="' + x + '">' + (c.types.indexOf(x) >= 0 ? "✓ " : "") + T[x] + (x === "D" ? " <i>default</i>" : "") + "</button>"; }).join("") +
     '<button class="kp-chip all" data-type="all">All</button></div>' +
     '<p class="mute kp-today">Today: ' + (t.console || 0) + " slips by the Console · " + (t.bridge || 0) + " by Bridge Print · " + (t.skipped || 0) + " Petpooja slips not needed</p></div>";
   if (KPhelp) h += '<div class="panel kp-helpbox"><div class="kp-hd"><h2>❓ How to set up KOT printing</h2><a href="#" id="kpExpand">Expand all</a></div>' + KP_HELP.map(function (x) { return "<details><summary>" + x[0] + "</summary><ul>" + x[1].map(function (l) { return "<li>" + l + "</li>"; }).join("") + "</ul></details>"; }).join("") + "</div>";
@@ -576,9 +576,11 @@ function kpDraw() {
       kpPick('data-sadd="' + i + '"', taken, true, true) + '<span class="kp-sp"></span>' + kpSel(sm.printer, "", 'data-sp="' + i + '"') + kpSwitch("s" + i, sm.off) + '<button class="kp-del" data-sxdel="' + i + '" aria-label="Delete sub main">🗑</button></div>' +
       kpTypes("s" + i, sm.skip) + kpBackups(sm.backups, "s" + i) + "</div>";
   }).join("") + '<div class="kp-row"><button class="kp-add" id="kpAddSub">+ Add sub main printer</button><span class="mute kp-small">a bill goes to the first sub main it matches</span></div>' +
-    '<div class="kp-box' + (c.mainOff ? " off" : "") + '"><div class="kp-row"><span class="kp-pill dark">Main</span><span class="mute kp-b">All other bills</span><span class="kp-sp"></span>' + kpSel(c.main, "kp-main", 'data-main="1"') + kpSwitch("m", c.mainOff) + kpState(c.main) +
-    '<button class="btn ghost sm" data-test="1">Test print</button></div>' + kpTypes("m", c.mainSkip) + kpBackups(c.mainBackups, "m") +
-    '<label class="kp-sw2"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + "> Print the whole order</label></div></div>";
+    c.mains.map(function (m, i) {
+      return '<div class="kp-box' + (m.off ? " off" : "") + '"><div class="kp-row"><span class="kp-pill dark">Main ' + (i + 1) + '</span><span class="mute kp-b">All other bills</span><span class="kp-sp"></span>' + kpSel(m.printer, "kp-main", 'data-mp="' + i + '"') + kpSwitch("m" + i, m.off) + kpState(m.printer) +
+        '<button class="btn ghost sm" data-test="' + i + '">Test print</button><button class="kp-del" data-mxdel="' + i + '" aria-label="Delete main printer">🗑</button></div>' + kpTypes("m" + i, m.skip) + kpBackups(m.backups, "m" + i) + "</div>";
+    }).join("") + '<div class="kp-row"><button class="kp-add" id="kpAddMain">+ Add main printer</button><span class="mute kp-small">every main prints its own copy of each bill no sub main takes</span></div>' +
+    '<label class="kp-sw2"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + "> Bill slips: print the whole order</label></div>";
   // category & item printers
   h += '<div class="panel"><h2>Category & item printers</h2>' + c.lines.map(function (l, i) {
     var taken = l.values.map(function (x) { return (l.kind === "item" ? "i:" : "c:") + x; });
@@ -604,7 +606,7 @@ document.addEventListener("click", function (e) {
   if (b.id === "kpDiscard") { KPmsg = null; VIEWS.kotprint.load(); return; }
   if (b.id === "kpHelp") KPhelp = !KPhelp;
   else if (d.mode) c.mode = d.mode;
-  else if (d.type) { if (d.type === "all") c.types = c.types.length === 3 ? [] : ["P", "I", "S"]; else { var i = c.types.indexOf(d.type); if (i >= 0) c.types.splice(i, 1); else c.types.push(d.type); } }
+  else if (d.type) { if (d.type === "all") c.types = c.types.length === 4 ? ["D"] : ["D", "P", "I", "S"]; else { var i = c.types.indexOf(d.type); if (i >= 0) c.types.splice(i, 1); else c.types.push(d.type); } }
   else if (d.tog) { var o = kpObj(d.tog); o.off = !o.off; }
   else if (d.ot) { var q = d.ot.split(":"), sk = kpObj(q[0]).skip, si = sk.indexOf(q[1]); if (si >= 0) sk.splice(si, 1); else sk.push(q[1]); }
   else if (d.bkadd) { var L = kpObj(d.bkadd).backups; if (L.length < 3) L.push(""); }
@@ -614,12 +616,14 @@ document.addEventListener("click", function (e) {
   else if (d.sdel) { var v = d.sdel.split(":"); c.subs[+v[0]][v[1] === "c" ? "cats" : "items"].splice(+v[2], 1); }
   else if (d.ldel) c.lines.splice(+d.ldel, 1);
   else if (d.sxdel) c.subs.splice(+d.sxdel, 1);
+  else if (d.mxdel) c.mains.splice(+d.mxdel, 1);
+  else if (b.id === "kpAddMain") c.mains.push({ printer: "", backups: [], skip: [] });
   else if (b.id === "kpAddLine") c.lines.push({ kind: "cat", values: [], printer: "", backups: [], skip: [] });
   else if (b.id === "kpAddSub") c.subs.push({ cats: [], items: [], printer: "", backups: [], skip: [] });
-  else if (d.test) { post("/console/api/direct/test", { Printer: c.main }).then(function (r) { KPmsg = r; kpDraw(); }); return; }
+  else if (d.test !== undefined) { var tp = (c.mains[+d.test] || {}).printer; post("/console/api/direct/test", { Printer: tp || "" }).then(function (r) { KPmsg = r; kpDraw(); }); return; }
   else if (d.save) {
     var out = JSON.parse(JSON.stringify(c));
-    out.mainBackups = out.mainBackups.filter(Boolean);
+    out.mains = out.mains.filter(function (x) { return x.printer; }).map(function (x) { x.backups = x.backups.filter(Boolean); return x; });
     out.subs = out.subs.filter(function (x) { return x.printer || x.cats.length || x.items.length; }).map(function (x) { x.backups = x.backups.filter(Boolean); return x; });
     out.lines = out.lines.filter(function (l) { return l.printer || l.values.length; }).map(function (l) { l.backups = l.backups.filter(Boolean); return l; });
     post("/console/api/direct", out).then(function (r) { KPmsg = r; if (r.ok) VIEWS.kotprint.load(); else kpDraw(); setTimeout(function () { KPmsg = null; if (KP) kpDraw(); }, 5000); });
@@ -631,7 +635,7 @@ document.addEventListener("click", function (e) {
 document.addEventListener("change", function (e) {
   if (!KP || !$("kp") || !$("kp").contains(e.target)) return;
   var c = KP.cfg, t = e.target, d = t.dataset;
-  if (d.main) c.main = t.value;
+  if (d.mp !== undefined) c.mains[+d.mp].printer = t.value;
   else if (d.bk) { var p = d.bk.split(":"); kpObj(p[0]).backups[+p[1]] = t.value; }
   else if (d.lp !== undefined) c.lines[+d.lp].printer = t.value;
   else if (d.sp !== undefined) c.subs[+d.sp].printer = t.value;

@@ -51,10 +51,21 @@ type SubMain struct {
 	Skip    []string `json:"skip,omitempty"`
 }
 
+// MainPrinter: prints every bill no sub main takes (each main its own copy).
+type MainPrinter struct {
+	Printer string   `json:"printer"`
+	Backups []string `json:"backups,omitempty"`
+	Off     bool     `json:"off,omitempty"`
+	Skip    []string `json:"skip,omitempty"`
+}
+
 type DirectCfg struct {
-	Mode        string       `json:"mode"`  // bridge / console / both
-	Types       []string     `json:"types"` // more order types: P (pick up), I (dine in), S (self service)
-	Main        string       `json:"main"`
+	Mode    string        `json:"mode"`            // bridge / console / both
+	Types   []string      `json:"types"`           // order types the Console prints: D P I S
+	TypesV2 bool          `json:"typesV2"`         // Types includes D (before 4.11 delivery was always on)
+	Mains   []MainPrinter `json:"mains,omitempty"` // 4.11: several main printers
+	// before 4.11: one main printer (read once, moved into Mains)
+	Main        string       `json:"main,omitempty"`
 	MainBackups []string     `json:"mainBackups,omitempty"`
 	MainRest    bool         `json:"mainRest,omitempty"` // main prints only what no line takes (off: the whole order)
 	MainOff     bool         `json:"mainOff,omitempty"`
@@ -94,7 +105,7 @@ const (
 
 var (
 	dirMu        sync.Mutex
-	dirCfg       = DirectCfg{Mode: "bridge"}
+	dirCfg       = DirectCfg{Mode: "bridge", Types: []string{"D"}, TypesV2: true}
 	dirLoaded    bool
 	dirPrinted   = map[int64]string{} // KOT -> its Console job id
 	dirCancelled = map[int64]bool{}   // KOT -> CANCELLED slip printed
@@ -120,15 +131,22 @@ func cleanDirect(c DirectCfg) DirectCfg {
 	if c.Mode != "console" && c.Mode != "both" {
 		c.Mode = "bridge"
 	}
-	var t []string
-	for _, x := range c.Types {
-		if (x == "P" || x == "I" || x == "S") && !containsStr(t, x) {
-			t = append(t, x)
+	if !c.TypesV2 { // before 4.11 Delivery / Online was always printed
+		c.Types, c.TypesV2 = append([]string{"D"}, c.Types...), true
+	}
+	c.Types = cleanSkip(c.Types)
+	if len(c.Mains) == 0 && c.Main != "" {
+		c.Mains = []MainPrinter{{Printer: c.Main, Backups: c.MainBackups, Off: c.MainOff, Skip: c.MainSkip}}
+	}
+	c.Main, c.MainBackups, c.MainOff, c.MainSkip = "", nil, false, nil
+	var mains []MainPrinter
+	for _, m := range c.Mains {
+		m.Backups, m.Skip = cleanBackups(m.Printer, m.Backups), cleanSkip(m.Skip)
+		if len(mains) < 10 {
+			mains = append(mains, m)
 		}
 	}
-	c.Types = t
-	c.MainBackups = cleanBackups(c.Main, c.MainBackups)
-	c.MainSkip = cleanSkip(c.MainSkip)
+	c.Mains = mains
 	var subs []SubMain
 	for _, sm := range c.Subs {
 		sm.Cats, sm.Items, sm.Skip = cleanNames(sm.Cats), cleanNames(sm.Items), cleanSkip(sm.Skip)
@@ -180,22 +198,17 @@ func containsStr(l []string, s string) bool {
 }
 
 // directWants: the Console prints this KOT itself: its order type is chosen and a main or sub
-// main printer takes its bill (else Bridge Print prints it, e.g. the main printer switched off).
+// main printer takes its bill (else Bridge Print prints it, e.g. every main switched off).
 func directWants(c DirectCfg, k Kot) bool {
-	if c.Mode == "bridge" {
+	if c.Mode == "bridge" || !containsStr(c.Types, barkChannel(k)) {
 		return false
 	}
-	ch := barkChannel(k)
-	if ch != "D" && !containsStr(c.Types, ch) {
-		return false
-	}
-	_, ok := billPrinter(c, k)
-	return ok
+	return len(billPrinters(c, k)) > 0
 }
 
-// billPrinter: where the whole bill (with the slot) prints: the first sub main the bill matches,
-// else the main printer.
-func billPrinter(c DirectCfg, k Kot) (directSlip, bool) {
+// billPrinters: where the whole bill (with the slot and the OTP) prints: the first sub main the
+// bill matches, else every main printer (each its own copy).
+func billPrinters(c DirectCfg, k Kot) []directSlip {
 	ch := barkChannel(k)
 	for i, sm := range c.Subs {
 		if sm.Printer == "" || !printsFor(sm.Off, sm.Skip, ch) {
@@ -203,20 +216,24 @@ func billPrinter(c DirectCfg, k Kot) (directSlip, bool) {
 		}
 		for _, it := range k.Items {
 			if it.S >= 0 && (containsStr(sm.Items, it.N) || containsStr(sm.Cats, strings.TrimSpace(it.C))) {
-				return directSlip{name: fmt.Sprintf("Sub main %d", i+1), printers: append([]string{sm.Printer}, sm.Backups...)}, true
+				return []directSlip{{name: fmt.Sprintf("Sub main %d", i+1), bill: true, printers: append([]string{sm.Printer}, sm.Backups...)}}
 			}
 		}
 	}
-	if c.Main != "" && printsFor(c.MainOff, c.MainSkip, ch) {
-		return directSlip{name: "Main printer", printers: append([]string{c.Main}, c.MainBackups...)}, true
+	var out []directSlip
+	for i, m := range c.Mains {
+		if m.Printer != "" && printsFor(m.Off, m.Skip, ch) {
+			out = append(out, directSlip{name: fmt.Sprintf("Main %d", i+1), bill: true, printers: append([]string{m.Printer}, m.Backups...)})
+		}
 	}
-	return directSlip{}, false
+	return out
 }
 
 // ---- what goes to which printer ----------------------------------------------------------------
 
 type directSlip struct {
-	name     string // "Main printer" or the line's name
+	bill     bool   // a main / sub main slip: slot and OTP
+	name     string // "Main 1", "Sub main 1" or the line's name
 	station  string // shown on a line's slip
 	printers []string
 	items    []KItem
@@ -259,14 +276,14 @@ func directPlan(c DirectCfg, k Kot) []directSlip {
 	}
 	var out []directSlip
 	ch := barkChannel(k)
-	if bill, ok := billPrinter(c, k); ok {
-		var mine []KItem
-		for i, it := range items {
-			if !c.MainRest || taken[i] == 0 || !lineOn(c.Lines[taken[i]-1], ch) {
-				mine = append(mine, it)
-			}
+	var mine []KItem
+	for i, it := range items {
+		if !c.MainRest || taken[i] == 0 || !lineOn(c.Lines[taken[i]-1], ch) {
+			mine = append(mine, it)
 		}
-		if len(mine) > 0 {
+	}
+	if len(mine) > 0 {
+		for _, bill := range billPrinters(c, k) {
 			bill.items = mine
 			out = append(out, bill)
 		}
@@ -293,6 +310,10 @@ func directPlan(c DirectCfg, k Kot) []directSlip {
 func lineOn(l DirectLine, ch string) bool { return l.Printer != "" && printsFor(l.Off, l.Skip, ch) }
 
 func slipFor(k Kot, token int, s directSlip, cancel bool) slipData {
+	return slipForOTP(k, token, s, cancel, "", "")
+}
+
+func slipForOTP(k Kot, token int, s directSlip, cancel bool, otp, otpName string) slipData {
 	ch := barkChannel(k)
 	d := slipData{Label: "TOKEN", Token: token, Cancel: cancel, Station: s.station, KotNo: kotNumber(k), Note: k.Note}
 	if k.Created > 0 {
@@ -315,6 +336,9 @@ func slipFor(k Kot, token int, s directSlip, cancel bool) slipData {
 	}
 	for _, it := range s.items {
 		d.Items = append(d.Items, slipItem{N: it.N, Q: it.Q, A: it.A, Nt: it.Nt})
+	}
+	if s.bill && otp != "" {
+		d.OTP, d.OTPName = otp, otpName
 	}
 	if s.station != "" {
 		d.Token = 0 // the slot prints only on the main / sub main slip
@@ -544,6 +568,23 @@ func directPrint(c DirectCfg, k Kot, seen time.Time) {
 
 func directSend(j *Job, k Kot, plan []directSlip, cancel bool) {
 	recv := time.UnixMilli(j.Recv)
+	// the rider's OTP on the bill slips (kept on the job for reprints and the cancelled slip)
+	prMu.Lock()
+	otp, otpName := j.OTP, j.OTPName
+	prMu.Unlock()
+	if otp == "" {
+		if j.Attempts <= 1 && !cancel {
+			otp, otpName = waitOTP(k)
+		} else {
+			otp, otpName = orderOTP(k)
+		}
+		if otp != "" {
+			prMu.Lock()
+			j.OTP, j.OTPName = otp, otpName
+			saveJobLocked(j)
+			prMu.Unlock()
+		}
+	}
 	outs := make([]PrintOut, len(plan))
 	var wg sync.WaitGroup
 	for i := range plan {
@@ -554,7 +595,7 @@ func directSend(j *Job, k Kot, plan []directSlip, cancel bool) {
 			if cancel {
 				outs[i].Rule += " (cancelled)"
 			}
-			slip := &image2bytes{d: slipFor(k, j.Token, plan[i], cancel)}
+			slip := &image2bytes{d: slipForOTP(k, j.Token, plan[i], cancel, otp, otpName)}
 			sendChain(j, &outs[i], plan[i].printers, slip, recv)
 		}(i)
 	}
@@ -763,8 +804,16 @@ func handleDirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c = cleanDirect(c)
-	if c.Mode != "bridge" && c.Main == "" && len(c.Subs) == 0 {
-		reply(w, false, "Choose the main printer first.")
+	hasBill := len(c.Subs) > 0
+	for _, m := range c.Mains {
+		hasBill = hasBill || m.Printer != ""
+	}
+	if c.Mode != "bridge" && !hasBill {
+		reply(w, false, "Choose a main printer first.")
+		return
+	}
+	if c.Mode != "bridge" && len(c.Types) == 0 {
+		reply(w, false, "Choose at least one order type (Delivery / Online, Pick up, Dine in or Self service).")
 		return
 	}
 	if err := writeJSONFile(directPath(), c, true); err != nil {

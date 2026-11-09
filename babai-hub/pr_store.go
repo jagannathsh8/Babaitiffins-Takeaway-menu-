@@ -126,6 +126,8 @@ type Job struct {
 	OCR       string     `json:"ocr,omitempty"`     // what OCR read (order id), for checking
 	ReadyAt   int64      `json:"readyAt,omitempty"` // Food ready on the Dispatch screen (prints not in Petpooja's list)
 	ReadyBy   string     `json:"readyBy,omitempty"`
+	OTP       string     `json:"otp,omitempty"`     // the rider's OTP / delivery passcode (the Console's slips)
+	OTPName   string     `json:"otpName,omitempty"` // "OTP" / "Delivery Passcode"
 
 	slipBrand string // what the slip says it is (while its order is looked for)
 }
