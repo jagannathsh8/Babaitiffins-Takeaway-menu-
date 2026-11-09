@@ -10,7 +10,7 @@ import (
 
 func sampleSlip() slipData {
 	return slipData{Label: "SLOT", Token: 47, When: time.Date(2026, 11, 4, 21, 46, 0, 0, time.Local), KotNo: "1876",
-		Brand: "Swiggy", OrderID: "252475655137731", Type: "DELIVERY",
+		Brand: "Swiggy", OrderID: "252475655137731", Code: "252475655137731", Type: "Delivery",
 		Items: []slipItem{{N: "Masala Dosa", Q: 2, A: []KAddon{{N: "Breakfast Sambar (100ml)", Q: 2}}},
 			{N: "Cheese Karam Dosa", Q: 1, A: []KAddon{{N: "Extra Cheese", Q: 1}, {N: "Extra Ghee", Q: 1}}},
 			{N: "Filter Coffee", Q: 1, Nt: "less sugar"}},

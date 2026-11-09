@@ -323,16 +323,21 @@ func slipForOTP(k Kot, token int, s directSlip, cancel bool, otp, otpName string
 	}
 	switch ch {
 	case "D":
-		d.Label, d.Brand, d.OrderID, d.Type = "SLOT", brandOf(k), strings.TrimSpace(k.POID), "DELIVERY"
+		d.Label, d.Brand, d.OrderID, d.Type = "SLOT", brandOf(k), strings.TrimSpace(k.POID), "Delivery"
 	case "P":
-		d.Brand, d.Type = "Pick up", "PICK UP"
+		d.Type = "Pick Up"
 	case "S":
-		d.Brand, d.Type = "Self service", "SELF SERVICE"
+		d.Type = "Self Service"
 	default:
-		d.Brand, d.Type = "Dine in", "DINE IN"
+		d.Type = "Dine In"
 		if k.Table != "" {
-			d.Brand = "Dine in · Table " + k.Table
+			d.Brand = "Table : " + k.Table
 		}
+	}
+	// the barcode: the platform's order ID on delivery (the same code the rider's app shows),
+	// the KOT's own scan code on every other order
+	if d.Code = digitsOnly(d.OrderID); d.Code == "" {
+		d.Code = kotScanCode(k)
 	}
 	for _, it := range s.items {
 		d.Items = append(d.Items, slipItem{N: it.N, Q: it.Q, A: it.A, Nt: it.Nt})
@@ -829,7 +834,7 @@ func handleDirect(w http.ResponseWriter, r *http.Request) {
 
 // handleDirectTest: POST {printer} prints a sample slip; GET ?w=576|384 is its picture.
 func handleDirectTest(w http.ResponseWriter, r *http.Request) {
-	sample := slipData{Label: "SLOT", Token: 16, When: time.Now(), KotNo: "1874", Brand: "Test print", OrderID: "5000715116389", Type: "DELIVERY",
+	sample := slipData{Label: "SLOT", Token: 16, When: time.Now(), KotNo: "1874", Brand: "Test print", OrderID: "5000715116389", Code: "5000715116389", Type: "Delivery",
 		Items: []slipItem{{N: "Masala Dosa", Q: 2, A: []KAddon{{N: "Breakfast Sambar (100ml)", Q: 2}}}, {N: "Filter Coffee", Q: 1, Nt: "less sugar"}},
 		Note:  "This is a test slip from the Babai Console"}
 	if r.Method == http.MethodGet {

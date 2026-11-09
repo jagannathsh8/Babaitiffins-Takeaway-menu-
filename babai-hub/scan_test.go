@@ -82,6 +82,17 @@ func TestScanMarksFoodReady(t *testing.T) {
 	if r.OK || !strings.Contains(r.Msg, "No preparing order ending 9999") {
 		t.Fatalf("unknown %+v", r)
 	}
+	// a dine in slip's barcode (kotScanCode): exactly that KOT, never an online order's tail
+	if c := kotScanCode(Kot{ID: 600}); c != "00600" && c != "000600" {
+		t.Fatalf("kot code %q", c)
+	}
+	r = markFromScan("k1", kotScanCode(Kot{ID: 600}), "", "wifi")
+	if !r.OK || r.Brand != "Dine in · KOT" || r.Last4 != "7" { // found (the test row has no item ids: "already")
+		t.Fatalf("dine in scan %+v", r)
+	}
+	if r = markFromScan("k2", "000601", "", "wifi"); r.OK {
+		t.Fatalf("unknown kot code %+v", r)
+	}
 	r = markFromScan("e1", "12", "", "wifi")
 	if r.OK || !strings.Contains(r.Msg, "4 digits") {
 		t.Fatalf("short %+v", r)

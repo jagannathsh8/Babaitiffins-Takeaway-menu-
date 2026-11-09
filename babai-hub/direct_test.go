@@ -85,6 +85,12 @@ func TestDirectSubMainsAndSwitches(t *testing.T) {
 	if s := slipForOTP(dosaBill, 47, p[0], false, "5557", "Delivery Passcode"); s.Token != 47 || s.Station != "" || s.OTP != "5557" || s.OTPName != "Delivery Passcode" {
 		t.Fatalf("the bill slip has the slot and the OTP: %+v", s)
 	}
+	if s := slipForOTP(dineDosa, 5, directPlan(c, dineDosa)[0], false, "", ""); s.Code != kotScanCode(dineDosa) || s.Code == "" || s.OrderID != "" {
+		t.Fatalf("dine in slips get the KOT's scan code: %+v", s)
+	}
+	if s := slipForOTP(dosaBill, 47, p[0], false, "", ""); s.Code != "252475655137731" {
+		t.Fatal("delivery slips: the order ID barcode")
+	}
 	if s := slipForOTP(dosaBill, 47, p[1], false, "5557", "Delivery Passcode"); s.Token != 0 || s.Station != "Dosa" || s.OTP != "" {
 		t.Fatal("the station slip has no slot and no OTP")
 	}

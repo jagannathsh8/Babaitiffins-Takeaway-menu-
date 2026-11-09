@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -108,6 +109,37 @@ func matchKots(kots []Kot, code string) ([]Kot, int) {
 	return best, bestN
 }
 
+// kotScanCode: the barcode on the Console's slips for orders without a platform order ID (dine in,
+// pick up, self service): "00" + the KOT's ID, padded to an even length. Digits only, because the
+// Babai Scanner phones and USB scanners send digits; no Swiggy / Zomato order ID starts with 00.
+func kotScanCode(k Kot) string {
+	if k.ID <= 0 {
+		return ""
+	}
+	s := "00" + strconv.FormatInt(k.ID, 10)
+	if len(s)%2 == 1 {
+		s = "0" + s
+	}
+	return s
+}
+
+// matchKotCode: the KOT a kotScanCode names (exactly).
+func matchKotCode(kots []Kot, d string) []Kot {
+	if !strings.HasPrefix(d, "00") {
+		return nil
+	}
+	id, err := strconv.ParseInt(strings.TrimLeft(d, "0"), 10, 64)
+	if err != nil || id <= 0 {
+		return nil
+	}
+	for _, k := range kots {
+		if k.ID == id && k.Status != "0" && k.Status != "10" {
+			return []Kot{k}
+		}
+	}
+	return nil
+}
+
 // itemsToMark: what the KDS app sends: items not yet ready / dispatched (and not cancelled).
 func itemsToMark(k Kot) []int64 {
 	var ids []int64
@@ -185,12 +217,24 @@ func markCode(code string, now time.Time) ScanResult {
 	if okAt.IsZero() || now.Sub(okAt) > scanFreshFor || code0 == "" {
 		return ScanResult{Msg: "Hub can't reach Petpooja right now", Last4: tail}
 	}
-	matched, _ := matchKots(kots, d)
+	var matched []Kot
+	byKot := strings.HasPrefix(d, "00") // a dine in / pick up slip's code (kotScanCode)
+	if byKot {
+		matched = matchKotCode(kots, d)
+	} else {
+		matched, _ = matchKots(kots, d)
+	}
 	if len(matched) == 0 {
+		if byKot {
+			return ScanResult{Msg: "No preparing KOT with this code", Last4: tail}
+		}
 		return ScanResult{Msg: "No preparing order ending " + tail, Last4: tail}
 	}
 	first := matched[0]
 	res := ScanResult{Brand: brandOf(first), Order: first.POID, Last4: last4Of(first.POID), Slot: slotForKot(first.ID, first.POID)}
+	if byKot {
+		res.Brand, res.Last4 = scanKind(first), kotNumber(first)
+	}
 	base := serverBase(c.Server)
 	marked, already := 0, 0
 	var lastErr error
@@ -266,6 +310,22 @@ func brandOf(k Kot) string {
 		return "Delivery"
 	}
 	return "Online"
+}
+
+// scanKind: what a scanned dine in / pick up KOT is called on the scanner.
+func scanKind(k Kot) string {
+	switch barkChannel(k) {
+	case "P":
+		return "Pick up · KOT"
+	case "S":
+		return "Self service · KOT"
+	case "D":
+		return brandOf(k) + " · KOT"
+	}
+	if k.Table != "" {
+		return "Table " + k.Table + " · KOT"
+	}
+	return "Dine in · KOT"
 }
 
 func last4Of(s string) string {

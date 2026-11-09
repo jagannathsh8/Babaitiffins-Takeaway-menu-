@@ -4,9 +4,10 @@ package main
 // (576 dots on 80 mm, 384 on 58 mm) and sent to the printer as an ESC/POS raster image, so it looks
 // the same on every thermal printer (Epson, TVS, Retsol ...), then the printer cuts.
 //
-//	SLOT / TOKEN + the big number · date · KOT n · brand · order ID with the last 4 boxed ·
-//	DELIVERY / PICK UP / DINE IN / SELF SERVICE · items with add-ons and notes · total ·
-//	customer note · barcode of the order ID "Scan to mark Food ready" (delivery)
+//	Laid out like Petpooja's own KOT (4.12), with the slot on top:
+//	SLOT 14 · date · KOT - n · "Zomato : 8816162299" (last 4 bold) · OTP · Delivery · Item / Qty. ·
+//	items with add-ons and notes · total · Customer Notes · "Scan to Mark food ready" + barcode
+//	(the order ID on delivery; the KOT's own code on dine in / pick up / self service).
 
 import (
 	"bytes"
@@ -23,6 +24,7 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goitalic"
+	"golang.org/x/image/font/gofont/gomedium"
 	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
@@ -43,7 +45,8 @@ type slipData struct {
 	When    time.Time
 	KotNo   string
 	Brand   string // "Swiggy", or "Dine in · Table 4"
-	OrderID string // platform order ID (barcode), online only
+	OrderID string // platform order ID, online only
+	Code    string // the barcode: the order ID (delivery) or kotScanCode (every other order)
 	Type    string // DELIVERY / PICK UP / DINE IN / SELF SERVICE
 	Items   []slipItem
 	Note    string // the customer's note
@@ -55,6 +58,7 @@ type slipData struct {
 var (
 	fontOnce                  sync.Once
 	fontBold, fontReg, fontIt *opentype.Font
+	fontMed                   *opentype.Font
 	faceMu                    sync.Mutex
 	faces                     = map[string]font.Face{}
 )
@@ -64,6 +68,7 @@ func slipFace(kind string, size float64) font.Face {
 		fontBold, _ = opentype.Parse(gobold.TTF)
 		fontReg, _ = opentype.Parse(goregular.TTF)
 		fontIt, _ = opentype.Parse(goitalic.TTF)
+		fontMed, _ = opentype.Parse(gomedium.TTF)
 	})
 	key := fmt.Sprintf("%s%.1f", kind, size)
 	faceMu.Lock()
@@ -77,6 +82,8 @@ func slipFace(kind string, size float64) font.Face {
 		src = fontBold
 	case "i":
 		src = fontIt
+	case "m":
+		src = fontMed // "regular" text: a little heavier, so thermal paper shows it clearly
 	}
 	f, err := opentype.NewFace(src, &opentype.FaceOptions{Size: size, DPI: 72, Hinting: font.HintingFull})
 	if err != nil {
@@ -246,32 +253,44 @@ func (c *slipCanvas) dash() {
 	c.y += 12
 }
 
-// orderLine: "Order 2524756551 3136" centred, the last 4 big and bold.
-func (c *slipCanvas) orderLine(id string) {
+// idLine: "Zomato : 8816162299" centred, the last 4 bigger and bold (Petpooja's line, readable
+// from across the pass).
+func (c *slipCanvas) idLine(prefix, id string) {
 	head, last := id, ""
 	if len(id) > 4 {
 		head, last = id[:len(id)-4], id[len(id)-4:]
 	}
-	fl, fh, fb := c.face("r", 26), c.face("r", 28), c.face("b", 56)
-	pad := int(8 * c.scale)
-	w := textWidth(fl, "Order ") + textWidth(fh, head) + textWidth(fb, last) + 2*pad
+	fh, fb := c.face("b", 30), c.face("b", 46)
+	w := textWidth(fh, prefix+head) + textWidth(fb, last)
 	for w > c.w && len(head) > 2 { // a long ID on narrow paper: keep its end
 		head = head[1:]
-		w = textWidth(fl, "Order …") + textWidth(fh, head) + textWidth(fb, last) + 2*pad
+		w = textWidth(fh, prefix+"…"+head) + textWidth(fb, last)
 	}
 	if head != id[:max(0, len(id)-4)] {
 		head = "…" + head
 	}
-	asc := fb.Metrics().Ascent.Ceil()
-	desc := fb.Metrics().Descent.Ceil()
+	asc, desc := fb.Metrics().Ascent.Ceil(), fb.Metrics().Descent.Ceil()
 	x := max(0, (c.w-w)/2)
 	base := c.y + asc
-	c.drawText(fl, "Order ", x, base, color.Gray{0})
-	x += textWidth(fl, "Order ")
-	c.drawText(fh, head, x, base, color.Gray{0})
-	x += textWidth(fh, head)
-	c.drawText(fb, last, x+pad/2, base, color.Gray{0}) // the last 4: big and bold, no box
-	c.y += asc + desc + 12
+	c.drawText(fh, prefix+head, x, base, color.Gray{0})
+	c.drawText(fb, last, x+textWidth(fh, prefix+head), base, color.Gray{0})
+	c.y += asc + desc + 4
+}
+
+// slotLine: "SLOT 14" on one line at the top, the number big.
+func (c *slipCanvas) slotLine(label string, n int, big float64) {
+	fl, fn := c.face("b", 40), c.face("b", big)
+	num := fmt.Sprint(n)
+	gap := int(14 * c.scale)
+	w := textWidth(fl, label) + gap + textWidth(fn, num)
+	asc := fn.Metrics().Ascent.Ceil()
+	x := max(0, (c.w-w)/2)
+	// the number's digits start near the top of its face: trim the empty space above them
+	top := asc - int(big*c.scale*0.74)
+	base := c.y + asc - top
+	c.drawText(fl, label, x, base, color.Gray{0})
+	c.drawText(fn, num, x+textWidth(fl, label)+gap, base, color.Gray{0})
+	c.y = base + 14
 }
 
 // barcode: Code 128 of the order ID (subset C for digits, else B), modules whole dots wide.
@@ -294,8 +313,8 @@ func (c *slipCanvas) barcode(data string) {
 			draw.Draw(c.img, image.Rect(x+i*mod, c.y, x+(i+1)*mod, c.y+h), image.Black, image.Point{}, draw.Src)
 		}
 	}
-	c.y += h + 6
-	c.text(data, "r", 22, "c", false, 0)
+	c.y += h + 4
+	c.text(data, "m", 24, "c", false, 0)
 }
 
 // code128Values: start code, data values, check value.
@@ -342,6 +361,10 @@ func qtyStr(q float64) string {
 	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", q), "0"), ".")
 }
 
+// slipInk: a grey dot darker than this prints black. Above the half-way mark, so the soft edges of
+// each letter print too: strokes come out solid instead of thin and broken.
+const slipInk = 160
+
 // slipMargin: blank paper each side (dots), so no letter touches or loses the paper's edge.
 func slipMargin(w int) int { return w * 24 / 576 } // 24 dots (3 mm) on 80 mm, 16 on 58 mm
 
@@ -352,6 +375,13 @@ func renderSlip(d slipData, w int) *image.Gray {
 	out := image.NewGray(image.Rect(0, 0, w, inner.Bounds().Dy()+16))
 	draw.Draw(out, out.Bounds(), image.White, image.Point{}, draw.Src)
 	draw.Draw(out, image.Rect(m, 8, w-m, 8+inner.Bounds().Dy()), inner, inner.Bounds().Min, draw.Src)
+	for i, v := range out.Pix { // pure black / white: the preview is exactly what the printer prints
+		if v < slipInk {
+			out.Pix[i] = 0
+		} else {
+			out.Pix[i] = 255
+		}
+	}
 	return out
 }
 
@@ -361,35 +391,35 @@ func drawSlip(d slipData, w int) *image.Gray {
 		c.text("CANCELLED", "b", 64, "c", true, 0)
 	}
 	if d.Token > 0 {
-		c.text(d.Label, "b", 26, "c", false, 0)
-		big := 150.0
+		big := 110.0
 		if w < 500 {
-			big = 120 / c.scale // the number stays large on 58 mm
+			big = 96 / c.scale // the number stays large on 58 mm
 		}
-		c.text(fmt.Sprint(d.Token), "b", big, "c", false, 0)
+		c.slotLine(d.Label, d.Token, big)
 	}
 	if d.Station != "" {
 		c.text(strings.ToUpper(d.Station), "b", 40, "c", false, 0)
 	}
-	c.text(d.When.Format("02/01/06 15:04")+"   ·   KOT "+d.KotNo, "r", 26, "c", false, 0)
-	if d.Brand != "" {
-		c.text(d.Brand, "b", 34, "c", false, 0)
-	}
-	if d.OrderID != "" {
-		c.orderLine(d.OrderID)
+	c.text(d.When.Format("02/01/06 15:04"), "m", 28, "c", false, 0)
+	c.text("KOT - "+d.KotNo, "m", 28, "c", false, 0)
+	switch {
+	case d.OrderID != "":
+		c.idLine(d.Brand+" : ", d.OrderID)
+	case d.Brand != "":
+		c.text(d.Brand, "b", 30, "c", false, 0)
 	}
 	if d.OTP != "" {
 		name := d.OTPName
 		if name == "" {
 			name = "OTP"
 		}
-		c.text(name+" : "+d.OTP, "b", 36, "c", false, 0)
+		c.text(name+" : "+d.OTP, "b", 32, "c", false, 0)
 	}
 	if d.Type != "" {
-		c.text(d.Type, "b", 40, "c", false, 0)
+		c.text(d.Type, "b", 32, "c", false, 0)
 	}
-	c.row("ITEM", "QTY", "b", 24, "b", 24, 0)
 	c.dash()
+	c.row("Item", "Qty.", "m", 26, "m", 26, 0)
 	total := 0.0
 	for _, it := range d.Items {
 		q := it.Q
@@ -397,7 +427,7 @@ func drawSlip(d slipData, w int) *image.Gray {
 			q = 1
 		}
 		total += q
-		c.row(it.N, qtyStr(q), "b", 32, "b", 36, 0)
+		c.row(it.N, qtyStr(q), "b", 30, "b", 32, 0)
 		for _, a := range it.A {
 			c.addon("+ "+a.N+" × "+qtyStr(a.Q), int(28*c.scale))
 		}
@@ -406,17 +436,18 @@ func drawSlip(d slipData, w int) *image.Gray {
 		}
 	}
 	c.dash()
-	c.row("Total items", qtyStr(total), "b", 28, "b", 32, 0)
+	c.row("", qtyStr(total), "b", 30, "b", 32, 0)
+	c.dash()
 	if d.Note != "" {
-		c.wrap("CUSTOMER NOTE: "+d.Note, "b", 26, 0, true)
+		c.wrap("Customer Notes: "+d.Note, "b", 30, 0, false)
 	}
 	if d.Also != "" {
 		c.wrap("Also on this order: "+d.Also, "i", 24, 0, false)
 	}
-	if d.OrderID != "" && !d.Cancel && digitsOnly(d.OrderID) != "" {
-		c.dash()
-		c.barcode(digitsOnly(d.OrderID))
-		c.text("Scan to mark Food ready", "b", 26, "c", false, 0)
+	if code := digitsOnly(d.Code); code != "" && !d.Cancel {
+		c.y += 6
+		c.text("Scan to Mark food ready", "b", 26, "c", false, 0)
+		c.barcode(code)
 	}
 	c.y += 10
 	return c.img.SubImage(image.Rect(0, 0, w, c.y)).(*image.Gray)
@@ -440,7 +471,7 @@ func escposSlip(img *image.Gray) []byte {
 				var v byte
 				for bit := 0; bit < 8; bit++ {
 					x := xb*8 + bit
-					if x < w && img.GrayAt(img.Bounds().Min.X+x, img.Bounds().Min.Y+y).Y < 128 {
+					if x < w && img.GrayAt(img.Bounds().Min.X+x, img.Bounds().Min.Y+y).Y < slipInk {
 						v |= 0x80 >> bit
 					}
 				}
