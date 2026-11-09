@@ -304,9 +304,9 @@ func TestAutoClearAndStale(t *testing.T) {
 	if len(b.ready) != 1 {
 		t.Fatal("ready token missing")
 	}
-	b.update([]tbKot{{id: 1, label: "5", created: now - 60_000, ready: true, dosas: 1}}, now+11*60_000)
+	b.update([]tbKot{{id: 1, label: "5", created: now - 60_000, ready: true, dosas: 1}}, now+31*60_000)
 	if len(b.ready) != 0 {
-		t.Fatal("not auto-cleared after 10 min")
+		t.Fatal("not auto-cleared after 30 min (the default)")
 	}
 	b2 := newTokenBoard()
 	b2.update([]tbKot{{id: 2, label: "6", created: now - 40*60_000, ready: true}}, now)

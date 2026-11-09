@@ -25,7 +25,7 @@ const (
 	maxPrepMs   = 150 * 60_000     // forgotten tickets are outliers
 	confidentN  = 6                // recent completions for full queue weighting
 	kotRowCap   = 300              // the billing PC sends at most this many rows
-	defaultClrM = 10               // ready tokens leave after 10 min if nobody dispatches
+	defaultClrM = 30               // ready tokens leave after 30 min if nobody dispatches (4.13.1)
 )
 
 // ---- token board ------------------------------------------------------------------------------
@@ -758,7 +758,7 @@ func onBoard(kots []Kot, now time.Time) {
 		statsLoad = true
 		stats.load(statsPath(), now)
 	}
-	board.clearMs = int64(getConfig().AutoClearMin) * 60_000
+	board.clearMs = autoClearMs()
 	board.update(tb, now.UnixMilli())
 	stats.update(ds, now, ppRowsAtCap())
 	res := stats.compute(now)

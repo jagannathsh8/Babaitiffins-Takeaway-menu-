@@ -652,11 +652,21 @@ VIEWS.screens = {
   every: 10000,
   html: function () {
     return '<div class="panel"><h2>Babai Screens</h2><p class="help">Every TV, tablet or monitor showing a Babai screen, and when it last checked in. Install the <b>Babai Screens</b> app from the Apps page (or by USB), open it, and pick the screen once. A kitchen screen asks for the Console PIN once.</p><div id="scl"></div></div>' +
+      '<div class="panel"><div class="hd"><h2>Ready tokens leave the screens</h2></div><p class="help">On the Dosa order status and Pick-up screens, a ready token goes off the screen by itself after this time. It goes at once when it is triple-tapped on the Pick-up TV or dispatched on a kitchen screen. Off: it stays until then.</p><div class="seg" id="acl" role="group" aria-label="Auto clear"><button data-v="-1">Off</button><button data-v="30">30 min</button><button data-v="45">45 min</button><button data-v="60">1 hour</button></div> <span class="msg" id="aclm"></span></div>' +
       '<div class="panel"><h2>Screens</h2><div class="tw"><table><thead><tr><th>Screen</th><th>Device</th><th>App</th><th>Address</th><th>Last seen</th></tr></thead><tbody id="sct"></tbody></table></div></div>';
   },
   load: function () {
     getJ("/console/api/screens").then(function (d) {
       var base = (d.links || [])[0] || "";
+      $("acl").querySelectorAll("button").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(+b.getAttribute("data-v") === d.clear));
+        b.onclick = function () {
+          post("/console/api/autoclear", { min: +b.getAttribute("data-v") }).then(function (r) {
+            $("aclm").textContent = r.msg; $("aclm").className = "msg " + (r.ok ? "ok" : "bad");
+            if (r.ok) $("acl").querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+          });
+        };
+      });
       $("scl").innerHTML = base ? '<p>Screens in a browser: <b>' + esc(base) + '/screens/</b> · App update: ' + (d.app && d.app.ready ? "build " + d.app.b + " ready" : "not downloaded yet") + "</p>" : '<p class="help">No network address: is this PC on the shop Wi-Fi?</p>';
       var names = { rider: "Rider TV", dosa: "Dosa order status", pickup: "Pick-up TV", kitchen: "Kitchen", barker: "Dosa barker", hello: "Setting up" };
       $("sct").innerHTML = (d.screens || []).map(function (s) {

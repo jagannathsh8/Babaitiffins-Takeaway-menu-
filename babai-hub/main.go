@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "4.13"
+	version     = "4.13.1"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -44,7 +44,7 @@ type Config struct {
 	Outlet       string            `json:"outlet"` // outlet name exactly as on the bill, e.g. "VTR", "Sarjapur"
 	Lat          float64           `json:"lat"`    // outlet location (customers' page picks the nearest outlet)
 	Lng          float64           `json:"lng"`
-	AutoClearMin int               `json:"autoClearMin"` // ready tokens leave after this many minutes (TV default 10)
+	AutoClearMin int               `json:"autoClearMin"` // ready tokens leave after 30 / 45 / 60 min; -1 = off (never)
 	Paused       bool              `json:"paused"`       // tray: Pause / Resume
 	DB           string            `json:"db"`           // https://xxx.firebasedatabase.app
 	Secret       string            `json:"secret"`       // Firebase database secret
@@ -206,9 +206,26 @@ func loadConfig() {
 	if cfg.Page == "" || strings.Contains(cfg.Page, "github.io") {
 		cfg.Page = defaultPage
 	}
-	if cfg.AutoClearMin <= 0 {
-		cfg.AutoClearMin = defaultClrM
+	cfg.AutoClearMin = cleanAutoClear(cfg.AutoClearMin)
+}
+
+// cleanAutoClear: the choices on the Screens page: off (-1), 30, 45 or 60 min; anything else
+// (an older Console's 10 min, unset) becomes 30.
+func cleanAutoClear(v int) int {
+	switch v {
+	case -1, 30, 45, 60:
+		return v
 	}
+	return defaultClrM
+}
+
+// autoClearMs: how long a ready token stays on the Dosa / Pick-up screens; 0 = until collected.
+func autoClearMs() int64 {
+	v := cleanAutoClear(getConfig().AutoClearMin)
+	if v < 0 {
+		return 0
+	}
+	return int64(v) * 60_000
 }
 
 func saveConfig(c Config) error {

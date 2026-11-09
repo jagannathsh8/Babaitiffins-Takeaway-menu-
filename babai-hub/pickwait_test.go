@@ -87,3 +87,27 @@ func TestDosaFlow(t *testing.T) {
 		t.Fatalf("one dosa KOT in 10 min: %v", p)
 	}
 }
+
+func TestAutoClearChoices(t *testing.T) {
+	for in, want := range map[int]int{0: 30, 10: 30, -1: -1, 30: 30, 45: 45, 60: 60, 90: 30} {
+		if got := cleanAutoClear(in); got != want {
+			t.Errorf("%d -> %d, want %d", in, got, want)
+		}
+	}
+	dataDir = t.TempDir()
+	now := time.Now().UnixMilli()
+	k := Kot{ID: 50, OrderType: 2, Status: "9", Created: now - 90*60_000, Items: []KItem{{N: "Poori", C: "Poori", Q: 1, S: 9, ID: 1}}}
+	pickMu.Lock()
+	pickReadyAt[50] = now - 50*60_000 // ready 50 min ago
+	pickMu.Unlock()
+	old := getConfig()
+	defer func() { cfgMu.Lock(); cfg = old; cfgMu.Unlock() }()
+	for min, shown := range map[int]bool{30: false, 45: false, 60: true, -1: true} {
+		cfgMu.Lock()
+		cfg.AutoClearMin = min
+		cfgMu.Unlock()
+		if l, _ := pickupOrders([]Kot{k}, now); (len(l) == 1) != shown {
+			t.Errorf("auto clear %d: shown %v", min, len(l) == 1)
+		}
+	}
+}

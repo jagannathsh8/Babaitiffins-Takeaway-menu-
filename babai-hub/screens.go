@@ -51,6 +51,7 @@ func screensRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/screens/photo/", handleScreenPhoto)
 	mux.Handle("/bsapp/", screensApp) // the app itself, for its self-update
 	mux.HandleFunc("/console/api/screens", localOnly(handleScreensList))
+	mux.HandleFunc("/console/api/autoclear", localOnly(pinnedAPI(handleAutoClear)))
 }
 
 func handleScreenPage(w http.ResponseWriter, r *http.Request) {
@@ -143,6 +144,29 @@ func screenGet(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// handleAutoClear: POST {min: -1 | 30 | 45 | 60}: how long ready tokens stay on the screens.
+func handleAutoClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !fromOwnPage(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	var in struct {
+		Min int `json:"min"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 256)).Decode(&in) != nil || cleanAutoClear(in.Min) != in.Min {
+		reply(w, false, "Choose Off, 30, 45 or 60 min.")
+		return
+	}
+	c := getConfig()
+	c.AutoClearMin = in.Min
+	if err := saveConfig(c); err != nil {
+		reply(w, false, "Could not save: "+err.Error())
+		return
+	}
+	log.Printf("screens: ready tokens auto-clear set to %d min", in.Min)
+	reply(w, true, "Saved.")
+}
+
 func handleScreensList(w http.ResponseWriter, r *http.Request) {
 	keys := getConfig().ScreenKeys
 	screensMu.Lock()
@@ -164,7 +188,7 @@ func handleScreensList(w http.ResponseWriter, r *http.Request) {
 			links = append(links, fmt.Sprintf("http://%s:%d", a, consolePort()))
 		}
 	}
-	writeJSON(w, map[string]any{"now": time.Now().UnixMilli(), "screens": list, "links": links, "app": screensAppInfo()})
+	writeJSON(w, map[string]any{"now": time.Now().UnixMilli(), "screens": list, "links": links, "app": screensAppInfo(), "clear": cleanAutoClear(getConfig().AutoClearMin)})
 }
 
 // ---- pairing (kitchen screens, which change Petpooja) --------------------------------------------
@@ -289,10 +313,7 @@ func isPickup(k Kot) bool { return !k.Online && k.OrderType == 2 && barkChannel(
 
 // pickupOrders: the Pick-up TV's tokens, each waiting one with its wait; and the average wait now.
 func pickupOrders(kots []Kot, now int64) ([]pickupOrder, string) {
-	clear := int64(getConfig().AutoClearMin) * 60_000
-	if clear <= 0 {
-		clear = defaultClrM * 60_000
-	}
+	clear := autoClearMs() // 0: off, ready tokens stay until collected
 	kitchenMu.Lock()
 	gone := map[int64]bool{}
 	for k := range kitchenGone {
@@ -325,7 +346,7 @@ func pickupOrders(kots []Kot, now int64) ([]pickupOrder, string) {
 			delete(pickReadyAt, k.ID)
 		}
 		ra := pickReadyAt[k.ID]
-		if ready && now-ra >= clear {
+		if ready && clear > 0 && now-ra >= clear {
 			continue // collected long ago: off the screen
 		}
 		var items []KItem
