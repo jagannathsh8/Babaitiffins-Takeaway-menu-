@@ -45,6 +45,7 @@ func screensRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/screens/api/pair", handleScreenPair)
 	mux.HandleFunc("/screens/api/ready", handleScreenReady)
 	mux.HandleFunc("/screens/api/dispatch", handleScreenDispatch)
+	mux.HandleFunc("/screens/api/pickup/clear", handleScreenPickupClear)
 	mux.HandleFunc("/screens/voice.wav", handleScreenVoice)
 	mux.HandleFunc("/screens/api/photos", screenGet(handleScreenPhotos))
 	mux.HandleFunc("/screens/photo/", handleScreenPhoto)
@@ -268,11 +269,15 @@ func handleScreenDosa(w http.ResponseWriter, r *http.Request) {
 // ---- pick-up TV ------------------------------------------------------------------------------
 
 type pickupOrder struct {
+	K     int64       `json:"k"`
 	Tk    string      `json:"tk"`
 	C     int64       `json:"c"`
 	Ready bool        `json:"r"`
 	RA    int64       `json:"ra,omitempty"`
 	Items []PhoneItem `json:"i"`
+	M     int         `json:"m,omitempty"`  // waiting: about this many minutes left (1 = almost ready)
+	Y1    string      `json:"y1,omitempty"` // why: "🔥 Dosa: "
+	Y2    string      `json:"y2,omitempty"` // "2 orders ahead on the tawa" / "Poori usually takes 6 min"
 }
 
 var (
@@ -282,20 +287,37 @@ var (
 
 func isPickup(k Kot) bool { return !k.Online && k.OrderType == 2 && barkChannel(k) == "P" }
 
-func pickupOrders(kots []Kot, now int64) []pickupOrder {
+// pickupOrders: the Pick-up TV's tokens, each waiting one with its wait; and the average wait now.
+func pickupOrders(kots []Kot, now int64) ([]pickupOrder, string) {
 	clear := int64(getConfig().AutoClearMin) * 60_000
 	if clear <= 0 {
 		clear = defaultClrM * 60_000
 	}
+	kitchenMu.Lock()
+	gone := map[int64]bool{}
+	for k := range kitchenGone {
+		gone[k] = true // dispatched on a kitchen screen
+	}
+	kitchenMu.Unlock()
+	mu.Lock()
+	avgDosa := dosaAvgNow
+	mu.Unlock()
+	times := pwLearn(time.UnixMilli(now))
+	perMin := flowPerMin(now)
+	queue := dosaQueue(kots)
 	pickMu.Lock()
 	defer pickMu.Unlock()
 	open := map[int64]bool{}
 	var out []pickupOrder
+	var totals []float64
 	for _, k := range kots {
 		if !isPickup(k) || k.Status == "0" || k.Status == "10" || len(k.Items) == 0 {
 			continue
 		}
 		open[k.ID] = true
+		if gone[k.ID] || pickCleared[k.ID] > 0 {
+			continue // collected: dispatched on a kitchen screen, or triple-tapped on the TV
+		}
 		ready := kotReady(k)
 		if ready && pickReadyAt[k.ID] == 0 {
 			pickReadyAt[k.ID] = now
@@ -312,14 +334,36 @@ func pickupOrders(kots []Kot, now int64) []pickupOrder {
 				items = append(items, it)
 			}
 		}
-		out = append(out, pickupOrder{Tk: tokenLabel(k), C: k.Created, Ready: ready, RA: ra, Items: phoneItems(items)})
+		o := pickupOrder{K: k.ID, Tk: tokenLabel(k), C: k.Created, Ready: ready, RA: ra, Items: phoneItems(items)}
+		if !ready {
+			wt := waitFor(k, queue, times, avgDosa, perMin, now)
+			o.M, o.Y1, o.Y2 = wt.M, wt.Lead, wt.Bold
+			totals = append(totals, wt.total)
+		}
+		out = append(out, o)
 	}
 	for id := range pickReadyAt {
 		if !open[id] {
 			delete(pickReadyAt, id)
 		}
 	}
-	return out
+	for id := range pickCleared {
+		if !open[id] {
+			delete(pickCleared, id)
+		}
+	}
+	avg := ""
+	switch {
+	case len(totals) > 0:
+		sum := 0.0
+		for _, v := range totals {
+			sum += v
+		}
+		avg = friendlyRange(sum / float64(len(totals)))
+	case times.pickup > 0:
+		avg = friendlyRange(times.pickup)
+	}
+	return out, avg
 }
 
 func handleScreenPickup(w http.ResponseWriter, r *http.Request) {
@@ -327,7 +371,27 @@ func handleScreenPickup(w http.ResponseWriter, r *http.Request) {
 	kots := ppKots
 	ppMu.Unlock()
 	now := time.Now()
-	writeJSON(w, map[string]any{"ok": ppFresh(), "now": now.UnixMilli(), "skew": clockSkew(), "orders": pickupOrders(kots, now.UnixMilli())})
+	list, avg := pickupOrders(kots, now.UnixMilli())
+	writeJSON(w, map[string]any{"ok": ppFresh(), "now": now.UnixMilli(), "skew": clockSkew(), "orders": list, "avg": avg})
+}
+
+// handleScreenPickupClear: POST {kot, undo} from the Pick-up TV (a ready token tapped 3 times):
+// off the screen only; Petpooja is not changed. Any screen page on the shop Wi-Fi may do it.
+func handleScreenPickupClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !fromOwnPage(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	var in struct {
+		Kot  int64 `json:"kot"`
+		Undo bool  `json:"undo"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&in) != nil || in.Kot == 0 {
+		reply(w, false, "Bad request.")
+		return
+	}
+	pickupClear(in.Kot, in.Undo)
+	reply(w, true, "Done.")
 }
 
 // ---- kitchen screen ------------------------------------------------------------------------

@@ -17,16 +17,29 @@
 .pkc.ok .pk{background:rgba(63,209,122,.15);border:.18rem solid var(--ok);box-shadow:0 0 1.2rem rgba(63,209,122,.5)}
 .pkc.ok .pk b{text-shadow:0 0 1rem rgba(63,209,122,.8)}
 .more{font:700 1.1rem var(--h2);color:var(--muted)}
+.pk .eta{display:flex;align-items:center;gap:.7em;margin-top:.2em}
+.pk .eta .bar2{flex:1;height:.45em;border-radius:.3em;background:rgba(255,255,255,.12);overflow:hidden}.pk .eta .bar2 i{display:block;height:100%;background:var(--amber);transition:width 1s}
+.pk .eta em{font-style:normal;font:800 1.5em var(--num);color:var(--amber);white-space:nowrap}
+.pk .why{font:600 .95em var(--body);color:var(--muted)}.pk .why b{font:700 1em var(--body);color:var(--cream)}
+.pk.soon .eta em{color:var(--ok)}.pk.soon .eta .bar2 i{background:var(--ok)}
+.avg{margin-left:2rem;background:var(--black);color:#fff;border-radius:.8rem;padding:.5rem 1.1rem;display:flex;flex-direction:column}
+.avg small{font:700 .85rem var(--h2);letter-spacing:.14em;color:var(--yellow)}.avg b{font:800 2.2rem/1.1 var(--num)}
+.pkc.ok .pk{cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+.pkc.ok .pk:focus{outline:.3rem solid var(--yellow);outline-offset:.2rem}
+.pk.tap1{transform:scale(.98)}.pk.tap2{transform:scale(.95);opacity:.7}
+.undo{position:absolute;left:50%;bottom:2rem;transform:translateX(-50%);z-index:6;background:var(--cream);color:var(--black);border-radius:1rem;padding:1rem 1.6rem;font:700 1.4rem var(--body);display:flex;gap:1.4rem;align-items:center;box-shadow:0 .6rem 2rem rgba(0,0,0,.5)}
+.undo button{font:800 1.3rem var(--h2);background:var(--black);color:var(--yellow);border:0;border-radius:.6rem;padding:.6rem 1.2rem;cursor:pointer}
 </style>
 </head>
 <body>
 <div class="tv">
   <div class="bar"><img src="/screens/logo.webp" alt=""><div class="t">PICK-UP ORDERS<small>WAIT FOR YOUR TOKEN · COLLECT AT THE COUNTER</small></div>
-    <button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><div class="clock" id="clock"></div></div>
+    <div class="avg" id="avgb" hidden><small>AVERAGE WAIT NOW</small><b id="avgw"></b></div><button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><div class="clock" id="clock"></div></div>
   <div class="pkv">
     <div class="pkc ok"><div class="sh ok">✓ READY · COLLECT NOW</div><div class="pkg" id="ready"></div></div>
     <div class="pkc"><div class="sh pr">⏳ WAITING</div><div class="pkg" id="wait"></div></div>
   </div>
+  <div class="undo" id="undo" hidden><span id="undot"></span><button id="undob">UNDO</button></div>
 </div>
 <script src="/screens/common.js"></script>
 <script>
@@ -40,11 +53,18 @@
     var n = list.length, cols = n <= 4 ? 2 : n <= 9 ? 3 : 4, k = n <= 4 ? 1 : n <= 9 ? 0.8 : 0.62, show = list.slice(0, max);
     el.style.setProperty("--cols", cols); el.style.setProperty("--k", k + "rem");
     el.innerHTML = show.map(function (o) {
-      return '<div class="pk"><b>' + BS.esc(o.tk) + "</b><ul>" + (o.i || []).slice(0, 6).map(function (i) { return '<li class="' + (i.s ? "d" : "") + '"><i>' + i.q + "×</i>" + BS.esc(i.n) + "</li>"; }).join("") + ((o.i || []).length > 6 ? "<li>…</li>" : "") + "</ul></div>";
+      var eta = "";
+      if (!o.r && o.m) {
+        var el2 = BS.since(o.c, true) / 60, pc = Math.min(95, Math.max(5, 100 * el2 / (el2 + Math.max(o.m, 0.5))));
+        eta = '<div class="eta"><div class="bar2"><i style="width:' + pc.toFixed(0) + '%"></i></div><em>' + (o.m <= 1 ? "Almost ready" : "~" + o.m + " min") + "</em></div>" +
+          (o.y2 ? '<div class="why">' + BS.esc(o.y1 || "") + "<b>" + BS.esc(o.y2) + "</b></div>" : "");
+      }
+      return '<div class="pk' + (!o.r && o.m && o.m <= 1 ? " soon" : "") + '"' + (o.r ? ' tabindex="0" data-k="' + o.k + '" data-tk="' + BS.esc(o.tk) + '"' : "") + "><b>" + BS.esc(o.tk) + "</b><ul>" + (o.i || []).slice(0, 6).map(function (i) { return '<li class="' + (i.s ? "d" : "") + '"><i>' + i.q + "×</i>" + BS.esc(i.n) + "</li>"; }).join("") + ((o.i || []).length > 6 ? "<li>…</li>" : "") + "</ul>" + eta + "</div>";
     }).join("") + (n > show.length ? '<div class="more">+ ' + (n - show.length) + " more</div>" : "") + (n ? "" : '<p class="empty">' + (el.id === "ready" ? "Ready tokens show here." : "No pick-up orders waiting.") + "</p>");
   }
   function draw(j) {
-    var all = j.orders || [], rd = all.filter(function (o) { return o.r; }).sort(function (a, b) { return (b.ra || 0) - (a.ra || 0); });
+    $("avgb").hidden = !j.avg; $("avgw").textContent = j.avg || "";
+    var all = (j.orders || []).filter(function (o) { return !gone[o.k]; }), rd = all.filter(function (o) { return o.r; }).sort(function (a, b) { return (b.ra || 0) - (a.ra || 0); });
     var wt = all.filter(function (o) { return !o.r; }).sort(function (a, b) { return a.c - b.c; });
     grid($("ready"), rd, 16); grid($("wait"), wt, 16);
     var now = Date.now(), live = {}, call = [];
@@ -53,6 +73,25 @@
     first = false;
     if (call.length) BS.say("Pick up token " + call.map(function (t) { return String(t).replace(/^#/, ""); }).join(", ") + ", your order is ready.", true);
   }
+  // ---- a ready token tapped 3 times (or OK pressed 3 times on the remote): collected, off the
+  // screen (Dispatch on a kitchen screen does the same). Undo for 8 s.
+  var gone = {}, taps = { k: 0, n: 0, t: 0 }, undoT = 0, last = null;
+  function tap(card) {
+    var k = +card.getAttribute("data-k"), now = Date.now();
+    if (taps.k !== k || now - taps.t > 1200) taps = { k: k, n: 0, t: now };
+    taps.n++; taps.t = now;
+    card.className = card.className.replace(/ tap\d/g, "") + (taps.n < 3 ? " tap" + taps.n : "");
+    if (taps.n < 3) return;
+    taps = { k: 0, n: 0, t: 0 };
+    gone[k] = 1; BS.post("/screens/api/pickup/clear", { kot: k });
+    card.parentNode.removeChild(card);
+    $("undot").textContent = "Token " + card.getAttribute("data-tk") + " collected · off the screen";
+    $("undo").hidden = false; clearTimeout(undoT); last = k;
+    undoT = setTimeout(function () { $("undo").hidden = true; last = null; }, 8000);
+  }
+  $("ready").addEventListener("click", function (e) { var c = e.target.closest(".pk[data-k]"); if (c) tap(c); });
+  $("ready").addEventListener("keydown", function (e) { if (e.key === "Enter" || e.keyCode === 23) { var c = e.target.closest(".pk[data-k]"); if (c) { e.preventDefault(); tap(c); } } });
+  $("undob").onclick = function () { if (last) { delete gone[last]; BS.post("/screens/api/pickup/clear", { kot: last, undo: true }); } $("undo").hidden = true; last = null; };
   var spk = $("spk");
   function spkUI() { var v = BS.voiceOn(); spk.textContent = v ? "🔊" : "🔇"; spk.setAttribute("aria-pressed", String(v)); }
   spk.onclick = function () { BS.voiceOn(!BS.voiceOn()); spkUI(); };

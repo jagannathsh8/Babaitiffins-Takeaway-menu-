@@ -762,6 +762,11 @@ func onBoard(kots []Kot, now time.Time) {
 	board.update(tb, now.UnixMilli())
 	stats.update(ds, now, ppRowsAtCap())
 	res := stats.compute(now)
+	dosaAvgNow = res.avgPrep
+	if math.IsNaN(dosaAvgNow) && stats.LastDayAvg > 0 {
+		dosaAvgNow = stats.LastDayAvg
+	}
+	flowUpdate(kots, now.UnixMilli())
 	toks := phoneTokens(board, res, now.UnixMilli())
 	for label, items := range noDosaTokens(kots, now.UnixMilli()) {
 		if _, ok := toks[tokenKey(label)]; !ok { // a token with a dosa KOT too is tracked as a dosa token
