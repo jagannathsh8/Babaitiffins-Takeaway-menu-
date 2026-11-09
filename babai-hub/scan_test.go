@@ -27,11 +27,12 @@ func TestScanMarksFoodReady(t *testing.T) {
 	now := time.Now()
 	pp.set(
 		onlineRow(501, 41, "1", "250787919580744", now.Add(-9*time.Minute), "Masala Dosa", 1308051404, 1),
-		onlineRow(501, 41, "1", "250787919580744", now.Add(-9*time.Minute), "Filter Coffee", 1308051405, 9), // already ready
-		onlineRow(501, 41, "1", "250787919580744", now.Add(-9*time.Minute), "Vada", 1308051406, -9),         // cancelled
-		onlineRow(502, 42, "1", "8496851046", now.Add(-5*time.Minute), "Idli", 1308051407, 1),               // Zomato-like id
-		onlineRow(503, 43, "9", "250712345678001", now.Add(-20*time.Minute), "Pesarattu", 1308051408, 9),    // already ready
-		row(600, 7, 3, "1", now, "Ghee Dosa", "Dosa", 1, 1),                                                 // dine-in
+		onlineRow(501, 41, "1", "250787919580744", now.Add(-9*time.Minute), "Filter Coffee", 1308051405, 9),                                                                      // already ready
+		onlineRow(501, 41, "1", "250787919580744", now.Add(-9*time.Minute), "Vada", 1308051406, -9),                                                                              // cancelled
+		onlineRow(502, 42, "1", "8496851046", now.Add(-5*time.Minute), "Idli", 1308051407, 1),                                                                                    // Zomato-like id
+		onlineRow(503, 43, "9", "250712345678001", now.Add(-20*time.Minute), "Pesarattu", 1308051408, 9),                                                                         // already ready
+		row(600, 7, 3, "1", now, "Ghee Dosa", "Dosa", 1, 1),                                                                                                                      // dine-in
+		strings.Replace(strings.Replace(onlineRow(700, 1120, "1", "", now, "Poori", 1308051500, 1), `"order_type":1`, `"order_type":2`, 1), `"o_u_id":"6736"`, `"o_u_id":""`, 1), // pick up
 	)
 	if err := pollOnce(cfg.Server); err != nil {
 		t.Fatal(err)
@@ -89,6 +90,19 @@ func TestScanMarksFoodReady(t *testing.T) {
 	r = markFromScan("k1", kotScanCode(Kot{ID: 600}), "", "wifi")
 	if !r.OK || r.Brand != "Dine in · KOT" || r.Last4 != "7" { // found (the test row has no item ids: "already")
 		t.Fatalf("dine in scan %+v", r)
+	}
+	// a pick up slip's barcode: Petpooja gets the same Food ready request the KDS sends
+	r = markFromScan("k3", kotScanCode(Kot{ID: 700}), "", "wifi")
+	if !r.OK || r.N != 1 || r.Brand != "Pick up · KOT" || r.Last4 != "1120" {
+		t.Fatalf("pick up scan %+v", r)
+	}
+	pp.mu.Lock()
+	pm := pp.marks[len(pp.marks)-1]
+	pp.mu.Unlock()
+	pids, _ := json.Marshal(pm["kot_item_id"])
+	if pm["kot_id"] != float64(700) || pm["kot_unique_id"] != float64(1120) || string(pids) != "[1308051500]" ||
+		pm["kot_item_status"] != "9" || pm["order_type"] != float64(2) {
+		t.Fatalf("pick up request %v", pm)
 	}
 	if r = markFromScan("k2", "000601", "", "wifi"); r.OK {
 		t.Fatalf("unknown kot code %+v", r)
