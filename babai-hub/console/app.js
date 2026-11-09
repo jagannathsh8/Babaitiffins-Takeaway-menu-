@@ -499,12 +499,12 @@ VIEWS.apps = {
 };
 
 // ---- Bridge: KOT printing by the Console (direct.go) -------------------------------------------------
-var KP = null, KPmsg = null, KPhelp = false;
+var KP = null, KPmsg = null, KPhelp = false, KPdirty = false;
 VIEWS.kotprint = {
   html: function () { return '<div id="kp"><p class="help">Loading…</p></div>'; },
   load: function () {
     getJ("/console/api/direct").then(function (d) {
-      KP = d; var c = KP.cfg;
+      KP = d; KPdirty = false; var c = KP.cfg;
       c.lines = c.lines || []; c.subs = c.subs || []; c.mainBackups = c.mainBackups || []; c.types = c.types || []; c.mainSkip = c.mainSkip || [];
       c.subs.forEach(function (x) { x.cats = x.cats || []; x.items = x.items || []; x.backups = x.backups || []; x.skip = x.skip || []; });
       c.lines.forEach(function (x) { x.values = x.values || []; x.backups = x.backups || []; x.skip = x.skip || []; });
@@ -559,7 +559,8 @@ function kpPick(attr, taken, cats, items) {
 function kpDraw() {
   var c = KP.cfg, T = { P: "Pick up", I: "Dine in", S: "Self service" }, t = KP.today || {};
   var modes = [["bridge", "Bridge Print only"], ["console", "Console only"], ["both", "Console + Bridge backup"]];
-  var h = '<div class="panel"><div class="kp-hd"><h2>KOT printing</h2><button class="kp-help' + (KPhelp ? " on" : "") + '" id="kpHelp" aria-expanded="' + KPhelp + '">❓ Help</button></div>' +
+  var h = '<div class="panel"><div class="kp-hd"><h2>KOT printing</h2><button class="kp-help' + (KPhelp ? " on" : "") + '" id="kpHelp" aria-expanded="' + KPhelp + '">❓ Help</button><button class="kp-savebtn' + (KPdirty ? " dirty" : "") + '" data-save="1">' + (KPdirty ? "Save changes" : "Saved ✓") + "</button></div>" +
+    (KPmsg ? '<p class="msg kp-topmsg ' + (KPmsg.ok ? "ok" : "bad") + '">' + esc(KPmsg.msg) + "</p>" : "") +
     '<div class="kp-row"><div class="kp-seg">' + modes.map(function (m) { return '<button data-mode="' + m[0] + '" aria-pressed="' + (c.mode === m[0]) + '">' + m[1] + "</button>"; }).join("") + "</div>" +
     '<span class="mute kp-hint">' + { bridge: "Petpooja's slip through Bridge Print, as before", console: "Only the Console's slip prints", both: "Console prints; if it fails, Bridge Print prints" }[c.mode] + "</span></div>" +
     '<div class="kp-row kp-chips"><span class="kp-chip on">✓ Delivery / Online <i>always</i></span>' + ["P", "I", "S"].map(function (x) { return '<button class="kp-chip' + (c.types.indexOf(x) >= 0 ? " on" : "") + '" data-type="' + x + '">' + (c.types.indexOf(x) >= 0 ? "✓ " : "") + T[x] + "</button>"; }).join("") +
@@ -586,9 +587,10 @@ function kpDraw() {
       kpPick('data-addval="' + i + '"', taken, l.kind !== "item", l.kind === "item") + '<span class="kp-sp"></span>' + kpSel(l.printer, "", 'data-lp="' + i + '"') + kpSwitch("l" + i, l.off) + '<button class="kp-del" data-ldel="' + i + '" aria-label="Delete line">🗑</button></div>' +
       kpTypes("l" + i, l.skip) + kpBackups(l.backups, "l" + i) + "</div>";
   }).join("") + '<div class="kp-row"><button class="kp-add" id="kpAddLine">+ Add line</button></div></div>';
-  h += '<div class="kp-save"><button class="btn" id="kpSave">Save</button><span class="msg' + (KPmsg ? (KPmsg.ok ? " ok" : " bad") : "") + '" id="kpMsg">' + (KPmsg ? esc(KPmsg.msg) : "") + '</span><a class="mute" href="/console/api/direct/test" target="_blank" rel="noopener">See a sample slip</a></div>';
+  h += '<div class="kp-save"><button class="kp-savebtn' + (KPdirty ? " dirty" : "") + '" id="kpSave" data-save="1">' + (KPdirty ? "Save changes" : "Saved ✓") + "</button>" + '<span class="dummy"></span><span class="msg' + (KPmsg ? (KPmsg.ok ? " ok" : " bad") : "") + '" id="kpMsg">' + (KPmsg ? esc(KPmsg.msg) : "") + '</span><a class="mute" href="/console/api/direct/test" target="_blank" rel="noopener">See a sample slip</a></div>';
   h += '<div class="panel"><h2>Always on</h2><p class="help">✓ Starts with Windows, before anyone logs in &nbsp; ✓ Restarts within 2 s if it stops &nbsp; ✓ Starts again within a minute if someone stops it in Services &nbsp; ✓ This PC never sleeps or hibernates while the Console runs (the display may turn off)</p>' +
     '<p class="help">One-time job per PC: in the BIOS set <b>“Restore on AC power loss: Power On”</b>, so the PC switches itself on after a power cut.</p></div>';
+  if (KPdirty) h += '<div class="kp-bar" role="status"><span>● Unsaved changes: printing works as before until you save.</span><button class="kp-savebtn dirty" data-save="1">Save changes</button><button class="kp-discard" id="kpDiscard">Discard</button></div>';
   var open = [].map.call(document.querySelectorAll("#kp details"), function (d) { return d.open; });
   $("kp").innerHTML = h;
   document.querySelectorAll("#kp details").forEach(function (d, i) { if (open[i]) d.open = true; });
@@ -599,6 +601,7 @@ document.addEventListener("click", function (e) {
   if (e.target.id === "kpExpand") { e.preventDefault(); var ds = document.querySelectorAll("#kp details"), all = [].every.call(ds, function (x) { return x.open; }); ds.forEach(function (x) { x.open = !all; }); e.target.textContent = all ? "Expand all" : "Collapse all"; return; }
   var b = e.target.closest("button"); if (!b) return;
   var d = b.dataset;
+  if (b.id === "kpDiscard") { KPmsg = null; VIEWS.kotprint.load(); return; }
   if (b.id === "kpHelp") KPhelp = !KPhelp;
   else if (d.mode) c.mode = d.mode;
   else if (d.type) { if (d.type === "all") c.types = c.types.length === 3 ? [] : ["P", "I", "S"]; else { var i = c.types.indexOf(d.type); if (i >= 0) c.types.splice(i, 1); else c.types.push(d.type); } }
@@ -614,14 +617,15 @@ document.addEventListener("click", function (e) {
   else if (b.id === "kpAddLine") c.lines.push({ kind: "cat", values: [], printer: "", backups: [], skip: [] });
   else if (b.id === "kpAddSub") c.subs.push({ cats: [], items: [], printer: "", backups: [], skip: [] });
   else if (d.test) { post("/console/api/direct/test", { Printer: c.main }).then(function (r) { KPmsg = r; kpDraw(); }); return; }
-  else if (b.id === "kpSave") {
+  else if (d.save) {
     var out = JSON.parse(JSON.stringify(c));
     out.mainBackups = out.mainBackups.filter(Boolean);
     out.subs = out.subs.filter(function (x) { return x.printer || x.cats.length || x.items.length; }).map(function (x) { x.backups = x.backups.filter(Boolean); return x; });
     out.lines = out.lines.filter(function (l) { return l.printer || l.values.length; }).map(function (l) { l.backups = l.backups.filter(Boolean); return l; });
-    post("/console/api/direct", out).then(function (r) { KPmsg = r; kpDraw(); if (r.ok) VIEWS.kotprint.load(); setTimeout(function () { KPmsg = null; }, 4000); });
+    post("/console/api/direct", out).then(function (r) { KPmsg = r; if (r.ok) VIEWS.kotprint.load(); else kpDraw(); setTimeout(function () { KPmsg = null; if (KP) kpDraw(); }, 5000); });
     return;
   } else return;
+  if (b.id !== "kpHelp") KPdirty = true;
   kpDraw();
 });
 document.addEventListener("change", function (e) {
@@ -635,6 +639,7 @@ document.addEventListener("change", function (e) {
   else if (d.sadd !== undefined) { if (t.value) c.subs[+d.sadd][t.value[0] === "c" ? "cats" : "items"].push(t.value.slice(2)); }
   else if (t.id === "kpWhole") c.mainRest = !t.checked;
   else return;
+  KPdirty = true;
   kpDraw();
 });
 
