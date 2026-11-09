@@ -2,87 +2,235 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Rider TV</title>
 <link rel="stylesheet" href="/screens/common.css">
 <style>
-.rmain{position:absolute;left:0;right:0;top:7rem;bottom:0;display:flex;flex-direction:column;padding:.9rem 1.2rem;gap:.5rem}
-.fit{display:grid;gap:6px;align-content:start;flex:none}
-.rc{position:relative;display:flex;align-items:center;gap:.5em;border-radius:.4em;background:var(--tv3);padding:0 .45em 0 0;overflow:hidden;font-size:var(--fs);height:1.3em}
-.rc .b{align-self:stretch;width:1.4em;display:grid;place-items:center;font:800 .62em var(--num);color:#fff;background:var(--c)}
-.rc .n{font:800 1em/1.3 var(--num);letter-spacing:.02em;font-variant-numeric:tabular-nums}
-.rc .tm2{font:700 .36em/1 var(--num);color:#b6f5cf;font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:auto}
-.rc .s{margin-left:.35em;font:800 .78em/1 var(--num);background:var(--yellow);color:var(--black);border-radius:.18em;padding:.12em .3em;min-width:1.9em;text-align:center}
-.rc.ready{background:linear-gradient(90deg,rgba(63,209,122,.2),rgba(63,209,122,.06));box-shadow:0 0 .35em rgba(63,209,122,.55)}
-.rc.ready::after{content:"";position:absolute;top:0;left:0;right:0;bottom:0;border-radius:.4em;padding:.07em;background:conic-gradient(from var(--ang),var(--ok),transparent 30%,transparent 70%,var(--ok));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:spin 3s linear infinite;pointer-events:none}
-.rc.prep{opacity:.88}.rc.prep .tm2{color:var(--amber)}
-.rc.prep .s{background:transparent;color:var(--yellow);box-shadow:inset 0 0 0 .08em var(--yellow)}
-.tsrch{position:absolute;left:0;right:0;top:7rem;bottom:0;z-index:4;background:rgba(10,10,10,.92);display:flex;flex-direction:column;align-items:center;gap:1.4rem;padding-top:4rem}
-.tsb{display:flex;flex-direction:column;align-items:center;gap:.8rem}
-.tsb>span:first-child{font:800 1.4rem var(--h2);letter-spacing:.16em;color:var(--yellow)}
-#tsq{width:28rem;font:800 5rem/1 var(--num);letter-spacing:.3em;text-align:center;border:.3rem solid var(--yellow);border-radius:1rem;padding:.6rem;background:var(--black);color:#fff}
-.tsh{font:600 1rem var(--body);color:var(--muted)}
-.tres{min-width:40rem;border-radius:1.2rem;padding:1.4rem 2rem;background:var(--tv2);border:.25rem solid var(--c);display:flex;flex-direction:column;gap:.4rem}
-.tres .k{font:800 1.1rem var(--h2);letter-spacing:.16em;color:var(--muted)}
-.tres .row2{display:flex;align-items:baseline;gap:2rem}
-.tres .row2 b{font:800 6rem/1 var(--num)}
-.tres .row2 span{font:800 2.2rem var(--h2);color:var(--ok)}.tres .row2 span.p{color:var(--amber)}
-.tres .sl{font:800 3rem var(--h2);color:var(--yellow)}
-.tres .mt{font:600 1.2rem var(--body);color:var(--cream)}
-.tres ul{margin:.4rem 0 0;padding-left:1.4rem;font:500 1.2rem var(--body);color:var(--cream)}
+/* The rider board of the Petpooja KDS app ("sunlight" design), drawn to the real screen size:
+   light background (riders come in from the sun), one block per brand in its colour, READY cards
+   (white, green bar, black slot box with yellow digits) then PREPARING cards (grey, amber bar).
+   Every size is computed from the screen (no 16:9 box, no zoom): a TV, a tablet or a phone. */
+@font-face{font-family:BarlowC;src:url(/screens/barlow-b.ttf) format("truetype");font-weight:700}
+@font-face{font-family:BarlowC;src:url(/screens/barlow-x.ttf) format("truetype");font-weight:800}
+html,body{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{background:#E9ECF1;color:#0B0F17;font-family:BarlowC,"Roboto Condensed","Arial Narrow",sans-serif}
+#app{position:fixed;left:0;top:0;right:0;bottom:0;overflow:hidden}
+.ab{position:absolute;white-space:nowrap;line-height:1}
+.mid{display:flex;align-items:center}
+.hd{background:#fff;border-bottom:2px solid #CDD3DC}
+.logo{background:#0A8F4A;display:grid;place-items:center;font-family:sans-serif}
+.tt{font-weight:800;color:#0B0F17}
+.sub{font-weight:700;color:#5A6372}
+.tot{background:#F1F3F6;border:1px solid #CDD3DC;display:flex}
+.tot div{display:flex;flex-direction:column;justify-content:center}
+.tot div+div{border-left:2px solid #CDD3DC}
+.tot b{font-weight:800}
+.zone{color:#fff}
+.zn{font-weight:800}
+.card{overflow:hidden;background:#fff;border:1px solid #CDD3DC}
+.card.p{background:#F4F5F7;border-color:#F4F5F7}
+.band{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;justify-content:space-between;font-weight:800;color:#fff;background:#0A8F4A}
+.card.p .band{background:#FFE2A8;color:#8A5200}
+.bdg{display:grid;place-items:center;color:#fff;font-weight:800}
+.l4{font-weight:800;color:#0B0F17;letter-spacing:.01em}
+.card.p .l4{color:#4A5363}
+.slot{display:grid;place-items:center;background:#111418;color:#FFD400;font-weight:800}
+.card.p .slot{background:rgba(255,255,255,.7);color:#4A5363;box-shadow:inset 0 0 0 1.5px #AEB6C2}
+.card.p .slot.none{color:#9AA3B0}
+.bl{display:flex;justify-content:space-between;align-items:center;font-weight:700;color:#3C4452}
+.card.p .bl{color:#6B7383}
+.bl .t{color:#5A6372}
+.lg{color:#0B0F17;font-weight:700;display:flex;align-items:center}
+.lg i{display:inline-block;background:#fff;border-radius:.2em;border-top:.27em solid #0A8F4A;vertical-align:middle}
+.lg i.p{background:#F4F5F7;border-top-color:#FFB020}
+.lg .m{color:#5A6372}
+.btn{border:2px solid #CDD3DC;background:#F1F3F6;border-radius:50%;display:grid;place-items:center;padding:0;cursor:pointer}
+.btn:focus{outline:3px solid #0A8F4A;outline-offset:2px}
+.btn[aria-pressed=false]{background:#0B0F17}
+.empty2{color:#5A6372;font-weight:800;display:grid;place-items:center;letter-spacing:.06em}
+.ts{position:fixed;inset:0;z-index:20;background:rgba(233,236,241,.96);display:flex;flex-direction:column;align-items:center;gap:1.2em;padding-top:8vh;font-size:var(--tf)}
+.ts .k{font-weight:800;letter-spacing:.14em;color:#0A8F4A}
+#tsq{width:7em;font:800 2.6em/1 BarlowC,sans-serif;letter-spacing:.25em;text-align:center;border:3px solid #0A8F4A;border-radius:.3em;padding:.15em;background:#fff;color:#0B0F17}
+.ts .h{color:#5A6372;font-weight:700}
+.tres{min-width:14em;border-radius:.5em;padding:.7em 1em;background:#fff;border:.18em solid var(--c);display:flex;flex-direction:column;gap:.3em}
+.tres .row2{display:flex;align-items:baseline;gap:.8em}
+.tres .row2 b{font-size:2.8em;font-weight:800}
+.tres .row2 span{font-size:1.2em;font-weight:800;color:#0A8F4A}.tres .row2 span.p{color:#B86E00}
+.tres .sl{font-size:1.5em;font-weight:800}
+.tres .mt{color:#3C4452;font-weight:700}
+.tres ul{margin:.2em 0 0;padding-left:1.2em;color:#3C4452}
+.warn{font-size:var(--wf)}.warn small{font-size:.65em}
 </style>
 </head>
 <body>
-<div class="tv">
-  <div class="bar"><img src="/screens/logo.webp" alt=""><div class="t">RIDER PICKUP<small>FIND YOUR LAST 4 DIGITS · GO TO THE SLOT</small></div>
-    <div class="cnt"><span class="r"><b id="cr">0</b> READY</span><span><b id="cp">0</b> PREPARING</span></div>
-    <button class="spk" id="tsbtn" aria-label="Find an order">🔍</button><button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><div class="clock" id="clock"></div></div>
-  <div class="rmain" id="rmain">
-    <div class="sh ok" id="h1">✓ READY · TAKE FROM YOUR SLOT <i>latest ready first · time since ready</i></div>
-    <div class="fit" id="fr"></div>
-    <div class="sh pr" id="h2">⏳ PREPARING <i>oldest first · time since order</i></div>
-    <div class="fit" id="fp"></div>
-  </div>
-  <div class="tsrch" id="ts" hidden role="dialog" aria-label="Find an order">
-    <div class="tsb"><span>🔍 FIND AN ORDER</span><input id="tsq" inputmode="numeric" maxlength="4" placeholder="Last 4 digits" aria-label="Last 4 digits"><span class="tsh">Number keys to type · OK to search · Back to close</span></div>
-    <div id="tsres"></div>
-  </div>
+<div id="app"></div>
+<div class="ts" id="ts" hidden role="dialog" aria-label="Find an order">
+  <span class="k">🔍 FIND AN ORDER</span><input id="tsq" inputmode="numeric" maxlength="4" placeholder="0000" aria-label="Last 4 digits">
+  <span class="h">Type the last 4 digits · Back to close</span><div id="tsres"></div>
 </div>
 <script src="/screens/common.js"></script>
 <script>
 (function () {
   "use strict";
   var $ = function (i) { return document.getElementById(i); };
-  var ORD = [], first = true, seen = {}, lastCall = 0;
-  BS.clock($("clock"));
+  var app = $("app"), ORD = [], HIDE = [], BRIDGE = true, first = true, seen = {}, lastCall = 0;
+  var COL = { swiggy: "#FC8019", zomato: "#E23744", ownly: "#6A4CD6", toing: "#0097A7", magicpin: "#8E24AA" };
+  function brandCol(p) { var l = String(p || "").toLowerCase(); for (var k in COL) if (l.indexOf(k) >= 0) return COL[k]; return "#2E7D32"; }
+  function rank(p) { var l = String(p || "").toLowerCase(); return l.indexOf("swiggy") >= 0 ? 0 : l.indexOf("zomato") >= 0 ? 1 : 2; }
   function last4(o) { var d = String(o.o || "").replace(/\D/g, ""); return d.length > 4 ? d.slice(-4) : d; }
+  function mins(sec, now) { if (now && sec < 60) return "NOW"; var m = Math.floor(Math.max(0, sec) / 60); return m < 60 ? m + "m" : Math.floor(m / 60) + "h" + ("0" + m % 60).slice(-2); }
+  function readySec(o) { return BS.since(o.ra || o.c, !o.ra); }
+  // condensed digits are about half as wide as tall: the biggest size that fits a width
+  function fitSize(str, size, maxW, per) { var w = String(str).length * size * (per || 0.5); return w > maxW && w > 0 ? size * maxW / w : size; }
+  function px(n) { return n.toFixed(1) + "px"; }
 
-  // every card fits: the column count that gives the biggest cards in the box
-  function fit(el, list, ready, h) {
-    var w = el.clientWidth || $("rmain").clientWidth - 24, n = list.length, best = { cols: 1, fs: 8 };
-    for (var cols = 1; cols <= 16; cols++) {
-      var rows = Math.ceil(n / cols), cw = (w - (cols - 1) * 6) / cols, ch = (h - (rows - 1) * 6) / rows;
-      var fs = Math.min(cw / 8.4, ch / 1.3, w / 14);
-      if (fs > best.fs) best = { cols: cols, fs: fs };
-    }
-    el.style.setProperty("--fs", (best.fs / BS.zoom).toFixed(1) + "px"); // px fonts are zoomed by the TV
-    el.style.gridTemplateColumns = "repeat(" + best.cols + ",minmax(0,1fr))";
-    el.innerHTML = list.map(function (o) {
-      var br = BS.brand(o.p), t = ready ? o.ra || o.c : o.c;
-      return '<div class="rc ' + (ready ? "ready" : "prep") + '" style="--c:' + br.c + '"><span class="b">' + br.b + '</span><span class="n">' + BS.esc(last4(o)) + '</span><span class="tm2" data-t="' + t + '" data-b="' + (ready && o.ra ? 0 : 1) + '">' + BS.mmss(BS.since(t, !(ready && o.ra))) + "</span>" + (o.s ? '<span class="s">' + BS.esc(o.s) + "</span>" : "") + "</div>";
-    }).join("");
+  var S = 1, F = 1; // S: layout scale (px); F: font scale (S, less the web view's text zoom)
+  function box(cls, l, t, w, h, css, inner) {
+    return '<div class="ab ' + cls + '" style="left:' + px(l) + ";top:" + px(t) + ";width:" + px(w) + ";height:" + px(h) + ";" + (css || "") + '">' + (inner || "") + "</div>";
   }
+  function txt(s, size, css) { return '<span style="font-size:' + px(size / BS.zoom) + ";" + (css || "") + '">' + s + "</span>"; }
+
+  function groups() {
+    var m = {}, out = [];
+    ORD.forEach(function (o) {
+      var b = String(o.p || "").trim() || "Online";
+      if (HIDE.some(function (h) { return String(h).toLowerCase() === b.toLowerCase(); })) return;
+      var g = m[b]; if (!g) { g = m[b] = { brand: b, color: brandCol(b), items: [], nr: 0, np: 0 }; out.push(g); }
+      g.items.push(o); if (o.r) g.nr++; else g.np++;
+    });
+    out.sort(function (a, b) { return b.items.length - a.items.length || rank(a.brand) - rank(b.brand) || a.brand.localeCompare(b.brand); });
+    out.forEach(function (g) { g.items.sort(function (a, b) { return a.r !== b.r ? (a.r ? -1 : 1) : last4(a) < last4(b) ? -1 : last4(a) > last4(b) ? 1 : 0; }); });
+    return out;
+  }
+
+  function card(o, g, x, y, w, h) {
+    var s = S, rd = !!o.r, bh = Math.max(16 * s, h * 0.23), fz = Math.min(bh * 0.68, 16 * s * 1.25);
+    var body = h - bh, line1 = bh + body * 0.43, big = Math.min(body * (rd ? 0.6 : 0.56), (rd ? 52 : 46) * s * 1.25);
+    var bs = big * (rd ? 0.78 : 0.74), sw = Math.min(w * 0.32, big * 1.8), sh = rd ? big * 1.04 : big, sx = w - sw - 7 * s;
+    var slot = o.s ? String(o.s) : "—", nx = 8 * s + bs + 8 * s;
+    var band = box("band", 0, 0, w, bh, "padding:0 " + px(9 * s), txt(rd ? "READY" : "PREPARING", fz, "letter-spacing:" + px(2 * s)) +
+      txt(rd ? "✓ " + mins(readySec(o), true) : "🔥 " + (o.c ? mins(BS.since(o.c, true)) : "—"), fz));
+    var h2 = '<div class="ab bdg" style="left:' + px(8 * s) + ";top:" + px(line1 - bs / 2) + ";width:" + px(bs) + ";height:" + px(bs) + ";border-radius:" + px(bs * 0.22) + ";background:" + g.color + '">' + txt(BS.esc(g.brand.charAt(0).toUpperCase()), bs * 0.8) + "</div>";
+    var l4 = '<div class="ab l4 mid" style="left:' + px(nx) + ";top:" + px(line1 - big / 2) + ";height:" + px(big) + '">' + txt(BS.esc(last4(o)), fitSize(last4(o), big, sx - nx - 6 * s, 0.5)) + "</div>";
+    var sl = '<div class="ab slot' + (o.s ? "" : " none") + '" style="left:' + px(sx) + ";top:" + px(line1 - sh / 2) + ";width:" + px(sw) + ";height:" + px(sh) + ";border-radius:" + px(7 * s) + '">' + txt(BS.esc(slot), Math.min(big * (rd ? 0.92 : 0.86), fitSize(slot, big * 0.92, sw - 8 * s, 0.52))) + "</div>";
+    var l2 = h - body * 0.15, fz2 = Math.max(9 * s * 1.2, Math.min(body * 0.2, 14 * s * 1.3));
+    var id = String(o.o || last4(o)), room = w - 26 * s - fz2 * 3.5;
+    if (id.length * fz2 * 0.92 * 0.5 > room) id = "…" + id.slice(-Math.max(5, Math.floor(room / (fz2 * 0.46)) - 1));
+    var bl = box("bl", 9 * s, l2 - fz2 / 2, w - 17 * s, fz2, "", txt(BS.esc(id), fz2 * 0.92) + (o.c ? txt("⏱ " + mins(BS.since(o.c, true)), fz2 * 1.05, "") : ""));
+    return box("card" + (rd ? "" : " p"), x, y, w, h, "border-radius:" + px(9 * s), band + h2 + l4 + sl + bl);
+  }
+
+  // one brand block; returns its bottom
+  function zone(out, g, left, right, y, cols, cw, ch, gap, stripH, pad, nameSize, countSize) {
+    var rows = Math.ceil(g.items.length / cols), zoneH = stripH + rows * (ch + gap) - gap + pad, s = S;
+    var inner = box("mid", 16 * s, 0, right - left - 32 * s, stripH, "justify-content:space-between",
+      txt(BS.esc(g.brand.toUpperCase()), nameSize, "font-weight:800;letter-spacing:" + px(5 * s)) +
+      txt(g.nr + " READY &nbsp; · &nbsp; " + g.np + " PREPARING", countSize, "font-weight:800;letter-spacing:" + px(2 * s)));
+    g.items.forEach(function (o, i) { inner += card(o, g, pad + (i % cols) * (cw + gap), stripH + Math.floor(i / cols) * (ch + gap), cw, ch); });
+    out.push(box("zone", left, y, right - left, zoneH, "background:" + g.color + ";border-radius:" + px(12 * s), inner));
+    return y + zoneH;
+  }
+
+  // the column count that gives the biggest cards that fit
+  function layout(gs, l, r, avail, gap, pad, stripH, secGap, minCols, ratio) {
+    var best = null, total = 0;
+    gs.forEach(function (g) { total += g.items.length; });
+    for (var cols = minCols; cols <= 14; cols++) {
+      var rows = 0; gs.forEach(function (g) { rows += Math.ceil(g.items.length / cols); });
+      var cw = (r - l - 2 * pad - (cols - 1) * gap) / cols;
+      var rh = (avail - gs.length * (stripH + pad + secGap) - (rows - gs.length) * gap) / rows;
+      var ch = Math.min(rh, cw / ratio), sc = Math.min(ch, cw / 2.7);
+      if (rh > 0 && (!best || sc > best.sc)) best = { cols: cols, cw: cw, ch: ch, sc: sc };
+    }
+    return best || { cols: 14, cw: (r - l) / 14, ch: 20, sc: 0 };
+  }
+
+  function header(out, w, land, nr, np, gs) {
+    var s = S, hh = land ? 84 * s : 252 * s, row1 = land ? hh : 96 * s, cy = row1 / 2, h = [];
+    h.push(box("hd", 0, 0, w, hh, ""));
+    var lg = land ? 48 * s : 60 * s;
+    h.push(box("logo", 24 * s, cy - lg / 2, lg, lg, "border-radius:" + px(12 * s), txt("🛵", lg * 0.5)));
+    var tx = 24 * s + lg + 14 * s;
+    h.push(box("", tx, cy - 26 * s * (land ? 1 : 1.2), w * 0.5, 30 * s, "", txt("RIDER PICKUP", (land ? 36 : 44) * s, "font-weight:800;letter-spacing:" + px(3 * s))));
+    h.push(box("sub", tx, cy + 10 * s * (land ? 1 : 1.4), w * 0.6, 16 * s, "", txt("FIND YOUR NUMBER &nbsp;·&nbsp; GO TO THE SLOT", (land ? 15 : 18) * s, "letter-spacing:" + px(2 * s))));
+    // right: clock, voice, search
+    var bsz = (land ? 54 : 62) * s, cr = w - 20 * s;
+    h.push('<div class="ab" id="clk" style="right:' + px(20 * s) + ";top:" + px(cy - 24 * s) + ";height:" + px(48 * s) + ";font-weight:800;font-size:" + px((land ? 44 : 46) * s / BS.zoom) + ';line-height:' + px(48 * s) + '">' + clock() + "</div>");
+    var clockW = 44 * s * 0.5 * 5.2 * (land ? 1 : 1.05);
+    var bx = cr - clockW - 16 * s - bsz;
+    h.push('<button class="ab btn" id="spk" style="left:' + px(bx) + ";top:" + px(cy - bsz / 2) + ";width:" + px(bsz) + ";height:" + px(bsz) + ";font-size:" + px(bsz * 0.45 / BS.zoom) + '"></button>');
+    bx -= bsz + 10 * s;
+    h.push('<button class="ab btn" id="tsbtn" aria-label="Find an order" style="left:' + px(bx) + ";top:" + px(cy - bsz / 2) + ";width:" + px(bsz) + ";height:" + px(bsz) + ";font-size:" + px(bsz * 0.45 / BS.zoom) + '">🔍</button>');
+    var lab = ["TOTAL", "READY", "PREPARING"], val = [nr + np, nr, np], col = ["#0B0F17", "#0A8F4A", "#B86E00"];
+    if (land) {
+      var x = Math.max(tx + 230 * s, w * 0.255), inner = "", x0 = x;
+      for (var i = 0; i < 3; i++) {
+        var cw = Math.max(lab[i].length * 13 * s * 0.62, String(val[i]).length * 30 * s * 0.5) + 22 * s;
+        inner += '<div style="width:' + px(cw) + ";padding-left:" + px(12 * s) + '">' + txt(lab[i], 13 * s * 1.1, "color:" + (i ? col[i] : "#5A6372") + ";font-weight:800;letter-spacing:" + px(2 * s)) + txt("<b>" + val[i] + "</b>", 30 * s, "color:" + col[i] + ";line-height:1.1") + "</div>";
+        x += cw;
+      }
+      h.push(box("tot", x0, 14 * s, x - x0, 56 * s, "border-radius:" + px(12 * s), inner));
+      x += 22 * s;
+      gs.forEach(function (g) {
+        var need = 52 * s + String(g.nr).length * 38 * s * 0.5 + 5 * s + 70 * s + 30 * s;
+        if (x + need > bx - 30 * s) return;
+        h.push(box("bdg", x, 22 * s, 40 * s, 40 * s, "border-radius:" + px(9 * s) + ";background:" + g.color, txt(BS.esc(g.brand.charAt(0).toUpperCase()), 30 * s)));
+        h.push(box("", x + 50 * s, 18 * s, need - 50 * s, 48 * s, "display:flex;align-items:center;gap:" + px(5 * s),
+          txt(g.nr, 38 * s, "color:#0A8F4A;font-weight:800") + '<span style="display:flex;flex-direction:column;gap:' + px(3 * s) + '">' + txt("READY", 13 * s * 1.1, "color:#0A8F4A;font-weight:800;letter-spacing:" + px(1.5 * s)) + txt(g.np + " PREP", 13 * s * 1.1, "color:#B86E00;font-weight:800;letter-spacing:" + px(1.5 * s)) + "</span>"));
+        x += need;
+      });
+    } else {
+      var l = 14 * s, rr = w - 14 * s, y0 = 108 * s, h0 = 128 * s, cw0 = (rr - l) / 3, inner2 = "";
+      for (var j = 0; j < 3; j++) inner2 += '<div style="flex:1;align-items:center">' + txt(lab[j], 20 * s, "color:" + (j ? col[j] : "#5A6372") + ";font-weight:800;letter-spacing:" + px(2 * s)) + txt("<b>" + val[j] + "</b>", 56 * s, "color:" + col[j] + ";line-height:1.1") + "</div>";
+      h.push(box("tot", l, y0, rr - l, h0, "border-radius:" + px(14 * s), inner2));
+    }
+    out.push(h.join(""));
+    return hh;
+  }
+
+  function legend(out, w, h, land) {
+    var s = S, fs = (land ? 16 : 20) * s, y = land ? h - 40 * s : h - 62 * s, hh = land ? 40 * s : 62 * s;
+    var key = function (p) { return '<i class="' + (p ? "p" : "") + '" style="width:' + px(34 * s) + ";height:" + px(16 * s) + ";margin-right:" + px(10 * s) + '"></i>'; };
+    var right = BRIDGE ? "" : txt("● Slots: Bridge Print not reading", fs * 0.9, "color:#E06A00;margin-left:auto");
+    out.push(box("lg", 20 * s, y, w - 40 * s, hh, "gap:" + px(26 * s),
+      '<span style="display:flex;align-items:center">' + key(false) + txt("READY — collect from the slot", fs) + "</span>" +
+      '<span style="display:flex;align-items:center">' + key(true) + txt("PREPARING — please wait", fs) + "</span>" +
+      (land ? txt("✓ since ready &nbsp;·&nbsp; 🔥 in kitchen &nbsp;·&nbsp; ⏱ since order", fs * 0.9, "color:#5A6372") : "") + right));
+  }
+
+  function clock() { var d = new Date(), hh = d.getHours() % 12 || 12; return hh + ":" + ("0" + d.getMinutes()).slice(-2) + '<small style="font-size:.42em;color:#5A6372;margin-left:.15em">' + (d.getHours() < 12 ? "AM" : "PM") + "</small>"; }
+
   function draw() {
-    var rd = ORD.filter(function (o) { return o.r; }).sort(function (a, b) { return (b.ra || b.c) - (a.ra || a.c); });
-    var pr = ORD.filter(function (o) { return !o.r; }).sort(function (a, b) { return a.c - b.c; });
-    $("cr").textContent = rd.length; $("cp").textContent = pr.length;
-    var avail = $("rmain").clientHeight - $("h1").offsetHeight - $("h2").offsetHeight - 40;
-    var share = !pr.length ? 0.95 : !rd.length ? 0.05 : Math.max(0.45, Math.min(0.72, rd.length / Math.max(1, rd.length + pr.length * 0.7)));
-    fit($("fr"), rd, true, avail * share); fit($("fp"), pr, false, avail * (1 - share));
+    var w = window.innerWidth, h = window.innerHeight, land = w >= h;
+    // the KDS board's scale: 1920 x 1080 on a TV; a phone held upright gets bigger text than the
+    // KDS's 1080 x 1920 (720 x 1280), so riders can read it from a step away
+    S = land ? Math.min(w / 1920, h / 1080) : Math.min(w / 720, h / 1280);
+    document.documentElement.style.setProperty("--tf", px(Math.max(16, 34 * S) / BS.zoom));
+    document.documentElement.style.setProperty("--wf", px(Math.max(14, 26 * S) / BS.zoom));
+    var gs = groups(), nr = 0, np = 0, out = [], s = S;
+    ORD.forEach(function (o) { if (o.r) nr++; else np++; });
+    var top = header(out, w, land, nr, np, gs) + (land ? 10 * s : 10 * s);
+    var bottom = land ? h - 40 * s : h - 64 * s;
+    if (!gs.length) out.push(box("empty2", 0, top, w, bottom - top, "", txt("No online orders right now", 40 * s)));
+    else {
+      var left = (land ? 16 : 14) * s, right = w - left, gap = 7 * s, pad = (land ? 9 : 8) * s, secGap = (land ? 8 : 10) * s, total = nr + np;
+      var stripH = land ? 36 * s : (total > 60 ? 40 : 56) * s;
+      var L = layout(gs, left, right, bottom - top, gap, pad, stripH, secGap, land ? 4 : 2, land ? 2.3 : 2.25);
+      var name = land ? 24 * s : Math.min(30 * s, stripH * 0.55), cnt = land ? 19 * s : Math.min(24 * s, stripH * 0.45), y = top;
+      gs.forEach(function (g) { y = zone(out, g, left, right, y, L.cols, L.cw, L.ch, gap, stripH, pad, name, cnt) + secGap; });
+    }
+    legend(out, w, h, land);
+    var f = document.activeElement && document.activeElement.id;
+    app.innerHTML = out.join("");
+    $("tsbtn").onclick = function () { open(""); };
+    $("spk").onclick = function () { BS.voiceOn(!BS.voiceOn()); spkUI(); };
+    spkUI();
+    if (f && $(f) && $("ts").hidden) $(f).focus();
     if (!$("ts").hidden) find();
   }
   BS.onresize = draw;
-  setInterval(function () { document.querySelectorAll("[data-t]").forEach(function (e) { e.textContent = BS.mmss(BS.since(+e.getAttribute("data-t"), e.getAttribute("data-b") === "1")); }); }, 1000);
+  setInterval(function () { if ($("clk")) $("clk").innerHTML = clock(); }, 5000);
+  setInterval(draw, 15000); // the minute timers
 
   // ---- voice calls: new ready orders at once (with a chime), then every waiting one again every
   // 30 s until it is picked up; at most 6 in one call; none after 3 hours ready.
@@ -106,35 +254,31 @@
     BS.say(phrase(call), chime);
   }
   setInterval(calls, 1000);
-  var spk = $("spk");
-  function spkUI() { var v = BS.voiceOn(); spk.textContent = v ? "🔊" : "🔇"; spk.setAttribute("aria-pressed", String(v)); spk.setAttribute("aria-label", v ? "Voice calls on" : "Voice calls off"); }
-  spk.onclick = function () { BS.voiceOn(!BS.voiceOn()); spkUI(); };
-  spkUI();
+  function spkUI() { var spk = $("spk"); if (!spk) return; var v = BS.voiceOn(); spk.textContent = v ? "🔊" : "🔇"; spk.setAttribute("aria-pressed", String(v)); spk.setAttribute("aria-label", v ? "Voice calls on" : "Voice calls off"); }
 
   // ---- staff search: 🔍, number keys, the remote
   function find() {
     var q = $("tsq").value.replace(/\D/g, ""), el = $("tsres");
     if (q.length < 4) { el.innerHTML = ""; return; }
     var o = ORD.filter(function (x) { return last4(x) === q; })[0];
-    if (!o) { el.innerHTML = '<div class="tres" style="--c:var(--late)"><span class="k">NOT FOUND</span><span class="mt">No order ending ' + q + " on the board. Check the digits.</span></div>"; return; }
-    var br = BS.brand(o.p);
-    el.innerHTML = '<div class="tres" style="--c:' + br.c + '"><span class="k">' + BS.esc(String(o.p).toUpperCase()) + ' ORDER</span><div class="row2"><b>…' + q + '</b><span class="' + (o.r ? "" : "p") + '">' + (o.r ? "READY ✓" : "PREPARING") + "</span></div>" +
-      (o.s ? '<span class="sl">Slot ' + BS.esc(o.s) + "</span>" : "") + '<span class="mt">' + (o.r ? "Ready " + BS.mmss(BS.since(o.ra || o.c, !o.ra)) : "Ordered " + BS.mmss(BS.since(o.c, true))) + " ago</span>" +
+    if (!o) { el.innerHTML = '<div class="tres" style="--c:#E23744"><span class="k">NOT FOUND</span><span class="mt">No order ending ' + q + " on the board. Check the digits.</span></div>"; return; }
+    el.innerHTML = '<div class="tres" style="--c:' + brandCol(o.p) + '"><span class="k" style="color:' + brandCol(o.p) + '">' + BS.esc(String(o.p).toUpperCase()) + ' ORDER</span><div class="row2"><b>…' + q + '</b><span class="' + (o.r ? "" : "p") + '">' + (o.r ? "READY ✓" : "PREPARING") + "</span></div>" +
+      (o.s ? '<span class="sl">Slot ' + BS.esc(o.s) + "</span>" : "") + '<span class="mt">' + (o.r ? "Ready " + BS.mmss(readySec(o)) : "Ordered " + BS.mmss(BS.since(o.c, true))) + " ago</span>" +
       (o.i && o.i.length ? "<ul>" + o.i.map(function (x) { return "<li>" + BS.esc(x) + "</li>"; }).join("") + "</ul>" : "") + "</div>";
   }
   function open(d) { $("ts").hidden = false; $("tsq").value = d || ""; $("tsq").focus(); find(); }
-  function close() { $("ts").hidden = true; $("tsbtn").focus(); }
-  $("tsbtn").onclick = function () { open(""); };
+  function close() { $("ts").hidden = true; if ($("tsbtn")) $("tsbtn").focus(); }
   $("tsq").addEventListener("input", find);
   document.addEventListener("keydown", function (e) {
     var isOpen = !$("ts").hidden, k = e.key;
     if (isOpen && (k === "Escape" || k === "GoBack" || k === "BrowserBack" || k === "Backspace" && !$("tsq").value)) { e.preventDefault(); close(); return; }
     if (!isOpen && /^[0-9]$/.test(k)) { e.preventDefault(); open(k); return; }
-    if (!isOpen && (k === "ArrowLeft" || k === "ArrowRight")) { var b = [$("tsbtn"), spk], i = b.indexOf(document.activeElement); b[(i + (k === "ArrowRight" ? 1 : b.length - 1)) % b.length].focus(); e.preventDefault(); }
+    if (!isOpen && (k === "ArrowLeft" || k === "ArrowRight")) { var b = [$("tsbtn"), $("spk")], i = b.indexOf(document.activeElement); b[(i + (k === "ArrowRight" ? 1 : b.length - 1)) % b.length].focus(); e.preventDefault(); }
   });
   window.babaiBack = function () { if (!$("ts").hidden) { close(); return true; } return false; }; // the app's Back key
 
-  BS.poll("/screens/api/rider", 2000, function (j) { ORD = j.orders || []; draw(); });
+  draw();
+  BS.poll("/screens/api/rider", 2000, function (j) { ORD = j.orders || []; HIDE = j.hide || []; BRIDGE = j.bridge !== false; draw(); });
 })();
 </script>
 </body>

@@ -27,11 +27,24 @@
     d.parentNode.removeChild(d);
     return z > 0.5 && z < 4 ? z : 1;
   }
+  // The TV pages (a .tv box) are laid out at a fixed 1920 x 1080 and the whole picture is scaled to
+  // the screen: on a phone or a small web view the letters stay full size in the layout, so the
+  // browser's minimum font size can't blow them up past their boxes (the "over zoom").
   BS.zoom = 1;
   function unit() {
     var w = window.innerWidth, h = window.innerHeight;
     BS.zoom = textZoom();
-    document.documentElement.style.fontSize = Math.min(w / 100, h * 16 / 9 / 100) / BS.zoom + "px";
+    var tv = document.querySelectorAll(".tv");
+    if (!tv.length) {
+      document.documentElement.style.fontSize = Math.min(w / 100, h * 16 / 9 / 100) / BS.zoom + "px";
+      return;
+    }
+    var rem = 19.2 / BS.zoom, k = Math.min(w / (100 * rem), h / (56.25 * rem));
+    document.documentElement.style.fontSize = rem + "px";
+    for (var i = 0; i < tv.length; i++) {
+      var t = "translate(-50%,-50%) scale(" + k.toFixed(4) + ")";
+      tv[i].style.webkitTransform = t; tv[i].style.transform = t;
+    }
   }
   document.addEventListener("DOMContentLoaded", function () { unit(); if (BS.onresize) BS.onresize(); });
   unit(); window.addEventListener("resize", function () { unit(); if (BS.onresize) BS.onresize(); });

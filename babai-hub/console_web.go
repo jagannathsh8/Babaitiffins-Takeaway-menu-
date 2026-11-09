@@ -98,6 +98,11 @@ func serveConsoleFile(name string) http.HandlerFunc {
 			w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		case strings.HasSuffix(name, ".webp"):
 			w.Header().Set("Content-Type", "image/webp")
+		case strings.HasSuffix(name, ".ttf"):
+			w.Header().Set("Content-Type", "font/ttf")
+			w.Header().Set("Cache-Control", "max-age=86400") // the TV fonts: read once a day
+			w.Write(b)
+			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Write(b)

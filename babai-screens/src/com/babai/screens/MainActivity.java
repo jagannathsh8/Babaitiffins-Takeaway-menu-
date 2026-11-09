@@ -159,6 +159,13 @@ public class MainActivity extends Activity {
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
         s.setTextZoom(100); // the TV's system font size must not zoom the screen past its edges
+        // no minimum font size (Android's web view enlarges any text under 8 px, which pushed small
+        // labels on phones and TV boxes past their boxes) and no pinch zoom
+        s.setMinimumFontSize(1);
+        s.setMinimumLogicalFontSize(1);
+        s.setSupportZoom(false);
+        s.setBuiltInZoomControls(false);
+        s.setDisplayZoomControls(false);
         web.addJavascriptInterface(new Bridge(), "BabaiApp");
         web.setWebChromeClient(new WebChromeClient());
         web.setWebViewClient(new WebViewClient() {

@@ -59,7 +59,7 @@ func handleScreenPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch name {
-	case "common.js", "common.css", "bg1.jpg", "bg2.jpg", "bg3.jpg":
+	case "common.js", "common.css", "bg1.jpg", "bg2.jpg", "bg3.jpg", "barlow-b.ttf", "barlow-x.ttf":
 		serveConsoleFile("screens/"+name)(w, r)
 	case "logo.webp":
 		serveConsoleFile("logo.webp")(w, r)
