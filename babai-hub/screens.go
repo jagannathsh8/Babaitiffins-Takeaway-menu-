@@ -46,6 +46,7 @@ func screensRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/screens/api/ready", handleScreenReady)
 	mux.HandleFunc("/screens/api/dispatch", handleScreenDispatch)
 	mux.HandleFunc("/screens/api/pickup/clear", handleScreenPickupClear)
+	mux.HandleFunc("/screens/api/autoclear", handleScreenAutoClear)
 	mux.HandleFunc("/screens/voice.wav", handleScreenVoice)
 	mux.HandleFunc("/screens/api/photos", screenGet(handleScreenPhotos))
 	mux.HandleFunc("/screens/photo/", handleScreenPhoto)
@@ -164,6 +165,35 @@ func handleAutoClear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("screens: ready tokens auto-clear set to %d min", in.Min)
+	reply(w, true, "Saved.")
+}
+
+// handleScreenAutoClear: POST {pin, min} from a screen's ⚙: the same setting as on the Console's
+// Screens page, with the Console PIN.
+func handleScreenAutoClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !fromOwnPage(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	var in struct {
+		Pin string `json:"pin"`
+		Min int    `json:"min"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 256)).Decode(&in) != nil || cleanAutoClear(in.Min) != in.Min {
+		reply(w, false, "Choose Off, 30, 45 or 60 min.")
+		return
+	}
+	if ok, msg := pinCheck(in.Pin); !ok {
+		reply(w, false, msg)
+		return
+	}
+	c := getConfig()
+	c.AutoClearMin = in.Min
+	if err := saveConfig(c); err != nil {
+		reply(w, false, "Could not save: "+err.Error())
+		return
+	}
+	log.Printf("screens: ready tokens auto-clear set to %d min on a screen", in.Min)
 	reply(w, true, "Saved.")
 }
 
@@ -287,7 +317,7 @@ func handleScreenDosa(w http.ResponseWriter, r *http.Request) {
 		meta = []byte("{}")
 	}
 	writeJSON(w, map[string]any{"ok": ppFresh(), "now": time.Now().UnixMilli(), "skew": clockSkew(),
-		"tokens": json.RawMessage(toks), "meta": json.RawMessage(meta), "outlet": getConfig().Outlet, "tawa": barkOnTawa(time.Now())})
+		"tokens": json.RawMessage(toks), "meta": json.RawMessage(meta), "outlet": getConfig().Outlet, "tawa": barkOnTawa(time.Now()), "clr": cleanAutoClear(getConfig().AutoClearMin)})
 }
 
 // ---- pick-up TV ------------------------------------------------------------------------------
@@ -393,7 +423,7 @@ func handleScreenPickup(w http.ResponseWriter, r *http.Request) {
 	ppMu.Unlock()
 	now := time.Now()
 	list, avg := pickupOrders(kots, now.UnixMilli())
-	writeJSON(w, map[string]any{"ok": ppFresh(), "now": now.UnixMilli(), "skew": clockSkew(), "orders": list, "avg": avg})
+	writeJSON(w, map[string]any{"ok": ppFresh(), "now": now.UnixMilli(), "skew": clockSkew(), "orders": list, "avg": avg, "clr": cleanAutoClear(getConfig().AutoClearMin)})
 }
 
 // handleScreenPickupClear: POST {kot, undo} from the Pick-up TV (a ready token tapped 3 times):

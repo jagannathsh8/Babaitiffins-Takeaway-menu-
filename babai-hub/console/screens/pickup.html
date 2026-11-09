@@ -34,7 +34,7 @@
 <body>
 <div class="tv">
   <div class="bar"><img src="/screens/logo.webp" alt=""><div class="t">PICK-UP ORDERS<small>WAIT FOR YOUR TOKEN · COLLECT AT THE COUNTER</small></div>
-    <div class="avg" id="avgb" hidden><small>AVERAGE WAIT NOW</small><b id="avgw"></b></div><button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><div class="clock" id="clock"></div></div>
+    <div class="avg" id="avgb" hidden><small>AVERAGE WAIT NOW</small><b id="avgw"></b></div><button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><button class="spk" id="gear" aria-label="Screen settings">⚙</button><div class="clock" id="clock"></div></div>
   <div class="pkv">
     <div class="pkc ok"><div class="sh ok">✓ READY · COLLECT NOW</div><div class="pkg" id="ready"></div></div>
     <div class="pkc"><div class="sh pr">⏳ WAITING</div><div class="pkg" id="wait"></div></div>
@@ -63,6 +63,7 @@
     }).join("") + (n > show.length ? '<div class="more">+ ' + (n - show.length) + " more</div>" : "") + (n ? "" : '<p class="empty">' + (el.id === "ready" ? "Ready tokens show here." : "No pick-up orders waiting.") + "</p>");
   }
   function draw(j) {
+    if (j.clr) BS.clr = j.clr;
     $("avgb").hidden = !j.avg; $("avgw").textContent = j.avg || "";
     var all = (j.orders || []).filter(function (o) { return !gone[o.k]; }), rd = all.filter(function (o) { return o.r; }).sort(function (a, b) { return (b.ra || 0) - (a.ra || 0); });
     var wt = all.filter(function (o) { return !o.r; }).sort(function (a, b) { return a.c - b.c; });
@@ -92,6 +93,8 @@
   $("ready").addEventListener("click", function (e) { var c = e.target.closest(".pk[data-k]"); if (c) tap(c); });
   $("ready").addEventListener("keydown", function (e) { if (e.key === "Enter" || e.keyCode === 23) { var c = e.target.closest(".pk[data-k]"); if (c) { e.preventDefault(); tap(c); } } });
   $("undob").onclick = function () { if (last) { delete gone[last]; BS.post("/screens/api/pickup/clear", { kot: last, undo: true }); } $("undo").hidden = true; last = null; };
+  $("gear").onclick = function () { BS.settings(function () { $("gear").focus(); }); };
+  window.babaiBack = function () { if (BS.setOpen()) { BS.closeSettings(); return true; } return false; }; // the app's Back key
   var spk = $("spk");
   function spkUI() { var v = BS.voiceOn(); spk.textContent = v ? "🔊" : "🔇"; spk.setAttribute("aria-pressed", String(v)); }
   spk.onclick = function () { BS.voiceOn(!BS.voiceOn()); spkUI(); };

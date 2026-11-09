@@ -74,6 +74,24 @@ func pinned(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// pinCheck: the Console PIN typed on a screen (5 wrong = 1 min wait, shared with the PIN screen).
+func pinCheck(pin string) (bool, string) {
+	pinMu.Lock()
+	defer pinMu.Unlock()
+	if time.Now().Before(pinBlocked) {
+		return false, "Too many wrong PINs. Wait a minute and try again."
+	}
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(pin)), []byte(currentPin())) != 1 {
+		pinWrong++
+		if pinWrong >= 5 {
+			pinWrong, pinBlocked = 0, time.Now().Add(time.Minute)
+		}
+		return false, "Wrong PIN."
+	}
+	pinWrong = 0
+	return true, ""
+}
+
 // handleUnlock: POST {pin}.
 func handleUnlock(w http.ResponseWriter, r *http.Request) {
 	if !fromOwnPage(r) {

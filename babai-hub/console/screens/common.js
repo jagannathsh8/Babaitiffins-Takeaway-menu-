@@ -115,5 +115,37 @@
     try { var pl = new Audio(wav).play(); if (pl && pl.catch) pl.catch(function () {}); } catch (e) {}
   };
   BS.busy = function () { try { if (app && app.speaking) return app.speaking(); } catch (e) {} try { return window.speechSynthesis && speechSynthesis.speaking; } catch (e) {} return false; };
+  // ---- ⚙ on a screen: how long ready tokens stay (Off / 30 / 45 / 60 min), with the Console PIN.
+  // The same setting as on the Console's Screens page. BS.clr: the current value, from the feed.
+  BS.clr = 30;
+  var sett = null;
+  BS.setOpen = function () { return !!sett; };
+  BS.settings = function (onClose) {
+    if (sett) return;
+    var pick = BS.clr, opts = [[-1, "Off"], [30, "30 min"], [45, "45 min"], [60, "1 hour"]];
+    sett = document.createElement("div"); sett.className = "sett"; sett.setAttribute("role", "dialog");
+    sett.innerHTML = '<div class="box"><h3>⚙ Screen settings</h3><p>Ready tokens leave the screen after</p><div class="ch">' +
+      opts.map(function (o) { return '<button data-v="' + o[0] + '" aria-pressed="' + (o[0] === pick) + '">' + o[1] + "</button>"; }).join("") +
+      '</div><p>Off: a token stays until it is collected (triple tap, or Dispatch on a kitchen screen).</p>' +
+      '<div class="act"><input type="password" inputmode="numeric" maxlength="8" placeholder="PIN" aria-label="Console PIN"><button class="go">Save</button><button class="no">Close</button></div><div class="m" role="status"></div></div>';
+    (document.querySelector(".tv") || document.body).appendChild(sett);
+    var m = sett.querySelector(".m"), pin = sett.querySelector("input");
+    function close() { if (sett && sett.parentNode) sett.parentNode.removeChild(sett); sett = null; if (onClose) onClose(); }
+    BS.closeSettings = close;
+    sett.querySelectorAll(".ch button").forEach(function (b) {
+      b.onclick = function () { pick = +b.getAttribute("data-v"); sett.querySelectorAll(".ch button").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); }); pin.focus(); };
+    });
+    sett.querySelector(".no").onclick = close;
+    function save() {
+      m.className = "m"; m.textContent = "Saving…";
+      BS.post("/screens/api/autoclear", { pin: pin.value, min: pick }, function (err, j) {
+        if (err || !j || !j.ok) { m.className = "m bad"; m.textContent = err ? "Can’t reach the Console." : j.msg; pin.value = ""; pin.focus(); return; }
+        BS.clr = pick; m.className = "m ok"; m.textContent = "Saved."; setTimeout(close, 900);
+      });
+    }
+    sett.querySelector(".go").onclick = save;
+    pin.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") close(); });
+    var cur = sett.querySelector('.ch button[aria-pressed="true"]') || sett.querySelector(".ch button"); cur.focus();
+  };
   BS.digits = function (s) { return String(s).split("").map(function (c) { return c === "0" ? "zero" : c; }).join(" "); };
 })();

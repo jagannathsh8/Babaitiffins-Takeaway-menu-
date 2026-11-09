@@ -154,7 +154,7 @@ body.hushed{cursor:none}
 <div class="tv">
   <div class="dbg" id="bg"></div>
   <div class="bar"><img src="/screens/logo.webp" alt=""><div class="t">DOSA ORDER STATUS<small>DINE-IN DOSAS · TASTE THE ANDHRA STYLE</small></div>
-    <button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><button class="spk" id="thm" aria-label="Choose the screen theme">🎨</button><div class="clock" id="clock"></div></div>
+    <button class="spk" id="spk" aria-pressed="true" aria-label="Voice calls on">🔊</button><button class="spk" id="thm" aria-label="Choose the screen theme">🎨</button><button class="spk" id="gear" aria-label="Screen settings">⚙</button><div class="clock" id="clock"></div></div>
   <div class="dsv">
     <div class="dsl neon"><div class="sh ok" id="hr">✓ READY · PLEASE COLLECT</div><div id="spot"></div><div class="rtoks" id="rtoks"></div></div>
     <div class="dsr neon"><div class="sh pr" id="hp">⏳ PREPARING · OLDEST FIRST</div><div class="plist" id="plist"></div></div>
@@ -212,12 +212,14 @@ body.hushed{cursor:none}
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); bs[(i + (e.key === "ArrowRight" ? 1 : bs.length - 1) + bs.length) % bs.length].focus(); }
     else if (e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack") { e.preventDefault(); closePick(); }
   });
-  window.babaiBack = function () { if (!$("tpick").hidden) { closePick(); return true; } return false; };
+  window.babaiBack = function () { if (BS.setOpen()) { BS.closeSettings(); return true; } if (!$("tpick").hidden) { closePick(); return true; } return false; };
+  $("gear").onclick = function () { wake(); BS.settings(function () { $("gear").focus(); wake(); }); };
   function plural(n, a, b) { return n + " " + (n === 1 ? a : b); }
   function spoken(l) { l = String(l); return /^T\d/.test(l) ? "table " + l.slice(1) : l.replace(/^#/, ""); }
 
   function draw(j) {
     window.LAST = j;
+    if (j.clr) BS.clr = j.clr;
     var T = j.tokens || {}, M = j.meta || {}, rd = [], pr = [];
     Object.keys(T).forEach(function (k) { var t = T[k]; if (t.s === "r") rd.push(t); else if (t.s === "p") pr.push(t); });
     rd.sort(function (a, b) { return (b.a || 0) - (a.a || 0); });
@@ -272,7 +274,7 @@ body.hushed{cursor:none}
   spk.onclick = function () { BS.voiceOn(!BS.voiceOn()); spkUI(); };
   spkUI();
   var idleT = null;
-  function wake() { document.body.classList.remove("hushed"); clearTimeout(idleT); idleT = setTimeout(function () { if ($("tpick").hidden) document.body.classList.add("hushed"); else wake(); }, 10000); }
+  function wake() { document.body.classList.remove("hushed"); clearTimeout(idleT); idleT = setTimeout(function () { if ($("tpick").hidden && !BS.setOpen()) document.body.classList.add("hushed"); else wake(); }, 10000); }
   ["keydown", "mousemove", "pointerdown", "touchstart"].forEach(function (ev) { document.addEventListener(ev, wake, true); });
   wake();
   setTheme(BS.q.theme || BS.store("bs.theme.dosa") || "black");

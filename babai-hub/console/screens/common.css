@@ -31,3 +31,15 @@ body{background:#000;color:var(--white);font-family:var(--body)}
 .warn{position:fixed;left:0;right:0;bottom:0;z-index:50;background:#b91c1c;color:#fff;font:800 1.6rem var(--h2);letter-spacing:.04em;padding:1rem 1.4rem;text-align:center;animation:pulse 1.6s infinite}
 .warn small{display:block;font:600 1.05rem var(--body);letter-spacing:0;opacity:.9;margin-top:.2rem}
 .empty{color:var(--muted);font:600 1.4rem var(--body);text-align:center;padding:3rem 0;margin:0}
+.sett{position:absolute;inset:0;z-index:30;background:rgba(10,10,10,.88);display:flex;align-items:center;justify-content:center}
+.sett .box{background:var(--cream);color:var(--black);border-radius:1.4rem;padding:2rem 2.4rem;min-width:44rem;display:flex;flex-direction:column;gap:1.1rem;box-shadow:0 1rem 3rem rgba(0,0,0,.5)}
+.sett h3{margin:0;font:800 2rem var(--h1)}
+.sett p{margin:0;font:600 1.15rem var(--body);color:#444}
+.sett .ch{display:flex;gap:.7rem}
+.sett .ch button,.sett .act button{font:800 1.4rem var(--h2);padding:.8rem 1.3rem;border-radius:.8rem;border:.18rem solid var(--black);background:#fff;color:var(--black);cursor:pointer}
+.sett .ch button[aria-pressed=true]{background:var(--black);color:var(--yellow)}
+.sett button:focus,.sett input:focus{outline:.3rem solid var(--green);outline-offset:.15rem}
+.sett input{font:800 2rem var(--num);letter-spacing:.4em;width:12rem;text-align:center;padding:.5rem;border:.18rem solid var(--black);border-radius:.8rem}
+.sett .act{display:flex;gap:.8rem;align-items:center}
+.sett .act .go{background:var(--green);color:#fff;border-color:var(--green)}
+.sett .m{font:700 1.15rem var(--body);min-height:1.5rem}.sett .m.bad{color:#b91c1c}.sett .m.ok{color:var(--green)}
