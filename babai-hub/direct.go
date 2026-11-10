@@ -536,6 +536,23 @@ func consoleJobFor(kot int64) *Job {
 	return nil
 }
 
+// petpoojaSlipTags: [BOLT-Urgent Order] and the like for this KOT (kept on the job for reprints).
+func petpoojaSlipTags(j *Job, k Kot) []string {
+	prMu.Lock()
+	tags := j.Tags
+	prMu.Unlock()
+	if len(tags) > 0 {
+		return tags
+	}
+	if tags = slipTagsFor(k); len(tags) > 0 {
+		prMu.Lock()
+		j.Tags = tags
+		saveJobLocked(j)
+		prMu.Unlock()
+	}
+	return tags
+}
+
 // directPrint: one Job for the KOT (token shared with Petpooja's slip if it came first), every
 // slip sent at once.
 func directPrint(c DirectCfg, k Kot, seen time.Time) {
@@ -573,6 +590,26 @@ func directPrint(c DirectCfg, k Kot, seen time.Time) {
 
 func directSend(j *Job, k Kot, plan []directSlip, cancel bool) {
 	recv := time.UnixMilli(j.Recv)
+	outs := make([]PrintOut, len(plan))
+	var wg sync.WaitGroup
+	send := func(i int, otp, otpName string, tags []string) {
+		defer wg.Done()
+		outs[i] = PrintOut{Rule: plan[i].name, Part: "items", Copies: 1}
+		if cancel {
+			outs[i].Rule += " (cancelled)"
+		}
+		d := slipForOTP(k, j.Token, plan[i], cancel, otp, otpName)
+		d.Tags = tags
+		sendChain(j, &outs[i], plan[i].printers, &image2bytes{d: d}, recv)
+	}
+	// line printers first, at once: they don't carry the OTP
+	early := petpoojaSlipTags(j, k)
+	for i := range plan {
+		if !plan[i].bill {
+			wg.Add(1)
+			go send(i, "", "", early)
+		}
+	}
 	// the rider's OTP on the bill slips (kept on the job for reprints and the cancelled slip)
 	prMu.Lock()
 	otp, otpName := j.OTP, j.OTPName
@@ -590,32 +627,12 @@ func directSend(j *Job, k Kot, plan []directSlip, cancel bool) {
 			prMu.Unlock()
 		}
 	}
-	prMu.Lock()
-	tags := j.Tags
-	prMu.Unlock()
-	if len(tags) == 0 {
-		if tags = slipTagsFor(k); len(tags) > 0 {
-			prMu.Lock()
-			j.Tags = tags
-			saveJobLocked(j)
-			prMu.Unlock()
-		}
-	}
-	outs := make([]PrintOut, len(plan))
-	var wg sync.WaitGroup
+	tags := petpoojaSlipTags(j, k)
 	for i := range plan {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			outs[i] = PrintOut{Rule: plan[i].name, Part: "items", Copies: 1}
-			if cancel {
-				outs[i].Rule += " (cancelled)"
-			}
-			d := slipForOTP(k, j.Token, plan[i], cancel, otp, otpName)
-			d.Tags = tags
-			slip := &image2bytes{d: d}
-			sendChain(j, &outs[i], plan[i].printers, slip, recv)
-		}(i)
+		if plan[i].bill {
+			wg.Add(1)
+			go send(i, otp, otpName, tags)
+		}
 	}
 	wg.Wait()
 	prMu.Lock()
