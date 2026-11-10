@@ -76,3 +76,25 @@ func TestBoltSlip(t *testing.T) {
 		t.Fatal("renders")
 	}
 }
+
+func TestUrgentFromKitchenData(t *testing.T) {
+	rows := []Row{{ID: looseNum{V: 1, OK: true}, OrderType: looseNum{V: 1, OK: true}, OUID: "6736", POID: "253277531102151", Name: "Filter Coffee Flask", Urgent: "1", Bulk: "0"}}
+	ks := groupRows(rows)
+	if len(ks) != 1 || !ks[0].Urgent || ks[0].Bulk {
+		t.Fatalf("%+v", ks)
+	}
+	if flagOn("0") || flagOn("") || flagOn("null") || !flagOn("1") || !flagOn("2026-11-10 16:22:00") {
+		t.Fatal("flagOn")
+	}
+	k := ks[0]
+	k.Platform = "Swiggy"
+	tags := petpoojaSlipTags(&Job{ID: "u1"}, k)
+	if len(tags) != 1 || tags[0] != "[BOLT-Urgent Order]" {
+		t.Fatalf("server flag: %v", tags)
+	}
+	k.Bulk = true
+	j := &Job{ID: "u2", Tags: []string{"[BOLT-Urgent Order]"}}
+	if tags = petpoojaSlipTags(j, k); len(tags) != 2 || tags[1] != "[Bulk Order]" {
+		t.Fatalf("no duplicate, bulk added: %v", tags)
+	}
+}

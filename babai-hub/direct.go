@@ -536,15 +536,41 @@ func consoleJobFor(kot int64) *Job {
 	return nil
 }
 
-// petpoojaSlipTags: [BOLT-Urgent Order] and the like for this KOT (kept on the job for reprints).
+// petpoojaSlipTags: [BOLT-Urgent Order] and the like for this KOT (kept on the job for reprints):
+// from Petpooja's kitchen data at once (p_urgentgen, p_bulk_order), and from Petpooja's slip.
 func petpoojaSlipTags(j *Job, k Kot) []string {
 	prMu.Lock()
-	tags := j.Tags
+	tags := append([]string(nil), j.Tags...)
 	prMu.Unlock()
-	if len(tags) > 0 {
-		return tags
+	n := len(tags)
+	has := func(word string) bool {
+		for _, t := range tags {
+			if strings.Contains(strings.ToLower(t), word) {
+				return true
+			}
+		}
+		return false
 	}
-	if tags = slipTagsFor(k); len(tags) > 0 {
+	for _, t := range slipTagsFor(k) {
+		lt := strings.ToLower(t)
+		if (strings.Contains(lt, "urgent") || strings.Contains(lt, "bolt")) && (has("urgent") || has("bolt")) {
+			continue // the kitchen data's urgent flag already put it on
+		}
+		if !containsStr(tags, t) {
+			tags = append(tags, t)
+		}
+	}
+	if k.Urgent && !has("urgent") && !has("bolt") {
+		if strings.Contains(strings.ToLower(brandOf(k)), "swiggy") {
+			tags = append(tags, "[BOLT-Urgent Order]")
+		} else {
+			tags = append(tags, "[Urgent Order]")
+		}
+	}
+	if k.Bulk && !has("bulk") {
+		tags = append(tags, "[Bulk Order]")
+	}
+	if len(tags) != n {
 		prMu.Lock()
 		j.Tags = tags
 		saveJobLocked(j)

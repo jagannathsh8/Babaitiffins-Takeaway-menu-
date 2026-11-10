@@ -59,7 +59,20 @@ type Row struct {
 	Addons      json.RawMessage `json:"addons"`        // [{group_name, name, quantity, status}]
 	ItemNote    looseStr        `json:"special_notes"` // a note on this item
 	OrderNote   looseStr        `json:"description"`   // the customer's note on the order ("Send cutlery")
+	Urgent      looseStr        `json:"p_urgentgen"`   // Swiggy Bolt / urgent order (as the KDS app reads it)
+	Bulk        looseStr        `json:"p_bulk_order"`  // bulk order
 }
+
+// flagOn: a Petpooja flag field that is set ("1", "true", a time ...), not "", "0", "false", "null".
+func flagOn(v looseStr) bool {
+	s := strings.ToLower(strings.TrimSpace(string(v)))
+	return s != "" && s != "0" && s != "false" && s != "null" && s != "no" && s != "0000-00-00 00:00:00"
+}
+
+var (
+	flagMu     sync.Mutex
+	flagLogged = map[string]bool{}
+)
 
 // looseStr / looseNum read a field whatever way Petpooja writes it (the KDS app's reader is just
 // as lenient): text, a number, true/false or null. One odd field never loses the whole row.
@@ -119,6 +132,8 @@ type Kot struct {
 	Platform  string  `json:"pf,omitempty"` // Swiggy / Zomato / ... as the KDS names it (online orders)
 	Online    bool    `json:"on,omitempty"` // an online platform order (o_u_id set)
 	Note      string  `json:"nt,omitempty"` // the customer's note on the order
+	Urgent    bool    `json:"ug,omitempty"` // Bolt / urgent order (p_urgentgen)
+	Bulk      bool    `json:"bk,omitempty"` // bulk order (p_bulk_order)
 	Items     []KItem `json:"i"`
 }
 
@@ -458,6 +473,18 @@ func groupRows(rows []Row) []Kot {
 		if st := strings.TrimSpace(string(r.KotStatus)); st != "" {
 			k.Status = st
 		}
+		for name, v := range map[string]looseStr{"p_urgentgen": r.Urgent, "p_bulk_order": r.Bulk} {
+			if flagOn(v) {
+				flagMu.Lock()
+				if !flagLogged[name+string(v)] && len(flagLogged) < 20 {
+					flagLogged[name+string(v)] = true // what the flag looks like at this outlet (values only)
+					log.Printf("petpooja: %s=%q on KOT %d", name, string(v), id)
+				}
+				flagMu.Unlock()
+			}
+		}
+		k.Urgent = k.Urgent || flagOn(r.Urgent)
+		k.Bulk = k.Bulk || flagOn(r.Bulk)
 		q := 1.0
 		if r.Quantity.OK && r.Quantity.V > 0 {
 			q = r.Quantity.V
