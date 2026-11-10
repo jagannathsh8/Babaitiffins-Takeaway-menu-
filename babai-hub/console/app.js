@@ -565,7 +565,8 @@ function kpDraw() {
     '<span class="mute kp-hint">' + { bridge: "Petpooja's slip through Bridge Print, as before", console: "Only the Console's slip prints", both: "Console prints; if it fails, Bridge Print prints" }[c.mode] + "</span></div>" +
     '<div class="kp-row kp-chips"><span class="kp-lbl">Order types</span>' + ["D", "P", "I", "S"].map(function (x) { return '<button class="kp-chip' + (c.types.indexOf(x) >= 0 ? " on" : "") + '" data-type="' + x + '">' + (c.types.indexOf(x) >= 0 ? "✓ " : "") + T[x] + (x === "D" ? " <i>default</i>" : "") + "</button>"; }).join("") +
     '<button class="kp-chip all" data-type="all">All</button></div>' +
-    '<p class="mute kp-today">Today: ' + (t.console || 0) + " slips by the Console · " + (t.bridge || 0) + " by Bridge Print · " + (t.skipped || 0) + " Petpooja slips not needed</p></div>";
+    '<p class="mute kp-today">Today: ' + (t.console || 0) + " slips by the Console · " + (t.bridge || 0) + " by Bridge Print · " + (t.skipped || 0) + " Petpooja slips not needed</p>" +
+    (KP.otp && KP.otp.at ? '<p class="mute kp-today">Delivery OTP / passcode · ' + esc(KP.otp.brand || "") + " …" + esc(KP.otp.order || "") + " at " + hm(KP.otp.at) + ': <b style="color:' + (KP.otp.ok ? "var(--ok,#0a8f4a)" : "#b91c1c") + '">' + esc(KP.otp.msg) + "</b></p>" : "") + "</div>";
   if (KPhelp) h += '<div class="panel kp-helpbox"><div class="kp-hd"><h2>❓ How to set up KOT printing</h2><a href="#" id="kpExpand">Expand all</a></div>' + KP_HELP.map(function (x) { return "<details><summary>" + x[0] + "</summary><ul>" + x[1].map(function (l) { return "<li>" + l + "</li>"; }).join("") + "</ul></details>"; }).join("") + "</div>";
   // main printers
   h += '<div class="panel"><h2>Main printers <span class="mute kp-sub">· the whole bill with the slot</span></h2>' + c.subs.map(function (sm, i) {

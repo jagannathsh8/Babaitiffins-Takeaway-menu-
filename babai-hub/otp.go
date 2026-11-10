@@ -6,7 +6,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +56,10 @@ func pendingOrders() ([]map[string]any, error) {
 		otpCode = "" // a fresh code next time
 		return nil, err
 	}
+	if e := jsonClean(res["error"]); e == "1" || strings.EqualFold(e, "true") {
+		otpCode = ""
+		return nil, errors.New(firstNonEmpty(jsonClean(res["message"]), "Petpooja rejected the request"))
+	}
 	var list []map[string]any
 	for _, k := range []string{"data", "pos_data", "dine_data"} {
 		if arr, ok := res[k].([]any); ok {
@@ -67,67 +74,176 @@ func pendingOrders() ([]map[string]any, error) {
 	return list, nil
 }
 
+// otpLast: what happened to the last delivery order's OTP / passcode (shown on the KOT printing
+// page, so a missing passcode says why).
+type otpCheck struct {
+	At    int64  `json:"at"`
+	Order string `json:"order"` // last 4 of the order ID
+	Brand string `json:"brand"`
+	OK    bool   `json:"ok"`
+	Msg   string `json:"msg"`
+}
+
+var otpLast otpCheck
+
+func noteOTP(k Kot, ok bool, msg string) {
+	otpMu.Lock()
+	otpLast = otpCheck{At: time.Now().UnixMilli(), Order: last4Of(k.POID), Brand: brandOf(k), OK: ok, Msg: msg}
+	otpMu.Unlock()
+}
+
+func otpLastCheck() otpCheck {
+	otpMu.Lock()
+	defer otpMu.Unlock()
+	return otpLast
+}
+
+// pendingMatches: a pending order is this KOT's: the same KOT id, or any of its values is the
+// platform order ID (or its end) whatever Petpooja calls the field (Toing, Swiggy, Zomato ... differ).
+func pendingMatches(o map[string]any, k Kot) bool {
+	if v := jsonClean(o["kot_id"]); v != "" && v == strconv.FormatInt(k.ID, 10) {
+		return true
+	}
+	id := digitsOnly(k.POID)
+	if len(id) < 6 {
+		return false
+	}
+	var walk func(key string, v any, depth int) bool
+	walk = func(key string, v any, depth int) bool {
+		lk := strings.ToLower(key)
+		if strings.Contains(lk, "phone") || strings.Contains(lk, "mobile") || strings.Contains(lk, "contact") {
+			return false
+		}
+		switch x := v.(type) {
+		case map[string]any:
+			if depth < 3 {
+				for kk, vv := range x {
+					if walk(kk, vv, depth+1) {
+						return true
+					}
+				}
+			}
+		case []any:
+			if depth < 3 {
+				for _, vv := range x {
+					if walk(key, vv, depth+1) {
+						return true
+					}
+				}
+			}
+		default:
+			d := digitsOnly(jsonClean(x))
+			if len(d) >= 6 && (d == id || strings.HasSuffix(id, d) || strings.HasSuffix(d, id)) {
+				return true
+			}
+		}
+		return false
+	}
+	for kk, vv := range o {
+		if walk(kk, vv, 0) {
+			return true
+		}
+	}
+	return false
+}
+
+func otpKey(lk string) bool {
+	return lk == "otp" || lk == "pin" || strings.Contains(lk, "passcode") || strings.Contains(lk, "pass_code") ||
+		strings.HasSuffix(lk, "_otp") || strings.HasPrefix(lk, "otp_") || strings.Contains(lk, "delivery_code") ||
+		strings.Contains(lk, "verification_code")
+}
+
+// findOTP: the OTP / passcode in a pending order (nested too); "otp" itself wins. keys: the
+// fields that look like one (names only, for the log).
+func findOTP(o map[string]any) (string, []string) {
+	otp, best := "", 0
+	var keys []string
+	var walk func(m map[string]any, depth int)
+	walk = func(m map[string]any, depth int) {
+		for key, v := range m {
+			lk := strings.ToLower(key)
+			if sub, ok := v.(map[string]any); ok && depth < 3 {
+				walk(sub, depth+1)
+				continue
+			}
+			if !otpKey(lk) {
+				continue
+			}
+			keys = append(keys, key)
+			s := jsonClean(v)
+			if s == "" || s == "0" || strings.EqualFold(s, "null") || len(s) > 12 {
+				continue
+			}
+			rank := 1
+			if lk == "otp" {
+				rank = 2
+			}
+			if rank > best {
+				otp, best = s, rank
+			}
+		}
+	}
+	walk(o, 0)
+	sort.Strings(keys)
+	return otp, keys
+}
+
 // orderOTP: the OTP of an online order (by its platform order ID), and what to call it.
 func orderOTP(k Kot) (string, string) {
-	id := strings.ToLower(strings.TrimSpace(k.POID))
-	if id == "" {
-		return "", ""
+	otp, name, _ := orderOTPWhy(k)
+	return otp, name
+}
+
+func orderOTPWhy(k Kot) (string, string, string) {
+	if strings.TrimSpace(k.POID) == "" {
+		return "", "", "the KOT has no online order ID"
 	}
 	list, err := pendingOrders()
 	if err != nil {
-		return "", ""
+		return "", "", "can't read Petpooja's pending orders: " + err.Error()
+	}
+	name := "OTP"
+	if strings.Contains(strings.ToLower(brandOf(k)), "swiggy") {
+		name = "Delivery Passcode"
 	}
 	for _, o := range list {
-		match := false
-		for _, f := range []string{"client_order_id", "auth_no", "web_id"} {
-			if v := strings.ToLower(jsonClean(o[f])); v != "" && (v == id || len(v) >= 6 && strings.HasSuffix(id, v)) {
-				match = true
-			}
-		}
-		if !match {
+		if !pendingMatches(o, k) {
 			continue
 		}
-		otp := ""
-		for key, v := range o { // "otp", or a passcode field however Petpooja names it
-			lk := strings.ToLower(key)
-			if s := jsonClean(v); s != "" && s != "0" && !strings.EqualFold(s, "null") && (lk == "otp" || strings.Contains(lk, "passcode") || strings.Contains(lk, "pass_code") || strings.HasSuffix(lk, "_otp")) {
-				if otp == "" || lk == "otp" {
-					otp = s
-				}
-			}
-		}
+		otp, keys := findOTP(o)
 		otpMu.Lock()
-		if !otpLogged {
+		if !otpLogged || otp == "" {
 			otpLogged = true
-			var keys []string
-			for key := range o {
-				lk := strings.ToLower(key)
-				if strings.Contains(lk, "otp") || strings.Contains(lk, "pass") {
-					keys = append(keys, key+"="+jsonClean(o[key]))
-				}
-			}
-			log.Printf("print: OTP fields from Petpooja: %v", keys)
+			log.Printf("print: OTP for %s …%s: %q, fields %v", brandOf(k), last4Of(k.POID), otp, keys)
 		}
 		otpMu.Unlock()
-		name := "OTP"
-		if strings.Contains(strings.ToLower(brandOf(k)), "swiggy") {
-			name = "Delivery Passcode"
+		if otp == "" {
+			if len(keys) == 0 {
+				return "", "", "Petpooja has the order but no OTP / passcode field on it yet"
+			}
+			return "", "", "Petpooja's OTP / passcode is empty for this order (" + strings.Join(keys, ", ") + ")"
 		}
-		return otp, name
+		return otp, name, ""
 	}
-	return "", ""
+	return "", "", fmt.Sprintf("the order isn't in Petpooja's pending orders yet (%d read)", len(list))
 }
 
-// waitOTP: a new order's OTP may reach Petpooja a moment after its KOT: wait up to 3 s.
+// waitOTP: a new order's OTP may reach Petpooja a moment after its KOT: wait up to 6 s.
 func waitOTP(k Kot) (string, string) {
 	if barkChannel(k) != "D" || strings.TrimSpace(k.POID) == "" {
 		return "", ""
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(6 * time.Second)
 	for {
-		otp, name := orderOTP(k)
-		if otp != "" || time.Now().After(deadline) {
+		otp, name, why := orderOTPWhy(k)
+		if otp != "" {
+			noteOTP(k, true, name+" "+otp+" printed")
 			return otp, name
+		}
+		if time.Now().After(deadline) {
+			noteOTP(k, false, "not printed: "+why)
+			log.Printf("print: no OTP / passcode for %s …%s: %s", brandOf(k), last4Of(k.POID), why)
+			return "", ""
 		}
 		time.Sleep(700 * time.Millisecond)
 	}

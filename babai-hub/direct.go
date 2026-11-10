@@ -796,7 +796,7 @@ func handleDirect(w http.ResponseWriter, r *http.Request) {
 		}
 		sortStrings(cats)
 		sortStrings(items)
-		writeJSON(w, map[string]any{"cfg": directConfig(), "printers": names, "cats": cats, "items": items, "today": directToday()})
+		writeJSON(w, map[string]any{"cfg": directConfig(), "printers": names, "cats": cats, "items": items, "today": directToday(), "otp": otpLastCheck()})
 		return
 	}
 	if !fromOwnPage(r) {
