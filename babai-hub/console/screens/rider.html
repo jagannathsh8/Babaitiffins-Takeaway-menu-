@@ -69,6 +69,7 @@ body{background:#E9ECF1;color:#0B0F17;font-family:BarlowC,"Roboto Condensed","Ar
   <span class="h">Type the last 4 digits · Back to close</span><div id="tsres"></div>
 </div>
 <script src="/screens/common.js"></script>
+<script src="/screens/scan.js"></script>
 <script>
 (function () {
   "use strict";
@@ -272,7 +273,11 @@ body{background:#E9ECF1;color:#0B0F17;font-family:BarlowC,"Roboto Condensed","Ar
   document.addEventListener("keydown", function (e) {
     var isOpen = !$("ts").hidden, k = e.key;
     if (isOpen && (k === "Escape" || k === "GoBack" || k === "BrowserBack" || k === "Backspace" && !$("tsq").value)) { e.preventDefault(); close(); return; }
-    if (!isOpen && /^[0-9]$/.test(k)) { e.preventDefault(); open(k); return; }
+    if (!isOpen && /^[0-9]$/.test(k)) { // a person's digit opens the search; a barcode scanner's doesn't
+      e.preventDefault();
+      setTimeout(function () { if ($("ts").hidden && !(window.BSScan && BSScan.busy())) open(k); }, 180);
+      return;
+    }
     if (!isOpen && (k === "ArrowLeft" || k === "ArrowRight")) { var b = [$("tsbtn"), $("spk")], i = b.indexOf(document.activeElement); b[(i + (k === "ArrowRight" ? 1 : b.length - 1)) % b.length].focus(); e.preventDefault(); }
   });
   window.babaiBack = function () { if (!$("ts").hidden) { close(); return true; } return false; }; // the app's Back key

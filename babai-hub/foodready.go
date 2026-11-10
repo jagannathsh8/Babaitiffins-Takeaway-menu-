@@ -316,16 +316,16 @@ func brandOf(k Kot) string {
 func scanKind(k Kot) string {
 	switch barkChannel(k) {
 	case "P":
-		return "Pick up · KOT"
+		return "Pick up · Token"
 	case "S":
-		return "Self service · KOT"
+		return "Self service · Token"
 	case "D":
 		return brandOf(k) + " · KOT"
 	}
 	if k.Table != "" {
-		return "Table " + k.Table + " · KOT"
+		return "Table " + k.Table + " · Token"
 	}
-	return "Dine in · KOT"
+	return "Dine in · Token"
 }
 
 func last4Of(s string) string {

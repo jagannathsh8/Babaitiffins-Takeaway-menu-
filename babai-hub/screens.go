@@ -47,6 +47,7 @@ func screensRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/screens/api/dispatch", handleScreenDispatch)
 	mux.HandleFunc("/screens/api/pickup/clear", handleScreenPickupClear)
 	mux.HandleFunc("/screens/api/autoclear", handleScreenAutoClear)
+	mux.HandleFunc("/screens/api/scan", handleScreenScan)
 	mux.HandleFunc("/screens/voice.wav", handleScreenVoice)
 	mux.HandleFunc("/screens/api/photos", screenGet(handleScreenPhotos))
 	mux.HandleFunc("/screens/photo/", handleScreenPhoto)
@@ -62,7 +63,7 @@ func handleScreenPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch name {
-	case "common.js", "common.css", "bg1.jpg", "bg2.jpg", "bg3.jpg", "barlow-b.ttf", "barlow-x.ttf":
+	case "common.js", "common.css", "scan.js", "bg1.jpg", "bg2.jpg", "bg3.jpg", "barlow-b.ttf", "barlow-x.ttf":
 		serveConsoleFile("screens/"+name)(w, r)
 	case "logo.webp":
 		serveConsoleFile("logo.webp")(w, r)
@@ -166,6 +167,30 @@ func handleAutoClear(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("screens: ready tokens auto-clear set to %d min", in.Min)
 	reply(w, true, "Saved.")
+}
+
+// handleScreenScan: POST {c, id} from a barcode scanner plugged into a paired screen (any screen
+// type): marked exactly like a Babai Scanner phone's scan (markFromScan), in the background.
+func handleScreenScan(w http.ResponseWriter, r *http.Request) {
+	dev, ok := screenWrite(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		C  string `json:"c"`
+		ID string `json:"id"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&in) != nil || strings.TrimSpace(in.C) == "" {
+		reply(w, false, "Bad request.")
+		return
+	}
+	name := dev
+	screensMu.Lock()
+	if s := screensSeen[dev]; s != nil && s.Name != "" {
+		name = s.Name
+	}
+	screensMu.Unlock()
+	writeJSON(w, markFromScan(cleanID(in.ID), cleanCode(in.C), "Screen: "+name, "screen"))
 }
 
 // handleScreenAutoClear: POST {pin, min} from a screen's ⚙: the same setting as on the Console's

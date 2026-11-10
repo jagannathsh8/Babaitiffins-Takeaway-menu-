@@ -88,12 +88,12 @@ func TestScanMarksFoodReady(t *testing.T) {
 		t.Fatalf("kot code %q", c)
 	}
 	r = markFromScan("k1", kotScanCode(Kot{ID: 600}), "", "wifi")
-	if !r.OK || r.Brand != "Dine in · KOT" || r.Last4 != "7" { // found (the test row has no item ids: "already")
+	if !r.OK || r.Brand != "Dine in · Token" || r.Last4 != "7" { // found (the test row has no item ids: "already")
 		t.Fatalf("dine in scan %+v", r)
 	}
 	// a pick up slip's barcode: Petpooja gets the same Food ready request the KDS sends
 	r = markFromScan("k3", kotScanCode(Kot{ID: 700}), "", "wifi")
-	if !r.OK || r.N != 1 || r.Brand != "Pick up · KOT" || r.Last4 != "1120" {
+	if !r.OK || r.N != 1 || r.Brand != "Pick up · Token" || r.Last4 != "1120" {
 		t.Fatalf("pick up scan %+v", r)
 	}
 	pp.mu.Lock()
