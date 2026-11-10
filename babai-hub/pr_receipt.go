@@ -179,6 +179,29 @@ type ReceiptMeta struct {
 	DisplayBrand string `json:"displayBrand,omitempty"`
 	Method       string `json:"method,omitempty"`
 	Warning      string `json:"warning,omitempty"`
+	OTP          string `json:"otp,omitempty"`     // "OTP : 1476" / "Delivery Passcode : 4821" on Petpooja's slip
+	OTPName      string `json:"otpName,omitempty"` // "OTP" / "Delivery Passcode"
+}
+
+var reSlipOTP = regexp.MustCompile(`(?i)\b(delivery\s*pass\s*code|pass\s*code|otp)\s*[:#.\-]?\s*([0-9OoIl|]{3,8})\b`)
+
+// slipOTP: the rider's OTP / delivery passcode printed on Petpooja's slip (text or OCR).
+func slipOTP(lines []string) (string, string) {
+	for _, l := range lines {
+		m := reSlipOTP.FindStringSubmatch(l)
+		if m == nil {
+			continue
+		}
+		d := ocrDigits(m[2])
+		if len(d) < 3 || len(d) > 8 || digitsOnly(d) != d {
+			continue
+		}
+		if strings.Contains(strings.ToLower(m[1]), "pass") {
+			return d, "Delivery Passcode"
+		}
+		return d, "OTP"
+	}
+	return "", ""
 }
 
 var (
@@ -243,6 +266,7 @@ func parseReceiptText(text string) ReceiptMeta {
 	if len(head) > 18 {
 		head = head[:18]
 	}
+	otp, otpName := slipOTP(lines)
 	isToing := false
 	for _, l := range lines {
 		if reToingHeading.MatchString(l) {
@@ -388,7 +412,7 @@ func parseReceiptText(text string) ReceiptMeta {
 			orderID = v
 		}
 	}
-	out := ReceiptMeta{Brand: brand, OrderID: orderID}
+	out := ReceiptMeta{Brand: brand, OrderID: orderID, OTP: otp, OTPName: otpName}
 	if isToing {
 		out.DisplayBrand = "Toing / Swiggy"
 	}

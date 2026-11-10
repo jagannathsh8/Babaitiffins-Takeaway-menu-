@@ -247,6 +247,7 @@ func identify(j *Job, raw []byte, wait time.Duration) (*Kot, ReceiptMeta, string
 	start := time.Now()
 	images, text, _ := decodeReceipt(raw)
 	textMeta := parseReceiptText(text)
+	noteSlipOTP(j, textMeta)
 	if len(images) > 0 {
 		wait += 1500 * time.Millisecond // the slip is a picture: time for Windows OCR to read it
 	}
@@ -261,6 +262,7 @@ func identify(j *Job, raw []byte, wait time.Duration) (*Kot, ReceiptMeta, string
 			if err != nil {
 				m = ReceiptMeta{Method: "unavailable", Warning: "Receipt text could not be read; fallback token label used."}
 			}
+			noteSlipOTP(j, m) // also when the order was found before OCR finished
 			ocrDone <- m
 		}()
 	} else {
