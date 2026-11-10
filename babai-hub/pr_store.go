@@ -128,6 +128,7 @@ type Job struct {
 	ReadyBy   string     `json:"readyBy,omitempty"`
 	OTP       string     `json:"otp,omitempty"`     // the rider's OTP / delivery passcode (the Console's slips)
 	OTPName   string     `json:"otpName,omitempty"` // "OTP" / "Delivery Passcode"
+	Tags      []string   `json:"tags,omitempty"`    // "[BOLT-Urgent Order]" from Petpooja's slip
 
 	slipBrand string // what the slip says it is (while its order is looked for)
 }

@@ -174,13 +174,27 @@ func receiptBitmap(images []rasterImage) ([]byte, error) {
 
 // ReceiptMeta is what was read from a slip (Bridge Print's job.metadata).
 type ReceiptMeta struct {
-	Brand        string `json:"brand"`
-	OrderID      string `json:"orderId"`
-	DisplayBrand string `json:"displayBrand,omitempty"`
-	Method       string `json:"method,omitempty"`
-	Warning      string `json:"warning,omitempty"`
-	OTP          string `json:"otp,omitempty"`     // "OTP : 1476" / "Delivery Passcode : 4821" on Petpooja's slip
-	OTPName      string `json:"otpName,omitempty"` // "OTP" / "Delivery Passcode"
+	Brand        string   `json:"brand"`
+	OrderID      string   `json:"orderId"`
+	DisplayBrand string   `json:"displayBrand,omitempty"`
+	Method       string   `json:"method,omitempty"`
+	Warning      string   `json:"warning,omitempty"`
+	OTP          string   `json:"otp,omitempty"`     // "OTP : 1476" / "Delivery Passcode : 4821" on Petpooja's slip
+	OTPName      string   `json:"otpName,omitempty"` // "OTP" / "Delivery Passcode"
+	Tags         []string `json:"tags,omitempty"`    // "[BOLT-Urgent Order]": the platform's flags on the slip
+}
+
+var reSlipTag = regexp.MustCompile(`^\[\s*([^\[\]]{2,40}?)\s*\]$`)
+
+// slipTags: lines in square brackets on Petpooja's slip ("[BOLT-Urgent Order]").
+func slipTags(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		if m := reSlipTag.FindStringSubmatch(strings.TrimSpace(l)); m != nil && len(out) < 3 {
+			out = append(out, "["+m[1]+"]")
+		}
+	}
+	return out
 }
 
 var reSlipOTP = regexp.MustCompile(`(?i)\b(delivery\s*pass\s*code|pass\s*code|otp)\s*[:#.\-]?\s*([0-9OoIl|]{3,8})\b`)
@@ -412,7 +426,7 @@ func parseReceiptText(text string) ReceiptMeta {
 			orderID = v
 		}
 	}
-	out := ReceiptMeta{Brand: brand, OrderID: orderID, OTP: otp, OTPName: otpName}
+	out := ReceiptMeta{Brand: brand, OrderID: orderID, OTP: otp, OTPName: otpName, Tags: slipTags(lines)}
 	if isToing {
 		out.DisplayBrand = "Toing / Swiggy"
 	}

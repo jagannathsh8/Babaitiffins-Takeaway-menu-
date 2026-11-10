@@ -58,3 +58,21 @@ func TestOTPFromPetpoojaSlip(t *testing.T) {
 		t.Fatal("by the KOT the slip was linked to")
 	}
 }
+
+func TestBoltSlip(t *testing.T) {
+	bolt := "10/11/26 16:22\nKOT - 1394\nSwiggy : 253277531102151\nDelivery\n[BOLT-Urgent Order]\nItem Qty.\nFilter Coffee Flask 1\n1\nCustomer Notes: Don't send cutlery\nPayment Status : Online Paid\nPrepare By : 2026-11-10 16:23:24\nDelivery Passcode : 8338\nScan to Mark food ready\n253277531102151\nPickup barcode for Swiggy delivery partner"
+	m := parseReceiptText(bolt)
+	if m.OTP != "8338" || m.OTPName != "Delivery Passcode" || len(m.Tags) != 1 || m.Tags[0] != "[BOLT-Urgent Order]" {
+		t.Fatalf("bolt slip: %+v", m)
+	}
+	noteSlipOTP(&Job{ID: "bolt"}, m)
+	otp, name, tags := petpoojaSlipFor(Kot{ID: 77, POID: "253277531102151"})
+	if otp != "8338" || name != "Delivery Passcode" || len(tags) != 1 {
+		t.Fatalf("%q %q %v", otp, name, tags)
+	}
+	d := slipForOTP(Kot{ID: 77, OrderType: 1, Online: true, Platform: "Swiggy", POID: "253277531102151"}, 16, directSlip{bill: true}, false, otp, name)
+	d.Tags = tags
+	if img := renderSlip(d, 576); img.Bounds().Dy() < 300 {
+		t.Fatal("renders")
+	}
+}

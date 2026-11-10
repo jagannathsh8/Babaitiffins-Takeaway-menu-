@@ -236,6 +236,7 @@ func orderOTPWhy(k Kot) (string, string, string) {
 
 type slipOTPRec struct {
 	otp, name, order string
+	tags             []string
 	kot              int64
 	job              *Job
 	at               time.Time
@@ -244,7 +245,7 @@ type slipOTPRec struct {
 var slipOTPs []slipOTPRec // under otpMu, the last few minutes
 
 func noteSlipOTP(j *Job, m ReceiptMeta) {
-	if m.OTP == "" {
+	if m.OTP == "" && len(m.Tags) == 0 {
 		return
 	}
 	otpMu.Lock()
@@ -256,11 +257,11 @@ func noteSlipOTP(j *Job, m ReceiptMeta) {
 			keep = append(keep, r)
 		}
 	}
-	slipOTPs = append(keep, slipOTPRec{otp: m.OTP, name: m.OTPName, order: digitsOnly(m.OrderID), job: j, at: now})
+	slipOTPs = append(keep, slipOTPRec{otp: m.OTP, name: m.OTPName, tags: m.Tags, order: digitsOnly(m.OrderID), job: j, at: now})
 }
 
-// slipOTPFor: the OTP Petpooja printed for this KOT (by the job it was linked to, or its order ID).
-func slipOTPFor(k Kot) (string, string) {
+// petpoojaSlipFor: what Petpooja printed for this KOT (by the job it was linked to, or its order ID).
+func petpoojaSlipFor(k Kot) (otp, name string, tags []string) {
 	id := digitsOnly(k.POID)
 	otpMu.Lock()
 	recs := append([]slipOTPRec(nil), slipOTPs...)
@@ -271,14 +272,29 @@ func slipOTPFor(k Kot) (string, string) {
 		kot := r.job.Kot
 		prMu.Unlock()
 		if kot == k.ID || len(r.order) >= 6 && len(id) >= 6 && (r.order == id || strings.HasSuffix(id, r.order) || strings.HasSuffix(r.order, id)) {
-			name := r.name
-			if name == "" {
-				name = "OTP"
+			if otp == "" && r.otp != "" {
+				otp, name = r.otp, r.name
+				if name == "" {
+					name = "OTP"
+				}
 			}
-			return r.otp, name
+			if tags == nil && len(r.tags) > 0 {
+				tags = r.tags
+			}
 		}
 	}
-	return "", ""
+	return otp, name, tags
+}
+
+func slipOTPFor(k Kot) (string, string) {
+	otp, name, _ := petpoojaSlipFor(k)
+	return otp, name
+}
+
+// slipTagsFor: "[BOLT-Urgent Order]" and the like, from Petpooja's slip for this KOT.
+func slipTagsFor(k Kot) []string {
+	_, _, tags := petpoojaSlipFor(k)
+	return tags
 }
 
 // waitOTP: Petpooja's slip or its pending orders may have the OTP a moment after the KOT: wait up to 8 s.
@@ -286,14 +302,16 @@ func waitOTP(k Kot) (string, string) {
 	if barkChannel(k) != "D" || strings.TrimSpace(k.POID) == "" {
 		return "", ""
 	}
-	deadline := time.Now().Add(8 * time.Second)
+	start := time.Now()
+	deadline := start.Add(8 * time.Second)
 	for {
 		if otp, name := slipOTPFor(k); otp != "" {
 			noteOTP(k, true, name+" "+otp+" printed (from Petpooja's slip)")
 			return otp, name
 		}
 		otp, name, why := orderOTPWhy(k)
-		if otp != "" {
+		// Petpooja's slip also has the order's flags ([BOLT-Urgent Order]): give it 3 s first
+		if otp != "" && time.Since(start) >= 3*time.Second {
 			noteOTP(k, true, name+" "+otp+" printed")
 			return otp, name
 		}

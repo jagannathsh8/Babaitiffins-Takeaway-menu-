@@ -49,10 +49,11 @@ type slipData struct {
 	Code    string // the barcode: the order ID (delivery) or kotScanCode (every other order)
 	Type    string // DELIVERY / PICK UP / DINE IN / SELF SERVICE
 	Items   []slipItem
-	Note    string // the customer's note
-	Also    string // what else is on the order (a station slip)
-	OTP     string // the rider's OTP / delivery passcode (bill slips, online orders)
-	OTPName string // "OTP" (Zomato) or "Delivery Passcode" (Swiggy)
+	Note    string   // the customer's note
+	Also    string   // what else is on the order (a station slip)
+	OTP     string   // the rider's OTP / delivery passcode (bill slips, online orders)
+	OTPName string   // "OTP" (Zomato) or "Delivery Passcode" (Swiggy)
+	Tags    []string // "[BOLT-Urgent Order]": the platform's flags, as on Petpooja's slip
 }
 
 var (
@@ -422,6 +423,9 @@ func drawSlip(d slipData, w int) *image.Gray {
 	}
 	if d.Type != "" {
 		c.text(d.Type, "b", 32, "c", false, 0)
+	}
+	for _, t := range d.Tags {
+		c.text(t, "b", 34, "c", false, 0) // [BOLT-Urgent Order]
 	}
 	c.dash()
 	c.row("Item", "Qty.", "m", 26, "m", 26, 0)

@@ -590,6 +590,17 @@ func directSend(j *Job, k Kot, plan []directSlip, cancel bool) {
 			prMu.Unlock()
 		}
 	}
+	prMu.Lock()
+	tags := j.Tags
+	prMu.Unlock()
+	if len(tags) == 0 {
+		if tags = slipTagsFor(k); len(tags) > 0 {
+			prMu.Lock()
+			j.Tags = tags
+			saveJobLocked(j)
+			prMu.Unlock()
+		}
+	}
 	outs := make([]PrintOut, len(plan))
 	var wg sync.WaitGroup
 	for i := range plan {
@@ -600,7 +611,9 @@ func directSend(j *Job, k Kot, plan []directSlip, cancel bool) {
 			if cancel {
 				outs[i].Rule += " (cancelled)"
 			}
-			slip := &image2bytes{d: slipForOTP(k, j.Token, plan[i], cancel, otp, otpName)}
+			d := slipForOTP(k, j.Token, plan[i], cancel, otp, otpName)
+			d.Tags = tags
+			slip := &image2bytes{d: d}
 			sendChain(j, &outs[i], plan[i].printers, slip, recv)
 		}(i)
 	}
