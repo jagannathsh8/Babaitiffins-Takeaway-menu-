@@ -1,0 +1,3 @@
+montserrat-*.ttf: Montserrat (Julieta Ulanovsky et al.), SIL Open Font License 1.1
+figtree-*.ttf: Figtree (Erik Kennedy), SIL Open Font License 1.1
+Both from Google Fonts (https://fonts.google.com), the fonts the Babai Dosa Board design uses.
