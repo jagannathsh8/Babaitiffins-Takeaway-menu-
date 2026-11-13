@@ -126,3 +126,51 @@ func TestDirectSubMainsAndSwitches(t *testing.T) {
 		t.Fatal("the sub main still takes dosa bills")
 	}
 }
+
+func TestDirectChannels(t *testing.T) {
+	swg := Kot{ID: 1, OrderType: 1, Online: true, Platform: "Swiggy", POID: "253", Items: []KItem{{N: "Masala Dosa", C: "Dosa", Q: 1}}}
+	gss := Kot{ID: 2, OrderType: 1, Online: true, Channel: "Go Self Serve", Items: []KItem{{N: "Andhra Veg Meals", C: "Meals", Q: 1}}}
+	own := Kot{ID: 3, OrderType: 1, Online: true, Platform: "Ownly", Items: []KItem{{N: "Idli", C: "Idli", Q: 1}}}
+	pick := Kot{ID: 4, OrderType: 2, Items: []KItem{{N: "Poori", C: "Poori", Q: 1}}}
+	if chanOf(gss) != "Go Self Serve" {
+		t.Fatalf("channel %q", chanOf(gss))
+	}
+	c := cleanDirect(DirectCfg{Mode: "console", TypesV2: true, Types: []string{"D", "P"},
+		Mains: []MainPrinter{{Printer: "KITCHEN", Chans: []string{"Swiggy", "Zomato"}}, {Printer: "PACKING", Chans: []string{"go self serve"}}},
+		Lines: []DirectLine{{Kind: "cat", Values: []string{"Dosa"}, Printer: "DOSA"}}})
+	if p := billPrinters(c, swg); len(p) != 1 || p[0].printers[0] != "KITCHEN" {
+		t.Fatalf("swiggy: kitchen only %+v", p)
+	}
+	if p := billPrinters(c, gss); len(p) != 1 || p[0].printers[0] != "PACKING" {
+		t.Fatalf("go self serve: packing only %+v", p)
+	}
+	if p := billPrinters(c, pick); len(p) != 2 {
+		t.Fatal("channels don't apply to pick up")
+	}
+	if directWants(c, own) || !channelBlocked(c, own) {
+		t.Fatal("Ownly ticked nowhere: no bill, and Bridge Print skips it too")
+	}
+	if channelBlocked(c, swg) || channelBlocked(c, pick) {
+		t.Fatal("ticked channels and pick up print")
+	}
+	c.Mode = "bridge"
+	if channelBlocked(c, own) {
+		t.Fatal("Bridge Print only: nothing is skipped")
+	}
+	c.Mode = "console"
+	c.Mains[1].Chans = nil // all channels
+	if channelBlocked(c, own) || len(billPrinters(c, own)) != 1 {
+		t.Fatal("all channels takes Ownly")
+	}
+	c.Types = []string{"P"} // Delivery not printed by the Console: Bridge Print prints it, as before
+	if channelBlocked(c, own) {
+		t.Fatal("delivery off: Bridge Print prints")
+	}
+	c.Lines[0].Chans = []string{"Zomato"}
+	c.Types = []string{"D", "P"}
+	for _, s := range directPlan(c, swg) {
+		if s.station != "" {
+			t.Fatal("the dosa line prints only Zomato")
+		}
+	}
+}

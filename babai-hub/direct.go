@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,7 @@ type DirectLine struct {
 	Backups []string `json:"backups,omitempty"` // up to 3, in order
 	Off     bool     `json:"off,omitempty"`     // switched off (the setup is kept)
 	Skip    []string `json:"skip,omitempty"`    // order types it doesn't print for: D P I S
+	Chans   []string `json:"chans,omitempty"`   // online channels it prints (none: every channel)
 }
 
 // SubMain: bills that contain any of its categories or items print whole (with the slot) here
@@ -49,6 +51,7 @@ type SubMain struct {
 	Backups []string `json:"backups,omitempty"`
 	Off     bool     `json:"off,omitempty"`
 	Skip    []string `json:"skip,omitempty"`
+	Chans   []string `json:"chans,omitempty"`
 }
 
 // MainPrinter: prints every bill no sub main takes (each main its own copy).
@@ -57,6 +60,7 @@ type MainPrinter struct {
 	Backups []string `json:"backups,omitempty"`
 	Off     bool     `json:"off,omitempty"`
 	Skip    []string `json:"skip,omitempty"`
+	Chans   []string `json:"chans,omitempty"`
 }
 
 type DirectCfg struct {
@@ -72,6 +76,7 @@ type DirectCfg struct {
 	MainSkip    []string     `json:"mainSkip,omitempty"`
 	Subs        []SubMain    `json:"subs,omitempty"`
 	Lines       []DirectLine `json:"lines,omitempty"`
+	ExtraChans  []string     `json:"extraChans,omitempty"` // channels added by hand (before their first order)
 }
 
 func cleanSkip(l []string) []string {
@@ -96,6 +101,38 @@ func cleanNames(l []string) []string {
 
 // printsFor: a printer that is on and not switched off for this order type.
 func printsFor(off bool, skip []string, ch string) bool { return !off && !containsStr(skip, ch) }
+
+// chanOf: the online channel of a KOT, as Petpooja names it ("Swiggy", "Go Self Serve" ...).
+func chanOf(k Kot) string { return strings.TrimSpace(brandOf(k)) }
+
+// printsKot: a printer prints this KOT: on, its order type ticked and, for an online order, its
+// channel ticked (no channels chosen: every channel).
+func printsKot(off bool, skip, chans []string, k Kot) bool {
+	ch := barkChannel(k)
+	if !printsFor(off, skip, ch) {
+		return false
+	}
+	return ch != "D" || len(chans) == 0 || containsStr(chans, chanOf(k))
+}
+
+// channelBlocked: an online order whose channel no main / sub main printer has ticked, while
+// they do print online orders: not printed at all, by the Console nor by Bridge Print (one bill).
+func channelBlocked(c DirectCfg, k Kot) bool {
+	if c.Mode == "bridge" || barkChannel(k) != "D" || !containsStr(c.Types, "D") || len(billPrinters(c, k)) > 0 {
+		return false
+	}
+	for _, sm := range c.Subs {
+		if sm.Printer != "" && printsFor(sm.Off, sm.Skip, "D") {
+			return true
+		}
+	}
+	for _, m := range c.Mains {
+		if m.Printer != "" && printsFor(m.Off, m.Skip, "D") {
+			return true
+		}
+	}
+	return false
+}
 
 const (
 	directBackupWait = 10 * time.Second // "both": Petpooja's slip waits this long for the Console's
@@ -141,7 +178,7 @@ func cleanDirect(c DirectCfg) DirectCfg {
 	c.Main, c.MainBackups, c.MainOff, c.MainSkip = "", nil, false, nil
 	var mains []MainPrinter
 	for _, m := range c.Mains {
-		m.Backups, m.Skip = cleanBackups(m.Printer, m.Backups), cleanSkip(m.Skip)
+		m.Backups, m.Skip, m.Chans = cleanBackups(m.Printer, m.Backups), cleanSkip(m.Skip), cleanNames(m.Chans)
 		if len(mains) < 10 {
 			mains = append(mains, m)
 		}
@@ -149,7 +186,7 @@ func cleanDirect(c DirectCfg) DirectCfg {
 	c.Mains = mains
 	var subs []SubMain
 	for _, sm := range c.Subs {
-		sm.Cats, sm.Items, sm.Skip = cleanNames(sm.Cats), cleanNames(sm.Items), cleanSkip(sm.Skip)
+		sm.Cats, sm.Items, sm.Skip, sm.Chans = cleanNames(sm.Cats), cleanNames(sm.Items), cleanSkip(sm.Skip), cleanNames(sm.Chans)
 		sm.Backups = cleanBackups(sm.Printer, sm.Backups)
 		if len(subs) < 10 {
 			subs = append(subs, sm)
@@ -169,12 +206,13 @@ func cleanDirect(c DirectCfg) DirectCfg {
 		}
 		l.Values = v
 		l.Backups = cleanBackups(l.Printer, l.Backups)
-		l.Skip = cleanSkip(l.Skip)
+		l.Skip, l.Chans = cleanSkip(l.Skip), cleanNames(l.Chans)
 		if len(lines) < 30 {
 			lines = append(lines, l)
 		}
 	}
 	c.Lines = lines
+	c.ExtraChans = cleanNames(c.ExtraChans)
 	return c
 }
 
@@ -209,9 +247,8 @@ func directWants(c DirectCfg, k Kot) bool {
 // billPrinters: where the whole bill (with the slot and the OTP) prints: the first sub main the
 // bill matches, else every main printer (each its own copy).
 func billPrinters(c DirectCfg, k Kot) []directSlip {
-	ch := barkChannel(k)
 	for i, sm := range c.Subs {
-		if sm.Printer == "" || !printsFor(sm.Off, sm.Skip, ch) {
+		if sm.Printer == "" || !printsKot(sm.Off, sm.Skip, sm.Chans, k) {
 			continue
 		}
 		for _, it := range k.Items {
@@ -222,7 +259,7 @@ func billPrinters(c DirectCfg, k Kot) []directSlip {
 	}
 	var out []directSlip
 	for i, m := range c.Mains {
-		if m.Printer != "" && printsFor(m.Off, m.Skip, ch) {
+		if m.Printer != "" && printsKot(m.Off, m.Skip, m.Chans, k) {
 			out = append(out, directSlip{name: fmt.Sprintf("Main %d", i+1), bill: true, printers: append([]string{m.Printer}, m.Backups...)})
 		}
 	}
@@ -275,10 +312,9 @@ func directPlan(c DirectCfg, k Kot) []directSlip {
 		}
 	}
 	var out []directSlip
-	ch := barkChannel(k)
 	var mine []KItem
 	for i, it := range items {
-		if !c.MainRest || taken[i] == 0 || !lineOn(c.Lines[taken[i]-1], ch) {
+		if !c.MainRest || taken[i] == 0 || !lineOn(c.Lines[taken[i]-1], k) {
 			mine = append(mine, it)
 		}
 	}
@@ -289,7 +325,7 @@ func directPlan(c DirectCfg, k Kot) []directSlip {
 		}
 	}
 	for li, l := range c.Lines {
-		if !lineOn(l, ch) {
+		if !lineOn(l, k) {
 			continue
 		}
 		var mine, rest []KItem
@@ -307,7 +343,7 @@ func directPlan(c DirectCfg, k Kot) []directSlip {
 	return out
 }
 
-func lineOn(l DirectLine, ch string) bool { return l.Printer != "" && printsFor(l.Off, l.Skip, ch) }
+func lineOn(l DirectLine, k Kot) bool { return l.Printer != "" && printsKot(l.Off, l.Skip, l.Chans, k) }
 
 func slipFor(k Kot, token int, s directSlip, cancel bool) slipData {
 	return slipForOTP(k, token, s, cancel, "", "")
@@ -579,6 +615,58 @@ func petpoojaSlipTags(j *Job, k Kot) []string {
 	return tags
 }
 
+// knownChans: the online channels Petpooja's orders came from (open KOTs and the last 30 days on
+// this PC), the ones printers have ticked and the ones added by hand: a channel added in Petpooja
+// shows here with its first order.
+func knownChans() []string {
+	var out []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s != "" && !strings.EqualFold(s, "Online") && !strings.EqualFold(s, "Delivery") && !containsStr(out, s) && len(out) < 60 {
+			out = append(out, s)
+		}
+	}
+	ppMu.Lock()
+	kots := ppKots
+	ppMu.Unlock()
+	for _, k := range kots {
+		if barkChannel(k) == "D" {
+			add(chanOf(k))
+		}
+	}
+	now := time.Now()
+	for d := 0; d <= 30; d++ {
+		for _, o := range readDayOrders(now.AddDate(0, 0, -d).Format("2006-01-02")) {
+			if o.Type == 1 || platformCode(o) != "" {
+				add(o.Brand)
+			}
+		}
+	}
+	c := directConfig()
+	for _, l := range [][]string{c.ExtraChans} {
+		for _, x := range l {
+			add(x)
+		}
+	}
+	for _, m := range c.Mains {
+		for _, x := range m.Chans {
+			add(x)
+		}
+	}
+	for _, sm := range c.Subs {
+		for _, x := range sm.Chans {
+			add(x)
+		}
+	}
+	for _, l := range c.Lines {
+		for _, x := range l.Chans {
+			add(x)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
+	return out
+}
+
 // directPrint: one Job for the KOT (token shared with Petpooja's slip if it came first), every
 // slip sent at once.
 func directPrint(c DirectCfg, k Kot, seen time.Time) {
@@ -742,6 +830,10 @@ func directBridgeHold(j *Job) bool {
 	if !found {
 		k = Kot{ID: j.Kot, OrderType: j.OrderType, Platform: j.Platform, Online: j.OrderType == 1 || j.Platform != "" && j.Platform != "Online"}
 	}
+	if found && channelBlocked(c, k) { // one bill: a channel no main printer takes isn't printed by Bridge Print either
+		directSkipBridge(j, nil, "Not printed ("+firstNonEmpty(chanOf(k), "this channel")+" isn't ticked on any main printer)")
+		return false
+	}
 	if !directWants(c, k) {
 		return true
 	}
@@ -852,7 +944,7 @@ func handleDirect(w http.ResponseWriter, r *http.Request) {
 		}
 		sortStrings(cats)
 		sortStrings(items)
-		writeJSON(w, map[string]any{"cfg": directConfig(), "printers": names, "cats": cats, "items": items, "today": directToday(), "otp": otpLastCheck()})
+		writeJSON(w, map[string]any{"cfg": directConfig(), "printers": names, "cats": cats, "items": items, "today": directToday(), "otp": otpLastCheck(), "chans": knownChans()})
 		return
 	}
 	if !fromOwnPage(r) {

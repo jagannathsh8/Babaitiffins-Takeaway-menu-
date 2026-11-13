@@ -325,3 +325,7 @@ td.wrap{white-space:normal;min-width:180px}
 .kp-bar{position:sticky;bottom:10px;z-index:20;display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--ink);color:#fff;border-radius:14px;padding:10px 16px;margin-top:12px;box-shadow:0 8px 24px #0004;font-weight:700}
 .kp-bar span{flex:1;min-width:200px}
 .kp-discard{border:1.5px solid #fff6;background:transparent;color:#fff;border-radius:10px;padding:7px 14px;font-weight:700;cursor:pointer}
+.kp-dch i{font-style:normal;font-weight:600;opacity:.8}.kp-dch.open{box-shadow:0 0 0 3px rgba(182,106,41,.18)}
+.kp-chans{flex-wrap:wrap;gap:8px;background:#fff8ee;border:1px dashed #e8c79a;border-radius:12px;padding:8px 10px;margin:4px 0 6px}
+.kp-chans .kp-o.soft{opacity:.75}.kp-chans .kp-o.all{border-style:dashed}.kp-chans .kp-o.offb.on{background:#fde8e8;border-color:#e5a3a3;color:#b91c1c}
+.kp-chadd{display:inline-flex;gap:4px;align-items:center}.kp-chadd input{font:inherit;font-size:13px;padding:5px 9px;border:1px solid #e0d6c6;border-radius:999px;width:130px}

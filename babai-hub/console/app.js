@@ -506,9 +506,10 @@ VIEWS.kotprint = {
     getJ("/console/api/direct").then(function (d) {
       KP = d; KPdirty = false; var c = KP.cfg;
       c.lines = c.lines || []; c.subs = c.subs || []; c.types = c.types || []; c.mains = c.mains || [];
-      c.mains.forEach(function (x) { x.backups = x.backups || []; x.skip = x.skip || []; });
-      c.subs.forEach(function (x) { x.cats = x.cats || []; x.items = x.items || []; x.backups = x.backups || []; x.skip = x.skip || []; });
-      c.lines.forEach(function (x) { x.values = x.values || []; x.backups = x.backups || []; x.skip = x.skip || []; });
+      c.mains.forEach(function (x) { x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
+      c.subs.forEach(function (x) { x.cats = x.cats || []; x.items = x.items || []; x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
+      c.lines.forEach(function (x) { x.values = x.values || []; x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
+      c.extraChans = c.extraChans || []; KP.chans = KP.chans || [];
       kpDraw();
     }).catch(function () {});
   }
@@ -519,7 +520,7 @@ var KP_HELP = [
   ["2 · Which orders the Console prints", ["<b>Delivery / Online</b> is on by default; tap it to turn it off. Tap <b>Pick up</b>, <b>Dine in</b>, <b>Self service</b> to add them, or <b>All</b>.", "Order types left off keep printing through Bridge Print."]],
   ["3 · Main and sub main printers (the whole bill with the slot)", ["Pick a <b>Main</b> printer: it prints <b>all other bills</b>. <b>+ Add main printer</b> adds another (e.g. packing): every main prints its own copy; 🗑 deletes one.", "Press <b>+ Add sub main printer</b>, add categories or items (e.g. Dosa) and pick its printer: any bill that contains one of them prints <b>whole</b> on the sub main instead.", "Sub mains are checked top to bottom; a bill goes to the first one it matches. Each bill prints once.", "<b>Print the whole order</b> (on the main): off = the bill slip leaves out what a category / item printer already prints."]],
   ["4 · Category & item printers (a station's part, no slot)", ["<b>+ Add line</b>, choose <b>Category</b> or <b>Item</b>, add the names from the list (your Petpooja menu), pick the printer.", "That printer gets only those dishes, under the station name (e.g. DOSA), without the slot, with “Also on this order”.", "A dish named in an item line goes there, not to a category line."]],
-  ["5 · “Prints for” buttons", ["Every printer has Delivery · Pick up · Dine in · Self service. Tap one to turn it off: that printer then skips those orders.", "A new printer starts with all on."]],
+  ["5 · “Prints for” buttons", ["Every printer has Delivery · Pick up · Dine in · Self service. Tap one to turn it off: that printer then skips those orders.", "A new printer starts with all on.", "<b>Delivery / Online</b> opens its <b>channels</b> (Swiggy, Zomato, Go Self Serve …, as Petpooja names them; a new channel shows with its first order, or add it by hand). <b>All channels</b> takes new channels too; tap channels to choose; <b>Off</b>: no online orders.", "<b>One bill:</b> an online order whose channel no main / sub main printer has ticked is <b>not printed at all</b>, not even by Bridge Print."]],
   ["6 · Backup printers (up to 3)", ["<b>+ Backup</b> adds one. They are tried in order when the printer is offline, out of paper or stuck; Alerts shows each time."]],
   ["7 · On / Off switch", ["Off pauses a printer and keeps its setup.", "A sub main that is off: its bills go to the Main. A line that is off: its dishes stay only on the bill slip.", "Every main off: bills no sub main takes print through Bridge Print, so nothing is lost."]],
   ["8 · Test print, paper size and cutting", ["<b>Test print</b> sends a sample slip. 80 or 58 mm is found from the printer's name; the printer cuts after each slip (printers without a cutter leave it to tear)."]],
@@ -542,9 +543,30 @@ function kpObj(k) {
   var c = KP.cfg;
   return (k[0] === "m" ? c.mains : k[0] === "s" ? c.subs : c.lines)[+k.slice(1)];
 }
+function kpDOn(o, on) { var i = o.skip.indexOf("D"); if (on && i >= 0) o.skip.splice(i, 1); if (!on && i < 0) o.skip.push("D"); }
 function kpSwitch(k, off) { return '<button class="kp-tg' + (off ? "" : " on") + '" data-tog="' + k + '" aria-pressed="' + !off + '" aria-label="Printer on / off"><i></i></button><span class="kp-tgl' + (off ? " off" : "") + '">' + (off ? "Off" : "On") + "</span>"; }
-function kpTypes(k, skip) {
-  return '<div class="kp-row kp-ot"><span class="kp-lbl">Prints for</span>' + KP_OT.map(function (t) { var on = skip.indexOf(t[0]) < 0; return '<button class="kp-o' + (on ? " on" : "") + '" data-ot="' + k + ":" + t[0] + '" aria-pressed="' + on + '">' + (on ? "✓ " : "") + t[1] + "</button>"; }).join("") + "</div>";
+var KPexp = {}; // printers whose Delivery / Online channels are open
+function kpChanLabel(o) {
+  if (o.skip.indexOf("D") >= 0) return "off";
+  if (!o.chans.length) return "All channels";
+  return o.chans.length <= 2 ? o.chans.join(", ") : o.chans.length + " channels";
+}
+function kpTypes(k, o) {
+  var skip = o.skip, open = !!KPexp[k], dOn = skip.indexOf("D") < 0;
+  var h = '<div class="kp-row kp-ot"><span class="kp-lbl">Prints for</span>' + KP_OT.map(function (t) {
+    var on = skip.indexOf(t[0]) < 0;
+    if (t[0] === "D") return '<button class="kp-o kp-dch' + (on ? " on" : "") + (open ? " open" : "") + '" data-dch="' + k + '" aria-expanded="' + open + '">' + (on ? "✓ " : "") + "Delivery / Online <i>· " + esc(kpChanLabel(o)) + "</i> " + (open ? "▴" : "▾") + "</button>";
+    return '<button class="kp-o' + (on ? " on" : "") + '" data-ot="' + k + ":" + t[0] + '" aria-pressed="' + on + '">' + (on ? "✓ " : "") + t[1] + "</button>";
+  }).join("") + "</div>";
+  if (!open) return h;
+  var all = dOn && !o.chans.length, list = KP.chans || [];
+  h += '<div class="kp-row kp-chans"><span class="kp-lbl">Channels</span>' +
+    '<button class="kp-o all' + (all ? " on" : "") + '" data-chall="' + k + '">' + (all ? "✓ " : "") + "All channels</button>" +
+    list.map(function (ch, i) { var on = dOn && (all || o.chans.some(function (x) { return x.toLowerCase() === ch.toLowerCase(); })); return '<button class="kp-o' + (on ? " on" : "") + (all ? " soft" : "") + '" data-ch="' + k + ":" + i + '">' + (on ? "✓ " : "") + esc(ch) + "</button>"; }).join("") +
+    '<button class="kp-o offb' + (dOn ? "" : " on") + '" data-choff="' + k + '">' + (dOn ? "" : "✓ ") + "Off</button>" +
+    '<span class="kp-chadd"><input id="kpCh_' + k + '" placeholder="+ Add channel" aria-label="Add a channel"><button class="kp-add" data-chadd="' + k + '">Add</button></span>' +
+    '<span class="mute kp-small">' + (dOn ? (all ? "every online order prints here, new channels too" : "only these online orders print here") : "no online orders print here") + "</span></div>";
+  return h;
 }
 function kpBackups(list, k) {
   return '<div class="kp-row"><span class="kp-lbl">Backup</span>' + list.map(function (b, i) { return '<span class="kp-bk">' + (i + 1) + " · " + kpSel(b, "", 'data-bk="' + k + ":" + i + '"') + '<button class="kp-x" data-bkdel="' + k + ":" + i + '" aria-label="Remove backup">×</button></span>'; }).join("") +
@@ -575,11 +597,11 @@ function kpDraw() {
       sm.cats.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + ' · category<button class="kp-x" data-sdel="' + i + ":c:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
       sm.items.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + ' · item<button class="kp-x" data-sdel="' + i + ":i:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
       kpPick('data-sadd="' + i + '"', taken, true, true) + '<span class="kp-sp"></span>' + kpSel(sm.printer, "", 'data-sp="' + i + '"') + kpSwitch("s" + i, sm.off) + '<button class="kp-del" data-sxdel="' + i + '" aria-label="Delete sub main">🗑</button></div>' +
-      kpTypes("s" + i, sm.skip) + kpBackups(sm.backups, "s" + i) + "</div>";
+      kpTypes("s" + i, sm) + kpBackups(sm.backups, "s" + i) + "</div>";
   }).join("") + '<div class="kp-row"><button class="kp-add" id="kpAddSub">+ Add sub main printer</button><span class="mute kp-small">a bill goes to the first sub main it matches</span></div>' +
     c.mains.map(function (m, i) {
       return '<div class="kp-box' + (m.off ? " off" : "") + '"><div class="kp-row"><span class="kp-pill dark">Main ' + (i + 1) + '</span><span class="mute kp-b">All other bills</span><span class="kp-sp"></span>' + kpSel(m.printer, "kp-main", 'data-mp="' + i + '"') + kpSwitch("m" + i, m.off) + kpState(m.printer) +
-        '<button class="btn ghost sm" data-test="' + i + '">Test print</button><button class="kp-del" data-mxdel="' + i + '" aria-label="Delete main printer">🗑</button></div>' + kpTypes("m" + i, m.skip) + kpBackups(m.backups, "m" + i) + "</div>";
+        '<button class="btn ghost sm" data-test="' + i + '">Test print</button><button class="kp-del" data-mxdel="' + i + '" aria-label="Delete main printer">🗑</button></div>' + kpTypes("m" + i, m) + kpBackups(m.backups, "m" + i) + "</div>";
     }).join("") + '<div class="kp-row"><button class="kp-add" id="kpAddMain">+ Add main printer</button><span class="mute kp-small">every main prints its own copy of each bill no sub main takes</span></div>' +
     '<label class="kp-sw2"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + "> Bill slips: print the whole order</label></div>";
   // category & item printers
@@ -588,7 +610,7 @@ function kpDraw() {
     return '<div class="kp-line' + (l.off ? " off" : "") + '"><div class="kp-row"><div class="kp-seg sm"><button data-kind="' + i + ':cat" aria-pressed="' + (l.kind !== "item") + '">Category</button><button data-kind="' + i + ':item" aria-pressed="' + (l.kind === "item") + '">Item</button></div>' +
       l.values.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-tagdel="' + i + ":" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
       kpPick('data-addval="' + i + '"', taken, l.kind !== "item", l.kind === "item") + '<span class="kp-sp"></span>' + kpSel(l.printer, "", 'data-lp="' + i + '"') + kpSwitch("l" + i, l.off) + '<button class="kp-del" data-ldel="' + i + '" aria-label="Delete line">🗑</button></div>' +
-      kpTypes("l" + i, l.skip) + kpBackups(l.backups, "l" + i) + "</div>";
+      kpTypes("l" + i, l) + kpBackups(l.backups, "l" + i) + "</div>";
   }).join("") + '<div class="kp-row"><button class="kp-add" id="kpAddLine">+ Add line</button></div></div>';
   h += '<div class="kp-save"><button class="kp-savebtn' + (KPdirty ? " dirty" : "") + '" id="kpSave" data-save="1">' + (KPdirty ? "Save changes" : "Saved ✓") + "</button>" + '<span class="dummy"></span><span class="msg' + (KPmsg ? (KPmsg.ok ? " ok" : " bad") : "") + '" id="kpMsg">' + (KPmsg ? esc(KPmsg.msg) : "") + '</span><a class="mute" href="/console/api/direct/test" target="_blank" rel="noopener">See a sample slip</a></div>';
   h += '<div class="panel"><h2>Always on</h2><p class="help">✓ Starts with Windows, before anyone logs in &nbsp; ✓ Restarts within 2 s if it stops &nbsp; ✓ Starts again within a minute if someone stops it in Services &nbsp; ✓ This PC never sleeps or hibernates while the Console runs (the display may turn off)</p>' +
@@ -609,6 +631,25 @@ document.addEventListener("click", function (e) {
   else if (d.mode) c.mode = d.mode;
   else if (d.type) { if (d.type === "all") c.types = c.types.length === 4 ? ["D"] : ["D", "P", "I", "S"]; else { var i = c.types.indexOf(d.type); if (i >= 0) c.types.splice(i, 1); else c.types.push(d.type); } }
   else if (d.tog) { var o = kpObj(d.tog); o.off = !o.off; }
+  else if (d.dch) { KPexp[d.dch] = !KPexp[d.dch]; kpDraw(); return; }
+  else if (d.chall) { var ao = kpObj(d.chall); ao.chans = []; kpDOn(ao, true); }
+  else if (d.choff) { var fo = kpObj(d.choff); fo.chans = []; kpDOn(fo, false); }
+  else if (d.ch) {
+    var cq = d.ch.split(":"), co = kpObj(cq[0]), name = KP.chans[+cq[1]], lc = name.toLowerCase();
+    if (co.skip.indexOf("D") >= 0) { kpDOn(co, true); co.chans = [name]; }
+    else if (!co.chans.length) co.chans = KP.chans.filter(function (x) { return x.toLowerCase() !== lc; }); // all: untick this one
+    else {
+      var ci = -1; co.chans.forEach(function (x, i) { if (x.toLowerCase() === lc) ci = i; });
+      if (ci >= 0) co.chans.splice(ci, 1); else co.chans.push(name);
+      if (!co.chans.length) kpDOn(co, false); // none ticked: no online orders here
+    }
+  }
+  else if (d.chadd) {
+    var inp = $("kpCh_" + d.chadd), nm = (inp && inp.value || "").trim();
+    if (!nm) return;
+    if (!KP.chans.some(function (x) { return x.toLowerCase() === nm.toLowerCase(); })) { KP.chans.push(nm); c.extraChans.push(nm); }
+    var ad = kpObj(d.chadd); if (ad.skip.indexOf("D") < 0 && ad.chans.length && ad.chans.indexOf(nm) < 0) ad.chans.push(nm);
+  }
   else if (d.ot) { var q = d.ot.split(":"), sk = kpObj(q[0]).skip, si = sk.indexOf(q[1]); if (si >= 0) sk.splice(si, 1); else sk.push(q[1]); }
   else if (d.bkadd) { var L = kpObj(d.bkadd).backups; if (L.length < 3) L.push(""); }
   else if (d.bkdel) { var p = d.bkdel.split(":"); kpObj(p[0]).backups.splice(+p[1], 1); }
@@ -618,9 +659,9 @@ document.addEventListener("click", function (e) {
   else if (d.ldel) c.lines.splice(+d.ldel, 1);
   else if (d.sxdel) c.subs.splice(+d.sxdel, 1);
   else if (d.mxdel) c.mains.splice(+d.mxdel, 1);
-  else if (b.id === "kpAddMain") c.mains.push({ printer: "", backups: [], skip: [] });
-  else if (b.id === "kpAddLine") c.lines.push({ kind: "cat", values: [], printer: "", backups: [], skip: [] });
-  else if (b.id === "kpAddSub") c.subs.push({ cats: [], items: [], printer: "", backups: [], skip: [] });
+  else if (b.id === "kpAddMain") c.mains.push({ printer: "", backups: [], skip: [], chans: [] });
+  else if (b.id === "kpAddLine") c.lines.push({ kind: "cat", values: [], printer: "", backups: [], skip: [], chans: [] });
+  else if (b.id === "kpAddSub") c.subs.push({ cats: [], items: [], printer: "", backups: [], skip: [], chans: [] });
   else if (d.test !== undefined) { var tp = (c.mains[+d.test] || {}).printer; post("/console/api/direct/test", { Printer: tp || "" }).then(function (r) { KPmsg = r; kpDraw(); }); return; }
   else if (d.save) {
     var out = JSON.parse(JSON.stringify(c));
