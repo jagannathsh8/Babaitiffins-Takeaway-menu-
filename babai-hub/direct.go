@@ -691,6 +691,7 @@ func directPrint(c DirectCfg, k Kot, seen time.Time) {
 	j := &Job{ID: newUUID(), Token: token, CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), Source: "console",
 		Status: "sending", Attempts: 1, Recv: seen.UnixMilli(), IdentBy: "petpooja"}
 	fillJobFromKot(j, &k)
+	j.Metadata = &ReceiptMeta{Brand: brandOf(k), OrderID: k.POID, Method: "console"}
 	saveJobLocked(j)
 	prJobs = append(prJobs, j)
 	prLastKOT = time.Now()
@@ -815,8 +816,11 @@ func directReprint(j *Job) {
 // Returns false when it must not print (the Console prints this order).
 func directBridgeHold(j *Job) bool {
 	c := directConfig()
-	if c.Mode == "bridge" || j.Kot == 0 {
+	if c.Mode == "bridge" {
 		return true
+	}
+	if !waitForKot(j) {
+		return true // still unknown after 10 s: print it, as before (never lose a slip)
 	}
 	var k Kot
 	ppMu.Lock()
@@ -879,6 +883,45 @@ func directBridgeHold(j *Job) bool {
 			}
 		}
 		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// waitForKot: Petpooja's slip not matched to its order yet (OCR, a slow Petpooja list): wait up to
+// 10 s for the match, or for the Console's own slip with the order ID read from it, before the
+// slip may print with a slot of its own (4.15.1: the cause of "slip says 8, TV says 7").
+func waitForKot(j *Job) bool {
+	for end := time.Now().Add(directBackupWait); ; time.Sleep(250 * time.Millisecond) {
+		prMu.Lock()
+		kot := j.Kot
+		oid := ""
+		if j.Metadata != nil {
+			oid = digitsOnly(j.Metadata.OrderID)
+		}
+		var cj *Job
+		if kot == 0 && len(oid) >= 6 {
+			for i := len(prJobs) - 1; i >= 0; i-- {
+				x := prJobs[i]
+				if x.Source == "console" && x.Metadata != nil {
+					d := digitsOnly(x.Metadata.OrderID)
+					if len(d) >= 6 && (d == oid || len(oid) >= 8 && (strings.HasSuffix(d, oid) || strings.HasSuffix(oid, d))) {
+						cj = x
+						break
+					}
+				}
+			}
+			if cj != nil {
+				j.Kot, j.KotNo, j.OrderType, j.Platform, j.Items, j.Brands = cj.Kot, cj.KotNo, cj.OrderType, cj.Platform, cj.Items, cj.Brands
+				kot = cj.Kot
+				saveJobLocked(j)
+			}
+		}
+		prMu.Unlock()
+		if kot != 0 {
+			return true
+		}
+		if time.Now().After(end) {
+			return false
+		}
 	}
 }
 

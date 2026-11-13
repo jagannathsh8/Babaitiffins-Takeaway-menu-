@@ -258,7 +258,7 @@ func processJob(j *Job, raw []byte) {
 		}
 		saveJobLocked(j)
 		prMu.Unlock()
-		if kot != nil {
+		if kot != nil && consoleJobFor(kot.ID) == nil { // the Console's slip keeps the order's slot
 			orderPrinted(kot, j)
 		}
 	}
@@ -284,6 +284,16 @@ func linkJob(j *Job, k *Kot, by string) {
 		saveJobLocked(j)
 	}
 	prMu.Unlock()
+	if cj := consoleJobFor(k.ID); cj != nil && cj != j {
+		// Petpooja's slip found its order only after it printed: the Console's slip is the slot
+		prMu.Lock()
+		bt, ct, printed := j.Token, cj.Token, j.Status == "sent" && !strings.HasPrefix(j.Destination, "Not printed")
+		prMu.Unlock()
+		if printed && bt != ct {
+			addAlert("bad", "", fmt.Sprintf("Order …%s: Petpooja's slip printed slot %d, the Console's slip says slot %d. Use slot %d.", last4Of(k.POID), bt, ct, ct), ct)
+		}
+		return
+	}
 	orderPrinted(k, j)
 }
 
@@ -473,14 +483,16 @@ func localPrinting() bool {
 func localSlot(d string) string {
 	prMu.Lock()
 	defer prMu.Unlock()
-	for i := len(prJobs) - 1; i >= 0; i-- {
-		j := prJobs[i]
-		if j.Metadata == nil {
-			continue
-		}
-		k := digitsOnly(j.Metadata.OrderID)
-		if len(k) >= 4 && (k == d || (len(k) >= 8 && len(d) >= 8 && (strings.HasSuffix(k, d) || strings.HasSuffix(d, k)))) {
-			return itoa(j.Token)
+	for pass := 0; pass < 2; pass++ { // the Console's own slips first
+		for i := len(prJobs) - 1; i >= 0; i-- {
+			j := prJobs[i]
+			if j.Metadata == nil || (pass == 0) != (j.Source == "console") {
+				continue
+			}
+			k := digitsOnly(j.Metadata.OrderID)
+			if len(k) >= 4 && (k == d || (len(k) >= 8 && len(d) >= 8 && (strings.HasSuffix(k, d) || strings.HasSuffix(d, k)))) {
+				return itoa(j.Token)
+			}
 		}
 	}
 	// older prints (jobs leave after 2 h): the order records keep the token
@@ -497,6 +509,13 @@ func localSlot(d string) string {
 // slotForKot: the token of a KOT: the print linked to it, else by its order number.
 func slotForKot(id int64, poid string) string {
 	prMu.Lock()
+	for i := len(prJobs) - 1; i >= 0; i-- { // the Console's own slip is the slot (4.15.1)
+		if prJobs[i].Kot == id && prJobs[i].Source == "console" && prJobs[i].Token > 0 {
+			t := prJobs[i].Token
+			prMu.Unlock()
+			return itoa(t)
+		}
+	}
 	for i := len(prJobs) - 1; i >= 0; i-- {
 		if prJobs[i].Kot == id {
 			t := prJobs[i].Token
