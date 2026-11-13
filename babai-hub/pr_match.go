@@ -130,7 +130,7 @@ func tryMatch(j *Job, slip *ReceiptMeta, waiting []*Job) *matchResult {
 			k := best[0]
 			return &matchResult{&k, "ocr"}
 		}
-		if len(best) == 0 {
+		if len(best) == 0 && slip.Method != "text" { // a misread digit happens only in OCR, never in slip text
 			if k := nearID(d, slip.Brand); k != nil {
 				return &matchResult{k, "ocr"}
 			}
@@ -404,6 +404,9 @@ func nearID(d, brand string) *Kot {
 		p := digitsOnly(k.POID)
 		if len(p) < 8 || !slipFits(brand, k) {
 			continue
+		}
+		if _, linked := mkLinked[k.ID]; linked {
+			continue // already has its own slip: a near number is another order
 		}
 		same := false
 		if len(p) == len(d) {

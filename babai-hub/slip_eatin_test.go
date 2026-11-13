@@ -59,3 +59,28 @@ func TestEatInPrintLinksToItsOrder(t *testing.T) {
 		t.Fatalf("EatIn print not linked to its order: %+v", r)
 	}
 }
+
+// Two Swiggy orders a digit apart: a slip in text (no OCR misreads) and a KOT that already has
+// its own slip never take a near number for the order.
+func TestNearIDOnlyForOCRAndFreeKots(t *testing.T) {
+	now := time.Now()
+	mkMu.Lock()
+	defer mkMu.Unlock()
+	oldK, oldL := mkKots, mkLinked
+	defer func() { mkKots, mkLinked = oldK, oldL }()
+	mkKots = []Kot{{ID: 601, POID: "2530000000073601", Platform: "Swiggy", Online: true, OrderType: 1, Created: now.UnixMilli(), Status: "1"}}
+	mkLinked = map[int64]string{}
+	j := &Job{ID: "j1", Recv: now.UnixMilli()}
+	slip := ReceiptMeta{Brand: "Swiggy", OrderID: "2530000000073604", Method: "text"}
+	if r := tryMatch(j, &slip, []*Job{j}); r != nil {
+		t.Fatalf("slip text linked to a near order: %+v", r.kot)
+	}
+	slip.Method = "ocr"
+	if r := tryMatch(j, &slip, []*Job{j}); r == nil || r.kot.ID != 601 {
+		t.Fatalf("OCR misread not linked: %+v", r)
+	}
+	mkLinked[601] = "other"
+	if r := tryMatch(j, &slip, []*Job{j}); r != nil {
+		t.Fatalf("near number linked to a KOT that has its own slip: %+v", r.kot)
+	}
+}

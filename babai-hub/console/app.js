@@ -32,15 +32,16 @@ function brandColor(name, type) {
 }
 function last(s, n) { s = String(s || ""); return s.length > n ? "…" + s.slice(-n) : s; }
 
-var AREAS = {
-  bridge: { label: "Bridge Print", items: [["overview", "Overview"], ["dispatch", "Dispatch"], ["kotprint", "KOT printing"], ["rules", "Printers & rules"], ["timing", "Print timing"], ["alerts", "Alerts"], ["apps", "Apps"], ["screens", "Screens"], ["barker", "Dosa barker"]] },
-  hub: { label: "Hub", items: [["status", "Status"], ["petpooja", "Petpooja & Firebase"], ["scanners", "Scanners & rider"], ["pcscan", "PC scanner"], ["customers", "Customers' page"], ["pc", "This PC & updates"]] },
+var AREAS = { // 4.16: five areas
+  today: { label: "Today", items: [["dispatch", "Orders"], ["prints", "Prints"]], open: true },
+  printing: { label: "Printing", items: [["kotprint", "Printers"]], open: true },
+  screens: { label: "Screens", items: [["screensapps", "Screens & apps"]], open: true },
   metrics: { label: "Metrics", items: [["cx", "CX metrics"], ["ops", "Ops metrics"]], open: true },
-  data: { label: "Data", items: [["metrics", "Metrics"], ["prep", "Prep Live"], ["planner", "Indent planner"], ["cxsheet", "Ratings sheet"], ["sources", "Connections"]] }
+  setup: { label: "Setup", items: [["petpooja", "Petpooja"], ["scanners", "Scanners"], ["customers", "Customers' page"], ["sources", "Connections"], ["pc", "This PC"], ["metrics", "Day report"]] }
 };
-var HUBFRAME = { status: "now,qr", petpooja: "pp,fb,raw", scanners: "scanners", customers: "qr,dishes", prep: "prep" };
-var S = null, offset = 0, area = LS.get("area", "bridge"), tab = null, loop = null, counts = {};
-if (!AREAS[area]) area = "bridge";
+var HUBFRAME = { petpooja: "pp,fb,raw", customers: "qr,dishes" };
+var S = null, offset = 0, area = LS.get("area", "today"), tab = null, loop = null, counts = {};
+if (!AREAS[area]) area = "today";
 tab = area === "metrics" ? "cx" : LS.get("tab." + area, AREAS[area].items[0][0]);
 (function fromHash() {
   var h = location.hash.replace("#", "");
@@ -52,12 +53,13 @@ function now() { return Date.now() + offset; }
 // ---- frame: top bar, tabs, rail ---------------------------------------------------------------
 function renderRail() {
   var open = LS.get("railOpen", true);
+  $("rail").hidden = AREAS[area].items.length < 2; // one page: no sub-tabs (4.16)
   var html = '<button class="arrow" id="railArrow" aria-expanded="' + open + '" title="' + (open ? "Hide sections" : "Show sections") + '" aria-label="Sections">▼</button>';
   AREAS[area].items.forEach(function (it) {
     if (!open && it[0] !== tab) return; // closed: only the open section
     var k = counts[it[0]];
     html += '<button class="tab" role="tab" data-tab="' + it[0] + '" aria-selected="' + (it[0] === tab) + '">' + esc(it[1]) +
-      (k ? '<span class="k' + (it[0] === "alerts" ? " alert" : "") + '">' + k + "</span>" : "") + "</button>";
+      (k ? '<span class="k' + (it[0] === "prints" ? " alert" : "") + '">' + k + "</span>" : "") + "</button>";
   });
   $("rail").innerHTML = html;
   document.querySelectorAll(".mt").forEach(function (b) { b.setAttribute("aria-selected", String(b.dataset.area === area)); });
@@ -77,7 +79,7 @@ document.querySelector(".mtabs").addEventListener("click", function (e) {
   render();
 });
 $("lockBtn").onclick = function () {
-  post("/lock").then(function () { if (S) S.unlocked = false; area = "bridge"; tab = LS.get("tab.bridge", "overview"); LS.set("area", area); render(); });
+  post("/lock").then(function () { if (S) S.unlocked = false; area = "today"; tab = "dispatch"; LS.set("area", area); render(); });
 };
 
 function setFrame(src) {
@@ -95,8 +97,7 @@ function render() {
   if (loop) { clearInterval(loop); loop = null; }
   renderRail();
   $("lockBtn").hidden = !(S && S.unlocked);
-  if (area !== "bridge" && !AREAS[area].open && !(S && S.unlocked)) { pinView(); return; }
-  if (tab === "overview") { setFrame("http://127.0.0.1:8787/"); return; }
+  if (!AREAS[area].open && !(S && S.unlocked)) { pinView(); return; }
   if (HUBFRAME[tab]) { setFrame("/hub?show=" + HUBFRAME[tab]); return; }
   var v = VIEWS[tab];
   if (!v) { setMain('<p class="empty">Not found.</p>'); return; }
@@ -106,7 +107,7 @@ function render() {
 }
 
 function pinView() {
-  setMain('<div class="panel pin"><h2>' + esc(AREAS[area].label) + ' is locked</h2><p class="help">Enter the PIN to open Hub and Data. Bridge Print is open to everyone.</p>' +
+  setMain('<div class="panel pin"><h2>' + esc(AREAS[area].label) + ' is locked</h2><p class="help">Enter the PIN to open Setup.</p>' +
     '<form id="pinf"><input id="pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" aria-label="PIN" placeholder="PIN"><button class="btn p">Open</button></form>' +
     '<p class="msg bad" id="pinmsg" role="status"></p></div>');
   $("pin").focus();
@@ -150,7 +151,7 @@ function loadState() {
       lastAlertSeen = s.lastAlert.t; LS.set("alertSeen", lastAlertSeen);
       if (s.sound) beep();
     }
-    counts.alerts = s.alertsRecent || "";
+    counts.prints = s.alertsRecent || "";
     if (!!wasUnlocked !== !!s.unlocked) render(); else renderRail();
   }).catch(function () {
     $("pills").innerHTML = pill("bad", "Console not answering");
@@ -485,11 +486,11 @@ VIEWS.alerts = {
 
 // ---- Apps --------------------------------------------------------------------------------------
 VIEWS.apps = {
-  html: function () { return '<p class="help">Phones, tablets and Android TVs on the shop Wi-Fi can install these from this PC. Scan the code with the phone camera.</p><div class="apps" id="apl"></div>'; },
+  html: function () { return '<div class="apps" id="apl"></div>'; },
   load: function () {
     getJ("/console/api/apps").then(function (d) {
       var link = (d.links || [])[0] || "";
-      $("apl").innerHTML = '<div class="panel"><h2>Download page</h2><p class="help">Open on the phone or TV:</p><p><b>' + esc(link || "No network address") + '</b></p><div class="qr" id="qrall"></div></div>' +
+      $("apl").innerHTML = '<div class="panel"><h2>Install the apps</h2><p class="help">Scan with the TV or phone:</p><p><b>' + esc(link || "No network address") + '</b></p><div class="qr" id="qrall"></div></div>' +
         (d.apps || []).map(function (a) {
           return '<div class="panel"><h2>' + esc(a.Name) + '</h2><p class="help">' + esc(a.What) + "</p>" + (a.Ready ? '<p><span class="chip ok">Build ' + a.Build + " · " + esc(a.Size) + "</span></p>" : '<p><span class="chip warn">' + esc(a.State) + "</span></p>") + "</div>";
         }).join("");
@@ -510,22 +511,18 @@ VIEWS.kotprint = {
       c.subs.forEach(function (x) { x.cats = x.cats || []; x.items = x.items || []; x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
       c.lines.forEach(function (x) { x.values = x.values || []; x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
       c.extraChans = c.extraChans || []; KP.chans = KP.chans || [];
+      getJ("/console/api/rules").then(function (r) { KP.lan = (r.options && r.options.lan) || []; if (KPnet) kpDraw(); }).catch(function () {});
       kpDraw();
     }).catch(function () {});
   }
 };
 var KP_OT = [["D", "Delivery"], ["P", "Pick up"], ["I", "Dine in"], ["S", "Self service"]];
 var KP_HELP = [
-  ["1 · Choose who prints the KOTs", ["<b>Bridge Print only</b>: as before; Petpooja's slip prints through Bridge Print with the slot.", "<b>Console only</b>: only the Console's new slip prints; Petpooja's copy is not printed.", "<b>Console + Bridge backup</b> (start with this): the Console prints; if its slip doesn't go out in 10 seconds, Petpooja's slip prints instead, with the same slot."]],
-  ["2 · Which orders the Console prints", ["<b>Delivery / Online</b> is on by default; tap it to turn it off. Tap <b>Pick up</b>, <b>Dine in</b>, <b>Self service</b> to add them, or <b>All</b>.", "Order types left off keep printing through Bridge Print."]],
-  ["3 · Main and sub main printers (the whole bill with the slot)", ["Pick a <b>Main</b> printer: it prints <b>all other bills</b>. <b>+ Add main printer</b> adds another (e.g. packing): every main prints its own copy; 🗑 deletes one.", "Press <b>+ Add sub main printer</b>, add categories or items (e.g. Dosa) and pick its printer: any bill that contains one of them prints <b>whole</b> on the sub main instead.", "Sub mains are checked top to bottom; a bill goes to the first one it matches. Each bill prints once.", "<b>Print the whole order</b> (on the main): off = the bill slip leaves out what a category / item printer already prints."]],
-  ["4 · Category & item printers (a station's part, no slot)", ["<b>+ Add line</b>, choose <b>Category</b> or <b>Item</b>, add the names from the list (your Petpooja menu), pick the printer.", "That printer gets only those dishes, under the station name (e.g. DOSA), without the slot, with “Also on this order”.", "A dish named in an item line goes there, not to a category line."]],
-  ["5 · “Prints for” buttons", ["Every printer has Delivery · Pick up · Dine in · Self service. Tap one to turn it off: that printer then skips those orders.", "A new printer starts with all on.", "<b>Delivery / Online</b> opens its <b>channels</b> (Swiggy, Zomato, Go Self Serve …, as Petpooja names them; a new channel shows with its first order, or add it by hand). <b>All channels</b> takes new channels too; tap channels to choose; <b>Off</b>: no online orders.", "<b>One bill:</b> an online order whose channel no main / sub main printer has ticked is <b>not printed at all</b>, not even by Bridge Print."]],
-  ["6 · Backup printers (up to 3)", ["<b>+ Backup</b> adds one. They are tried in order when the printer is offline, out of paper or stuck; Alerts shows each time."]],
-  ["7 · On / Off switch", ["Off pauses a printer and keeps its setup.", "A sub main that is off: its bills go to the Main. A line that is off: its dishes stay only on the bill slip.", "Every main off: bills no sub main takes print through Bridge Print, so nothing is lost."]],
-  ["8 · Test print, paper size and cutting", ["<b>Test print</b> sends a sample slip. 80 or 58 mm is found from the printer's name; the printer cuts after each slip (printers without a cutter leave it to tear)."]],
-  ["9 · What the slip shows", ["Bill slip (main / sub main): the big SLOT (online) or TOKEN, date and KOT, brand, order ID with the <b>last 4 big and bold</b>, DELIVERY / PICK UP / DINE IN, items with <b>add-ons in thin boxes</b> and notes, total, customer note, barcode “Scan to mark Food ready”.", "Online orders: the rider's <b>OTP</b> (Zomato) or <b>Delivery Passcode</b> (Swiggy) under the order ID, on every main and sub main slip.", "Station slip: the same without the slot and OTP, under the station name.", "A cancelled order prints a CANCELLED slip on the same printers."]],
-  ["10 · If something goes wrong", ["<b>A printer is offline</b>: its backup prints; see Alerts.", "<b>Nothing prints</b>: is the Console reading Petpooja (top bar)? With Console + Bridge backup, Petpooja's slip prints anyway.", "<b>Two slips for one order</b>: a reprint from Petpooja (2 minutes or more later) prints on purpose."]]
+  ["1 · How printing works", ["The Console prints every KOT: <b>one slip and one slot per order</b>. The slip, the TV, the scanners and every screen use that slot.", "Petpooja's own slip still reaches this PC: it is only read (OTP / passcode, Bolt) and not printed."]],
+  ["2 · Add printers", ["<b>+ Add printer → Main</b>: prints the whole bill with the slot. Add more mains for more copies (e.g. packing).", "<b>Sub main</b>: bills that contain the chosen categories or items print whole here instead of on the mains.", "<b>Category / Item</b>: a slip with just those dishes (no slot).", "<b>+ Network printer (IP)</b> adds a printer by its address; Windows printers show by themselves."]],
+  ["3 · For", ["Tap <b>Pick up</b>, <b>Dine in</b>, <b>Self service</b> to switch them on or off for that printer.", "<b>Online</b> opens its channels: <b>All</b> (new channels too), pick channels, or <b>Off</b>. A new channel from Petpooja shows with its first order; + Add channel adds one before.", "An order no printer is set for is <b>not printed</b>."]],
+  ["4 · Safety net (automatic)", ["A printer fails: its <b>backup</b> prints, same slot.", "No printer took the slip within 10 s: <b>Petpooja's slip</b> prints on the order's printer, same slot, and an alert shows.", "Petpooja can't be read: Petpooja's slips print, as Bridge Print did."]],
+  ["5 · Emergency switch", ["On: Petpooja's slips print (with slots) instead of the Console's, on the main printers here. Off again: the Console prints."]]
 ];
 function kpSel(val, cls, attr) {
   var o = '<option value="">Choose a printer</option>' + (KP.printers || []).map(function (p) { return '<option value="' + esc(p.name) + '"' + (p.name === val ? " selected" : "") + ">" + esc(p.label) + "</option>"; }).join("");
@@ -553,19 +550,19 @@ function kpChanLabel(o) {
 }
 function kpTypes(k, o) {
   var skip = o.skip, open = !!KPexp[k], dOn = skip.indexOf("D") < 0;
-  var h = '<div class="kp-row kp-ot"><span class="kp-lbl">Prints for</span>' + KP_OT.map(function (t) {
+  var h = '<div class="kp-ot2">' + KP_OT.map(function (t) {
     var on = skip.indexOf(t[0]) < 0;
-    if (t[0] === "D") return '<button class="kp-o kp-dch' + (on ? " on" : "") + (open ? " open" : "") + '" data-dch="' + k + '" aria-expanded="' + open + '">' + (on ? "✓ " : "") + "Delivery / Online <i>· " + esc(kpChanLabel(o)) + "</i> " + (open ? "▴" : "▾") + "</button>";
+    if (t[0] === "D") return '<button class="kp-o kp-dch' + (on ? " on" : "") + (open ? " open" : "") + '" data-dch="' + k + '" aria-expanded="' + open + '">' + (on ? "✓ " : "") + "Online <i>· " + esc(kpChanLabel(o)) + "</i> " + (open ? "▴" : "▾") + "</button>";
     return '<button class="kp-o' + (on ? " on" : "") + '" data-ot="' + k + ":" + t[0] + '" aria-pressed="' + on + '">' + (on ? "✓ " : "") + t[1] + "</button>";
   }).join("") + "</div>";
   if (!open) return h;
   var all = dOn && !o.chans.length, list = KP.chans || [];
-  h += '<div class="kp-row kp-chans"><span class="kp-lbl">Channels</span>' +
+  h += '<div class="kp-chans">' +
     '<button class="kp-o all' + (all ? " on" : "") + '" data-chall="' + k + '">' + (all ? "✓ " : "") + "All channels</button>" +
     list.map(function (ch, i) { var on = dOn && (all || o.chans.some(function (x) { return x.toLowerCase() === ch.toLowerCase(); })); return '<button class="kp-o' + (on ? " on" : "") + (all ? " soft" : "") + '" data-ch="' + k + ":" + i + '">' + (on ? "✓ " : "") + esc(ch) + "</button>"; }).join("") +
     '<button class="kp-o offb' + (dOn ? "" : " on") + '" data-choff="' + k + '">' + (dOn ? "" : "✓ ") + "Off</button>" +
     '<span class="kp-chadd"><input id="kpCh_' + k + '" placeholder="+ Add channel" aria-label="Add a channel"><button class="kp-add" data-chadd="' + k + '">Add</button></span>' +
-    '<span class="mute kp-small">' + (dOn ? (all ? "every online order prints here, new channels too" : "only these online orders print here") : "no online orders print here") + "</span></div>";
+    "</div>";
   return h;
 }
 function kpBackups(list, k) {
@@ -578,47 +575,57 @@ function kpPick(attr, taken, cats, items) {
   if (items) o += '<optgroup label="Items">' + (KP.items || []).filter(function (x) { return taken.indexOf("i:" + x) < 0; }).map(function (x) { return '<option value="i:' + esc(x) + '">' + esc(x) + "</option>"; }).join("") + "</optgroup>";
   return '<select class="kp-sel kp-addval" ' + attr + ">" + o + "</select>";
 }
+var KPadd = false, KPnet = false;
+function kpBk(list, k) {
+  return list.map(function (b, i) { return '<span class="kp-bk2">' + kpSel(b, "sm", 'data-bk="' + k + ":" + i + '"') + '<button class="kp-x" data-bkdel="' + k + ":" + i + '" aria-label="Remove backup">×</button></span>'; }).join("") +
+    (list.length < 3 ? '<button class="kp-plus" data-bkadd="' + k + '" aria-label="Add a backup printer">+</button>' : "");
+}
 function kpDraw() {
-  var c = KP.cfg, T = { D: "Delivery / Online", P: "Pick up", I: "Dine in", S: "Self service" }, t = KP.today || {};
-  var modes = [["bridge", "Bridge Print only"], ["console", "Console only"], ["both", "Console + Bridge backup"]];
-  var h = '<div class="panel"><div class="kp-hd"><h2>KOT printing</h2><button class="kp-help' + (KPhelp ? " on" : "") + '" id="kpHelp" aria-expanded="' + KPhelp + '">❓ Help</button><button class="kp-savebtn' + (KPdirty ? " dirty" : "") + '" data-save="1">' + (KPdirty ? "Save changes" : "Saved ✓") + "</button></div>" +
-    (KPmsg ? '<p class="msg kp-topmsg ' + (KPmsg.ok ? "ok" : "bad") + '">' + esc(KPmsg.msg) + "</p>" : "") +
-    '<div class="kp-row"><div class="kp-seg">' + modes.map(function (m) { return '<button data-mode="' + m[0] + '" aria-pressed="' + (c.mode === m[0]) + '">' + m[1] + "</button>"; }).join("") + "</div>" +
-    '<span class="mute kp-hint">' + { bridge: "Petpooja's slip through Bridge Print, as before", console: "Only the Console's slip prints", both: "Console prints; if it fails, Bridge Print prints" }[c.mode] + "</span></div>" +
-    '<div class="kp-row kp-chips"><span class="kp-lbl">Order types</span>' + ["D", "P", "I", "S"].map(function (x) { return '<button class="kp-chip' + (c.types.indexOf(x) >= 0 ? " on" : "") + '" data-type="' + x + '">' + (c.types.indexOf(x) >= 0 ? "✓ " : "") + T[x] + (x === "D" ? " <i>default</i>" : "") + "</button>"; }).join("") +
-    '<button class="kp-chip all" data-type="all">All</button></div>' +
-    '<p class="mute kp-today">Today: ' + (t.console || 0) + " slips by the Console · " + (t.bridge || 0) + " by Bridge Print · " + (t.skipped || 0) + " Petpooja slips not needed</p>" +
-    (KP.otp && KP.otp.at ? '<p class="mute kp-today">Delivery OTP / passcode · ' + esc(KP.otp.brand || "") + " …" + esc(KP.otp.order || "") + " at " + hm(KP.otp.at) + ': <b style="color:' + (KP.otp.ok ? "var(--ok,#0a8f4a)" : "#b91c1c") + '">' + esc(KP.otp.msg) + "</b></p>" : "") + "</div>";
-  if (KPhelp) h += '<div class="panel kp-helpbox"><div class="kp-hd"><h2>❓ How to set up KOT printing</h2><a href="#" id="kpExpand">Expand all</a></div>' + KP_HELP.map(function (x) { return "<details><summary>" + x[0] + "</summary><ul>" + x[1].map(function (l) { return "<li>" + l + "</li>"; }).join("") + "</ul></details>"; }).join("") + "</div>";
-  // main printers
-  h += '<div class="panel"><h2>Main printers <span class="mute kp-sub">· the whole bill with the slot</span></h2>' + c.subs.map(function (sm, i) {
+  var c = KP.cfg, H = KP.health || {}, em = c.mode !== "console";
+  var good = !em && H.pp && !(H.badPrinters || []).length && !H.mismatches;
+  var h = '<div class="panel kp2-st"><span class="kp2-big ' + (em ? "warn" : good ? "ok" : "bad") + '">' + (em ? "⚠ Emergency: Petpooja's slips print" : good ? "✓ Printing OK" : "⚠ Check printing") + "</span>" +
+    '<span class="kp2-pill ' + (H.pp ? "" : "bad") + '">Petpooja ' + (H.pp ? "✓" : "✕ not reading") + "</span>" +
+    '<span class="kp2-pill ' + ((H.badPrinters || []).length ? "bad" : "") + '">' + ((H.badPrinters || []).length ? "✕ " + esc(H.badPrinters.join(", ")) : "Printers ✓") + "</span>" +
+    '<span class="kp2-pill">Today ' + (H.orders || 0) + " orders · " + (H.slips || 0) + " slips</span>" +
+    '<span class="kp2-pill ' + (H.mismatches ? "bad" : "") + '">' + (H.mismatches || 0) + " slot mismatches</span>" +
+    (H.backups ? '<span class="kp2-pill warn">' + H.backups + " backup" + (H.backups > 1 ? "s" : "") + " used</span>" : "") +
+    '<span class="kp-sp"></span><button class="kp-tg' + (em ? " on warn" : "") + '" id="kpEmerg" aria-pressed="' + em + '" aria-label="Emergency switch"><i></i></button><span class="mute" title="Petpooja&#39;s own slips print (Bridge Print), for when the Console&#39;s printing has a problem">Emergency</span>' +
+    '<button class="kp-help' + (KPhelp ? " on" : "") + '" id="kpHelp" aria-expanded="' + KPhelp + '">❓ Help</button><button class="kp-savebtn' + (KPdirty ? " dirty" : "") + '" data-save="1">' + (KPdirty ? "Save changes" : "Saved ✓") + "</button></div>" +
+    (KPmsg ? '<p class="msg kp-topmsg ' + (KPmsg.ok ? "ok" : "bad") + '">' + esc(KPmsg.msg) + "</p>" : "");
+  if (KPhelp) h += '<div class="panel kp-helpbox"><div class="kp-hd"><h2>❓ How printing works</h2><a href="#" id="kpExpand">Expand all</a></div>' + KP_HELP.map(function (x) { return "<details><summary>" + x[0] + "</summary><ul>" + x[1].map(function (l) { return "<li>" + l + "</li>"; }).join("") + "</ul></details>"; }).join("") + "</div>";
+  var rows = [];
+  c.mains.forEach(function (m, i) { rows.push({ k: "m" + i, o: m, kind: "Main", cls: "", what: '<b>Whole bill</b><small>slot · OTP</small>', sel: kpSel(m.printer, "kp-main", 'data-mp="' + i + '"'), del: 'data-mxdel="' + i + '"' }); });
+  c.subs.forEach(function (sm, i) {
     var taken = sm.cats.map(function (x) { return "c:" + x; }).concat(sm.items.map(function (x) { return "i:" + x; }));
-    return '<div class="kp-box sub' + (sm.off ? " off" : "") + '"><div class="kp-row"><span class="kp-pill">Sub main ' + (i + 1) + '</span><span class="mute kp-b">Bills that contain any of</span>' +
-      sm.cats.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + ' · category<button class="kp-x" data-sdel="' + i + ":c:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
-      sm.items.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + ' · item<button class="kp-x" data-sdel="' + i + ":i:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
-      kpPick('data-sadd="' + i + '"', taken, true, true) + '<span class="kp-sp"></span>' + kpSel(sm.printer, "", 'data-sp="' + i + '"') + kpSwitch("s" + i, sm.off) + '<button class="kp-del" data-sxdel="' + i + '" aria-label="Delete sub main">🗑</button></div>' +
-      kpTypes("s" + i, sm) + kpBackups(sm.backups, "s" + i) + "</div>";
-  }).join("") + '<div class="kp-row"><button class="kp-add" id="kpAddSub">+ Add sub main printer</button><span class="mute kp-small">a bill goes to the first sub main it matches</span></div>' +
-    c.mains.map(function (m, i) {
-      return '<div class="kp-box' + (m.off ? " off" : "") + '"><div class="kp-row"><span class="kp-pill dark">Main ' + (i + 1) + '</span><span class="mute kp-b">All other bills</span><span class="kp-sp"></span>' + kpSel(m.printer, "kp-main", 'data-mp="' + i + '"') + kpSwitch("m" + i, m.off) + kpState(m.printer) +
-        '<button class="btn ghost sm" data-test="' + i + '">Test print</button><button class="kp-del" data-mxdel="' + i + '" aria-label="Delete main printer">🗑</button></div>' + kpTypes("m" + i, m) + kpBackups(m.backups, "m" + i) + "</div>";
-    }).join("") + '<div class="kp-row"><button class="kp-add" id="kpAddMain">+ Add main printer</button><span class="mute kp-small">every main prints its own copy of each bill no sub main takes</span></div>' +
-    '<label class="kp-sw2"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + "> Bill slips: print the whole order</label></div>";
-  // category & item printers
-  h += '<div class="panel"><h2>Category & item printers</h2>' + c.lines.map(function (l, i) {
+    rows.push({ k: "s" + i, o: sm, kind: "Sub main", cls: "s", what: '<b>Bills with</b> ' + sm.cats.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-sdel="' + i + ":c:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
+      sm.items.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-sdel="' + i + ":i:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") + kpPick('data-sadd="' + i + '"', taken, true, true),
+      sel: kpSel(sm.printer, "", 'data-sp="' + i + '"'), del: 'data-sxdel="' + i + '"' });
+  });
+  c.lines.forEach(function (l, i) {
     var taken = l.values.map(function (x) { return (l.kind === "item" ? "i:" : "c:") + x; });
-    return '<div class="kp-line' + (l.off ? " off" : "") + '"><div class="kp-row"><div class="kp-seg sm"><button data-kind="' + i + ':cat" aria-pressed="' + (l.kind !== "item") + '">Category</button><button data-kind="' + i + ':item" aria-pressed="' + (l.kind === "item") + '">Item</button></div>' +
-      l.values.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-tagdel="' + i + ":" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
-      kpPick('data-addval="' + i + '"', taken, l.kind !== "item", l.kind === "item") + '<span class="kp-sp"></span>' + kpSel(l.printer, "", 'data-lp="' + i + '"') + kpSwitch("l" + i, l.off) + '<button class="kp-del" data-ldel="' + i + '" aria-label="Delete line">🗑</button></div>' +
-      kpTypes("l" + i, l) + kpBackups(l.backups, "l" + i) + "</div>";
-  }).join("") + '<div class="kp-row"><button class="kp-add" id="kpAddLine">+ Add line</button></div></div>';
-  h += '<div class="kp-save"><button class="kp-savebtn' + (KPdirty ? " dirty" : "") + '" id="kpSave" data-save="1">' + (KPdirty ? "Save changes" : "Saved ✓") + "</button>" + '<span class="dummy"></span><span class="msg' + (KPmsg ? (KPmsg.ok ? " ok" : " bad") : "") + '" id="kpMsg">' + (KPmsg ? esc(KPmsg.msg) : "") + '</span><a class="mute" href="/console/api/direct/test" target="_blank" rel="noopener">See a sample slip</a></div>';
-  h += '<div class="panel"><h2>Always on</h2><p class="help">✓ Starts with Windows, before anyone logs in &nbsp; ✓ Restarts within 2 s if it stops &nbsp; ✓ Starts again within a minute if someone stops it in Services &nbsp; ✓ This PC never sleeps or hibernates while the Console runs (the display may turn off)</p>' +
-    '<p class="help">One-time job per PC: in the BIOS set <b>“Restore on AC power loss: Power On”</b>, so the PC switches itself on after a power cut.</p></div>';
+    rows.push({ k: "l" + i, o: l, kind: l.kind === "item" ? "Item" : "Category", cls: l.kind === "item" ? "i" : "c", what: l.values.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-tagdel="' + i + ":" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
+      kpPick('data-addval="' + i + '"', taken, l.kind !== "item", l.kind === "item"), sel: kpSel(l.printer, "", 'data-lp="' + i + '"'), del: 'data-ldel="' + i + '"' });
+  });
+  h += '<div class="panel"><div class="kp-hd"><h2>Printers</h2></div><div class="kp2-wrap"><table class="kp2"><thead><tr><th>Type</th><th>Prints</th><th>Printer</th><th>For</th><th>Backup</th><th>On</th><th></th></tr></thead><tbody>' +
+    rows.map(function (r) {
+      return '<tr class="' + (r.o.off ? "off" : "") + '"><td><span class="kp2-kind ' + r.cls + '">' + r.kind + '</span></td><td class="kp2-what">' + r.what + "</td><td>" + r.sel + kpState2(r.o.printer) + "</td><td class=\"kp2-for\">" + kpTypes(r.k, r.o) + '</td><td class="kp2-bk">' + kpBk(r.o.backups, r.k) + "</td><td>" + kpSwitch(r.k, r.o.off) + '</td><td><button class="kp-del" ' + r.del + ' aria-label="Delete">🗑</button></td></tr>';
+    }).join("") + (rows.length ? "" : '<tr><td colspan="7" class="mute">No printers yet: + Add printer, then Main.</td></tr>') + "</tbody></table></div>" +
+    '<div class="kp-row kp2-foot"><button class="kp-add" id="kpAddBtn" aria-expanded="' + KPadd + '">+ Add printer</button>' +
+    (KPadd ? '<button class="kp-o" id="kpAddMain">Main</button><button class="kp-o" id="kpAddSub">Sub main</button><button class="kp-o" id="kpAddLine">Category</button><button class="kp-o" id="kpAddItem">Item</button>' : "") +
+    '<span class="kp-sp"></span><button class="btn ghost sm" id="kpNetBtn">+ Network printer (IP)</button><button class="btn ghost sm" data-test="0">Test print</button><a class="mute" href="/console/api/direct/test" target="_blank" rel="noopener">Sample slip</a></div>' +
+    (KPnet ? '<div class="kp-row kp2-net"><input id="kpNetName" placeholder="Name, e.g. Packing"><input id="kpNetIP" placeholder="IP, e.g. 192.168.1.50"><input id="kpNetPort" value="9100" style="width:80px" aria-label="Port"><button class="kp-savebtn dirty" id="kpNetAdd">Add</button>' +
+      (KP.lan || []).map(function (l) { return '<span class="kp-tag">' + esc(l.name) + " · " + esc(l.ip) + '<button class="kp-x" data-netdel="' + esc(l.name) + '" aria-label="Remove">×</button></span>'; }).join("") + "</div>" : "") +
+    '<label class="kp-sw2"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + "> Bill slips: the whole order (off: leave out what a category / item printer prints)</label></div>";
   if (KPdirty) h += '<div class="kp-bar" role="status"><span>● Unsaved changes: printing works as before until you save.</span><button class="kp-savebtn dirty" data-save="1">Save changes</button><button class="kp-discard" id="kpDiscard">Discard</button></div>';
   var open = [].map.call(document.querySelectorAll("#kp details"), function (d) { return d.open; });
   $("kp").innerHTML = h;
   document.querySelectorAll("#kp details").forEach(function (d, i) { if (open[i]) d.open = true; });
+}
+function kpState2(name) {
+  var p = (KP.printers || []).filter(function (x) { return x.name === name; })[0];
+  if (!name) return "";
+  if (!p) return '<div class="kp-st bad">● not found</div>';
+  return p.problem ? '<div class="kp-st bad">● ' + esc(p.problem) + "</div>" : "";
 }
 document.addEventListener("click", function (e) {
   if (!KP || !$("kp") || !$("kp").contains(e.target)) return;
@@ -627,6 +634,21 @@ document.addEventListener("click", function (e) {
   var b = e.target.closest("button"); if (!b) return;
   var d = b.dataset;
   if (b.id === "kpDiscard") { KPmsg = null; VIEWS.kotprint.load(); return; }
+  if (b.id === "kpAddBtn") { KPadd = !KPadd; kpDraw(); return; }
+  if (b.id === "kpNetBtn") { KPnet = !KPnet; kpDraw(); return; }
+  if (b.id === "kpNetAdd" || d.netdel) {
+    var body = d.netdel ? { name: d.netdel, del: true } : { name: $("kpNetName").value, ip: $("kpNetIP").value, port: +$("kpNetPort").value || 9100 };
+    post("/console/api/netprinter", body).then(function (r) { KPmsg = r; if (r.ok) VIEWS.kotprint.load(); else kpDraw(); });
+    return;
+  }
+  if (b.id === "kpEmerg") {
+    var toE = c.mode === "console";
+    if (!confirm(toE ? "Emergency: Petpooja's slips print instead of the Console's (Bridge Print). Turn on?" : "Back to normal: the Console prints every KOT. Turn off the emergency?")) return;
+    var em = JSON.parse(JSON.stringify(c)); em.mode = toE ? "bridge" : "console";
+    em.mains = em.mains.filter(function (x) { return x.printer; });
+    post("/console/api/direct", em).then(function (r) { KPmsg = r; VIEWS.kotprint.load(); });
+    return;
+  }
   if (b.id === "kpHelp") KPhelp = !KPhelp;
   else if (d.mode) c.mode = d.mode;
   else if (d.type) { if (d.type === "all") c.types = c.types.length === 4 ? ["D"] : ["D", "P", "I", "S"]; else { var i = c.types.indexOf(d.type); if (i >= 0) c.types.splice(i, 1); else c.types.push(d.type); } }
@@ -659,12 +681,14 @@ document.addEventListener("click", function (e) {
   else if (d.ldel) c.lines.splice(+d.ldel, 1);
   else if (d.sxdel) c.subs.splice(+d.sxdel, 1);
   else if (d.mxdel) c.mains.splice(+d.mxdel, 1);
-  else if (b.id === "kpAddMain") c.mains.push({ printer: "", backups: [], skip: [], chans: [] });
-  else if (b.id === "kpAddLine") c.lines.push({ kind: "cat", values: [], printer: "", backups: [], skip: [], chans: [] });
-  else if (b.id === "kpAddSub") c.subs.push({ cats: [], items: [], printer: "", backups: [], skip: [], chans: [] });
+  else if (b.id === "kpAddMain") { c.mains.push({ printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
+  else if (b.id === "kpAddLine") { c.lines.push({ kind: "cat", values: [], printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
+  else if (b.id === "kpAddItem") { c.lines.push({ kind: "item", values: [], printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
+  else if (b.id === "kpAddSub") { c.subs.push({ cats: [], items: [], printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
   else if (d.test !== undefined) { var tp = (c.mains[+d.test] || {}).printer; post("/console/api/direct/test", { Printer: tp || "" }).then(function (r) { KPmsg = r; kpDraw(); }); return; }
   else if (d.save) {
     var out = JSON.parse(JSON.stringify(c));
+    if (out.mode !== "bridge") out.mode = "console";
     out.mains = out.mains.filter(function (x) { return x.printer; }).map(function (x) { x.backups = x.backups.filter(Boolean); return x; });
     out.subs = out.subs.filter(function (x) { return x.printer || x.cats.length || x.items.length; }).map(function (x) { x.backups = x.backups.filter(Boolean); return x; });
     out.lines = out.lines.filter(function (l) { return l.printer || l.values.length; }).map(function (l) { l.backups = l.backups.filter(Boolean); return l; });
@@ -693,9 +717,8 @@ document.addEventListener("change", function (e) {
 VIEWS.screens = {
   every: 10000,
   html: function () {
-    return '<div class="panel"><h2>Babai Screens</h2><p class="help">Every TV, tablet or monitor showing a Babai screen, and when it last checked in. Install the <b>Babai Screens</b> app from the Apps page (or by USB), open it, and pick the screen once. A kitchen screen asks for the Console PIN once.</p><div id="scl"></div></div>' +
-      '<div class="panel"><div class="hd"><h2>Ready tokens leave the screens</h2></div><p class="help">On the Dosa order status and Pick-up screens, a ready token goes off the screen by itself after this time. It goes at once when it is triple-tapped on the Pick-up TV or dispatched on a kitchen screen. Off: it stays until then.</p><div class="seg" id="acl" role="group" aria-label="Auto clear"><button data-v="-1">Off</button><button data-v="30">30 min</button><button data-v="45">45 min</button><button data-v="60">1 hour</button></div> <span class="msg" id="aclm"></span></div>' +
-      '<div class="panel"><h2>Screens</h2><div class="tw"><table><thead><tr><th>Screen</th><th>Device</th><th>App</th><th>Address</th><th>Last seen</th></tr></thead><tbody id="sct"></tbody></table></div></div>';
+    return '<div class="panel"><div class="hd"><h2>Ready tokens leave the screens after</h2></div><div class="seg" id="acl" role="group" aria-label="Auto clear"><button data-v="-1">Off</button><button data-v="30">30 min</button><button data-v="45">45 min</button><button data-v="60">1 hour</button></div> <span class="msg" id="aclm"></span></div>' +
+      '<div class="panel"><h2>Screens</h2><div id="scl"></div><div class="tw"><table><thead><tr><th>Screen</th><th>Device</th><th>App</th><th>Address</th><th>Last seen</th></tr></thead><tbody id="sct"></tbody></table></div></div>';
   },
   load: function () {
     getJ("/console/api/screens").then(function (d) {
@@ -788,8 +811,8 @@ VIEWS.metrics = {
   },
   every: 30000
 };
-VIEWS.sources = {
-  html: function () { return '<div class="panel"><div class="hd"><h2>Connections</h2><span class="sub">Where the data comes from and goes to</span></div><div id="srcl"></div></div>'; },
+VIEWS.sources0 = {
+  html: function () { return '<div class="panel"><div class="hd"><h2>Connections</h2></div><div id="srcl"></div></div>'; },
   load: function () {
     getJ("/console/api/sources").then(function (d) {
       $("srcl").innerHTML = (d.sources || []).map(function (s) {
@@ -875,7 +898,7 @@ VIEWS.pcscan = {
       '<p class="help"><b>COM mode</b>: works in the background whatever window is in front. Switch the scanner to “USB COM / virtual serial” with the setup barcode in its manual, plug it in, choose its port here.</p>' +
       '<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><label for="comp" class="help">COM scanner</label><select id="comp"></select><button class="btn p" id="coms">Save</button><button class="btn" id="comr">Refresh ports</button></div>' +
       '<p class="msg" id="comm"></p><p class="msg" id="comst"></p>' +
-      '<p class="help">Same rules as the scanner phones: any KOT or bill barcode of an open order; every KOT of the bill; scanning again says “already food ready”; each scan is in the scan log (Hub › Scanners &amp; rider).</p></div>';
+      '<p class="help">Same rules as the scanner phones: any KOT or bill barcode of an open order; every KOT of the bill; scanning again says “already food ready”; each scan is in the scan log above.</p></div>';
   },
   init: function () {
     $("coms").onclick = function () {
@@ -899,6 +922,54 @@ VIEWS.pcscan = {
       var e = $("comst");
       e.textContent = !st.port ? "COM scanner off." : st.open ? "Reading " + st.port + " · ready to scan" + (st.lastAt ? " · last scan " + hms(st.lastAt) + " (…" + String(st.lastCode).slice(-4) + ")" : "") : (st.err || "Opening " + st.port + "…");
       e.className = "msg " + (!st.port ? "" : st.open ? "ok" : "bad");
+    }).catch(function () {});
+  },
+  every: 3000
+};
+
+// ---- 4.16: pages made of other pages ------------------------------------------------------------
+function hubPart(show, h) {
+  return '<iframe class="subframe" style="width:100%;min-height:' + (h || 420) + 'px;border:0" src="/hub?show=' + show + '" title="' + show + '" onload="try{this.style.height=(this.contentWindow.document.body.scrollHeight+20)+\'px\'}catch(e){}"></iframe>';
+}
+function combo(keys, pre, post) {
+  return {
+    html: function () { return (pre || "") + keys.map(function (k) { return VIEWS[k].html(); }).join("") + (post || ""); },
+    load: function () { keys.forEach(function (k) { if (VIEWS[k].load) VIEWS[k].load(); }); },
+    every: Math.min.apply(null, keys.map(function (k) { return VIEWS[k].every || 60000; }))
+  };
+}
+VIEWS.barkerlink = {
+  html: function () { return '<div class="panel"><h2>Dosa barker</h2><div id="bkl"></div><div class="qr" id="bkqr"></div><p class="help">Tawas, channels and pedal: ⚙ on the barker screen.</p></div>'; },
+  load: VIEWS.barker.load
+};
+VIEWS.screensapps = combo(["apps", "screens", "barkerlink"]);
+VIEWS.scanners = combo(["pcscan"], '<div class="panel">' + hubPart("scanners", 520) + "</div>");
+VIEWS.sources = combo(["sources0", "cxsheet", "planner"], "", '<div class="panel">' + hubPart("prep", 260) + "</div>");
+
+// ---- Today › Prints: alerts, the status line, the last orders (4.16) -----------------------------
+VIEWS.prints = {
+  html: function () { return '<div id="pral"></div><div class="stats" id="prst"></div><div class="panel"><div class="hd"><h2>Last orders</h2><span class="sub">newest first</span></div><div class="tw" id="prtab"></div></div>'; },
+  load: function () {
+    getJ("/console/api/alerts").then(function (d) {
+      var a = (d.alerts || []).slice(0, 5);
+      $("pral").innerHTML = a.map(function (x) { return '<div class="banner-line ' + (x.lvl === "bad" ? "bad" : "") + '">⚠ ' + esc(x.msg) + ' <span class="mute">· ' + hm(x.t) + "</span></div>"; }).join("");
+    }).catch(function () {});
+    getJ("/console/api/direct").then(function (d) {
+      var H = d.health || {};
+      $("prst").innerHTML = '<div class="stat ' + (H.emergency ? "" : "good") + '"><div class="l">Printing</div><div class="v" style="font-size:18px">' + (H.emergency ? "⚠ Emergency" : "✓ Console") + '</div><div class="s">Petpooja ' + (H.pp ? "✓" : "✕") + "</div></div>" +
+        '<div class="stat"><div class="l">Today</div><div class="v">' + (H.orders || 0) + '</div><div class="s">orders · ' + (H.slips || 0) + " slips</div></div>" +
+        '<div class="stat ' + (H.mismatches ? "bad" : "good") + '"><div class="l">Slot mismatches</div><div class="v">' + (H.mismatches || 0) + "</div></div>" +
+        '<div class="stat"><div class="l">Backups used</div><div class="v">' + (H.backups || 0) + "</div></div>";
+    }).catch(function () {});
+    getJ("/console/api/jobs").then(function (d) {
+      var jobs = (d.jobs || []).filter(function (j) { return j.source === "console" || !/^Not printed/.test(j.destination || ""); }).slice(0, 60);
+      $("prtab").innerHTML = jobs.length ? "<table><thead><tr><th>Slot</th><th>Order</th><th>Printed on</th><th>Time</th><th>OTP / tag</th></tr></thead><tbody>" + jobs.map(function (j) {
+        var m = j.metadata || {}, pp = j.source !== "console";
+        var ord = (j.orderType === 1 || m.orderId) ? esc(m.brand || j.platform || "Online") + " …" + esc(last(m.orderId, 4)) : esc({ 2: "Pick up", 3: "Dine in" }[j.orderType] || "Order") + (j.kotNo ? " · KOT " + esc(j.kotNo) : "");
+        var outs = (j.outs || []).map(function (o) { return '<span class="chip ' + (o.ok ? (o.fallback ? "warn" : "ok") : "bad") + '" title="' + esc(o.error || "") + '">' + (o.ok ? (o.fallback ? "🛟 " : "✓ ") : "✕ ") + esc(String(o.printer).replace(/^lan:@?/, "")) + (o.fallback ? " (backup)" : "") + "</span>"; }).join(" ");
+        if (pp) outs = '<span class="chip warn">🛟 Petpooja\'s slip</span> ' + outs;
+        return '<tr><td><span class="tok">' + (j.token || "–") + "</span></td><td>" + ord + "</td><td>" + (outs || '<span class="mute">' + esc(j.destination || j.status) + "</span>") + '</td><td class="num">' + hm(j.recv || Date.parse(j.createdAt)) + (j.printMs ? " · " + j.printMs + " ms" : "") + '</td><td class="mute">' + esc([j.otp ? (j.otpName || "OTP") + " " + j.otp : "", (j.tags || []).join(" ")].filter(Boolean).join(" · ")) + "</td></tr>";
+      }).join("") + "</tbody></table>" : '<p class="empty">No orders printed yet today.</p>';
     }).catch(function () {});
   },
   every: 3000

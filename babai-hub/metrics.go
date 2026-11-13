@@ -622,7 +622,7 @@ func handleCX(w http.ResponseWriter, r *http.Request) {
 	link := strings.TrimSpace(c.CXURL)
 	code := outletCodeCX(c.Outlet)
 	if link == "" {
-		writeJSON(w, map[string]any{"ok": false, "msg": "Ratings sheet not set up (Data › Ratings sheet).", "outlet": code})
+		writeJSON(w, map[string]any{"ok": false, "msg": "Ratings sheet not set up (Setup › Connections).", "outlet": code})
 		return
 	}
 	cxGetMu.Lock()

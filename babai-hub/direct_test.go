@@ -40,24 +40,26 @@ func TestDirectPlan(t *testing.T) {
 }
 
 func TestDirectWants(t *testing.T) {
-	online := Kot{OrderType: 1, Online: true, Platform: "Zomato"}
-	pick := Kot{OrderType: 2}
-	dine := Kot{OrderType: 3, Table: "4"}
-	c := cleanDirect(DirectCfg{Mode: "bridge", TypesV2: true, Types: []string{"D"}, Mains: []MainPrinter{{Printer: "EPSON"}}})
-	if directWants(c, online) {
-		t.Fatal("bridge mode prints nothing itself")
+	online := Kot{OrderType: 1, Online: true, Platform: "Zomato", Items: []KItem{{N: "Idli", C: "Idli", Q: 1}}}
+	pick := Kot{OrderType: 2, Items: []KItem{{N: "Idli", C: "Idli", Q: 1}}}
+	dine := Kot{OrderType: 3, Table: "4", Items: []KItem{{N: "Idli", C: "Idli", Q: 1}}}
+	c := cleanDirect(DirectCfg{Mode: "bridge", Mains: []MainPrinter{{Printer: "EPSON"}}})
+	if directWants(c, online) || consoleOn(c) {
+		t.Fatal("the emergency switch: the Console prints nothing itself")
 	}
-	c.Mode = "both"
-	if !directWants(c, online) || directWants(c, pick) || directWants(c, dine) {
-		t.Fatal("delivery / online by default; others only when ticked")
+	c = cleanDirect(DirectCfg{Mode: "both", Mains: []MainPrinter{{Printer: "EPSON", Skip: []string{"I"}}}})
+	if c.Mode != "console" {
+		t.Fatal("4.16: one way (\"both\" was the safety net, now built in)")
 	}
-	c.Types = []string{"P"} // delivery unticked, pick up ticked
-	if directWants(c, online) || !directWants(c, pick) || directWants(c, dine) {
-		t.Fatal("delivery can be unticked")
+	if !directWants(c, online) || !directWants(c, pick) || directWants(c, dine) {
+		t.Fatal("order types are chosen per printer")
+	}
+	if !channelBlocked(c, dine) {
+		t.Fatal("no printer for dine in: not printed at all (no Bridge Print for it either)")
 	}
 	c.Mains = nil
-	if directWants(c, pick) {
-		t.Fatal("no printer chosen: Bridge Print keeps printing")
+	if directWants(c, pick) || consoleOn(c) {
+		t.Fatal("no printer set up: Bridge Print keeps printing")
 	}
 }
 
@@ -147,7 +149,7 @@ func TestDirectChannels(t *testing.T) {
 	if p := billPrinters(c, pick); len(p) != 2 {
 		t.Fatal("channels don't apply to pick up")
 	}
-	if directWants(c, own) || !channelBlocked(c, own) {
+	if len(billPrinters(c, own)) != 0 || !channelBlocked(c, own) {
 		t.Fatal("Ownly ticked nowhere: no bill, and Bridge Print skips it too")
 	}
 	if channelBlocked(c, swg) || channelBlocked(c, pick) {
@@ -161,10 +163,6 @@ func TestDirectChannels(t *testing.T) {
 	c.Mains[1].Chans = nil // all channels
 	if channelBlocked(c, own) || len(billPrinters(c, own)) != 1 {
 		t.Fatal("all channels takes Ownly")
-	}
-	c.Types = []string{"P"} // Delivery not printed by the Console: Bridge Print prints it, as before
-	if channelBlocked(c, own) {
-		t.Fatal("delivery off: Bridge Print prints")
 	}
 	c.Lines[0].Chans = []string{"Zomato"}
 	c.Types = []string{"D", "P"}

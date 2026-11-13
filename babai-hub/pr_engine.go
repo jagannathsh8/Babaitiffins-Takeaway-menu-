@@ -213,11 +213,16 @@ func noteRxErr(s string) {
 
 // capture saves the print, gives it its token and starts it on its way.
 func capture(raw []byte, source string, recv time.Time) (*Job, error) {
+	console := consoleOn(directConfig()) // read before prMu (directConfig takes dirMu)
 	prMu.Lock()
-	token, next := takeToken(prCounter, prSettings.TokenLimit)
-	prCounter = next
-	if err := saveCounterLocked(); err != nil {
-		prLastErr = "Could not save the token number: " + err.Error()
+	token := 0 // the Console prints: Petpooja's slip gets the order's slot only if it must print (4.16)
+	if !console {
+		var next counterState
+		token, next = takeToken(prCounter, prSettings.TokenLimit)
+		prCounter = next
+		if err := saveCounterLocked(); err != nil {
+			prLastErr = "Could not save the token number: " + err.Error()
+		}
 	}
 	s := prSettings
 	j := &Job{ID: newUUID(), Token: token, CreatedAt: recv.UTC().Format("2006-01-02T15:04:05.000Z"), Source: source,
@@ -316,7 +321,27 @@ func printJob(j *Job, raw []byte) {
 		prMu.Unlock()
 		return // waits until Auto print is on again
 	}
-	plan := planPrints(j, raw, jobFacts(j), s, o)
+	var plan []planned
+	prMu.Unlock()
+	pp := petpoojaSlipPrinters(j) // 4.16: the Printers page's printers, not a second setup
+	prMu.Lock()
+	if j.Status != "queued" {
+		prMu.Unlock()
+		return
+	}
+	if len(pp) > 0 {
+		meta := ReceiptMeta{}
+		if j.Metadata != nil {
+			meta = *j.Metadata
+		}
+		fb := ""
+		if len(pp) > 1 {
+			fb = pp[1]
+		}
+		plan = []planned{{out: PrintOut{Rule: "Petpooja's slip", Part: "bill", Copies: 1}, printer: pp[0], fallback: fb, data: renderJob(raw, j.Token, j.Customization, meta)}}
+	} else {
+		plan = planPrints(j, raw, jobFacts(j), s, o)
+	}
 	if len(plan) == 0 {
 		if mainSet(s) || len(o.Rules) > 0 {
 			j.Status, j.SentAt, j.Destination, j.Error = "sent", nowISO(), "Not printed (rule)", ""

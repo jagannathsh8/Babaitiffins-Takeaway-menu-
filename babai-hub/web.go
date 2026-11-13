@@ -29,7 +29,7 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 		// one part of this page inside the Console window: only the asked sections, light theme
 		var css strings.Builder
 		css.WriteString("<style>:root{--bg:#f3f5f8;--card:#fff;--ink:#16202b;--muted:#5e6b79;--line:#e2e7ed;--accent:#d97706;--ok:#15803d;--bad:#c81e1e;--warnbg:#fff7df}")
-		css.WriteString("header{display:none}body{padding:4px 16px 24px}.wrap{max-width:none}.grid{display:contents}.wrap>section,.wrap>.grid>section{display:none}button{color:#fff}button.ghost{color:var(--ink)}")
+		css.WriteString("header{display:none}body{padding:4px 16px 24px}.wrap{max-width:none}.grid{display:contents}.wrap>section,.wrap>.grid>section{display:none}button{color:#fff}button.ghost{color:var(--ink)}.step{display:none}")
 		for _, id := range strings.Split(show, ",") {
 			id = strings.Map(func(r rune) rune {
 				if r >= 'a' && r <= 'z' {

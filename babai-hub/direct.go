@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -115,23 +116,10 @@ func printsKot(off bool, skip, chans []string, k Kot) bool {
 	return ch != "D" || len(chans) == 0 || containsStr(chans, chanOf(k))
 }
 
-// channelBlocked: an online order whose channel no main / sub main printer has ticked, while
-// they do print online orders: not printed at all, by the Console nor by Bridge Print (one bill).
+// channelBlocked: the Console prints, but no printer is set for this order (its channel or order
+// type ticked nowhere): not printed at all, by the Console nor by Petpooja's slip.
 func channelBlocked(c DirectCfg, k Kot) bool {
-	if c.Mode == "bridge" || barkChannel(k) != "D" || !containsStr(c.Types, "D") || len(billPrinters(c, k)) > 0 {
-		return false
-	}
-	for _, sm := range c.Subs {
-		if sm.Printer != "" && printsFor(sm.Off, sm.Skip, "D") {
-			return true
-		}
-	}
-	for _, m := range c.Mains {
-		if m.Printer != "" && printsFor(m.Off, m.Skip, "D") {
-			return true
-		}
-	}
-	return false
+	return consoleOn(c) && len(directPlan(c, k)) == 0
 }
 
 const (
@@ -165,7 +153,12 @@ func directConfig() DirectCfg {
 }
 
 func cleanDirect(c DirectCfg) DirectCfg {
-	if c.Mode != "console" && c.Mode != "both" {
+	// 4.16: one way. "console" (the Console prints every KOT, with the safety net) or "bridge"
+	// (the emergency switch: Petpooja's slips, as Bridge Print did). "both" was the safety net.
+	if c.Mode == "both" {
+		c.Mode = "console"
+	}
+	if c.Mode != "console" {
 		c.Mode = "bridge"
 	}
 	if !c.TypesV2 { // before 4.11 Delivery / Online was always printed
@@ -235,13 +228,28 @@ func containsStr(l []string, s string) bool {
 	return false
 }
 
-// directWants: the Console prints this KOT itself: its order type is chosen and a main or sub
-// main printer takes its bill (else Bridge Print prints it, e.g. every main switched off).
-func directWants(c DirectCfg, k Kot) bool {
-	if c.Mode == "bridge" || !containsStr(c.Types, barkChannel(k)) {
+// consoleOn: the Console prints the KOTs (not the emergency switch, and a printer is set up).
+func consoleOn(c DirectCfg) bool {
+	if c.Mode != "console" {
 		return false
 	}
-	return len(billPrinters(c, k)) > 0
+	for _, m := range c.Mains {
+		if m.Printer != "" {
+			return true
+		}
+	}
+	for _, sm := range c.Subs {
+		if sm.Printer != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// directWants: the Console prints this KOT: some printer is set for it (a bill or a line slip).
+// An order no printer is set for is not printed at all (4.16: no Bridge Print for it either).
+func directWants(c DirectCfg, k Kot) bool {
+	return consoleOn(c) && len(directPlan(c, k)) > 0
 }
 
 // billPrinters: where the whole bill (with the slot and the OTP) prints: the first sub main the
@@ -437,6 +445,14 @@ func allPrintersCached() []PrinterInfo {
 
 // ---- printing ---------------------------------------------------------------------------------
 
+// tokWord: delivery orders have a slot, the others a token.
+func tokWord(j *Job) string {
+	if j.OrderType == 1 {
+		return "Slot"
+	}
+	return "Token"
+}
+
 // sendChain prints data on the first printer of the list that takes it.
 func sendChain(j *Job, out *PrintOut, printers []string, slip *image2bytes, recv time.Time) {
 	out.Printer = printers[0]
@@ -446,7 +462,7 @@ func sendChain(j *Job, out *PrintOut, printers []string, slip *image2bytes, recv
 			continue
 		}
 		if pr := printerProblem(p); pr != "" && i < len(printers)-1 {
-			addAlert("bad", p, fmt.Sprintf("%s: %s. Token %d printed on the next backup printer.", printerLabel(p), pr, j.Token), j.Token)
+			addAlert("bad", p, fmt.Sprintf("%s: %s. %s %d printed on the next backup printer.", printerLabel(p), pr, tokWord(j), j.Token), j.Token)
 			continue
 		}
 		data := slip.forPrinter(p)
@@ -455,7 +471,7 @@ func sendChain(j *Job, out *PrintOut, printers []string, slip *image2bytes, recv
 		unlock()
 		if err != nil {
 			lastErr = err
-			addAlert("bad", p, fmt.Sprintf("%s: %v. Token %d goes to the next backup printer.", printerLabel(p), err, j.Token), j.Token)
+			addAlert("bad", p, fmt.Sprintf("%s: %v. %s %d goes to the next backup printer.", printerLabel(p), err, tokWord(j), j.Token), j.Token)
 			continue
 		}
 		out.Printer, out.OK, out.Error = p, true, ""
@@ -479,7 +495,7 @@ func sendChain(j *Job, out *PrintOut, printers []string, slip *image2bytes, recv
 		out.Error = "no printer ready"
 	}
 	out.Ms = int(time.Since(recv).Milliseconds())
-	addAlert("bad", printers[0], fmt.Sprintf("Token %d: the Console's slip was not printed (%s).", j.Token, out.Error), j.Token)
+	addAlert("bad", printers[0], fmt.Sprintf("%s %d: the Console's slip was not printed (%s).", tokWord(j), j.Token, out.Error), j.Token)
 }
 
 // image2bytes renders a slip once per paper width.
@@ -539,8 +555,8 @@ func directOnKots(kots []Kot, now time.Time) {
 			}
 			continue
 		}
-		if k.Status == "0" || now.Sub(first[k.ID]) > directNewWithin || first[k.ID].IsZero() || consoleJobFor(k.ID) != nil {
-			continue
+		if k.Status == "0" || now.Sub(first[k.ID]) > directNewWithin || first[k.ID].IsZero() || consoleJobFor(k.ID) != nil || petpoojaPrinted(k.ID) {
+			continue // already printed (also: Petpooja's slip printed it, the safety net)
 		}
 		dirMu.Lock()
 		dirBusy[k.ID] = true
@@ -558,6 +574,52 @@ func directOnKots(kots []Kot, now time.Time) {
 		dirPrinted, dirCancelled = map[int64]string{}, map[int64]bool{}
 	}
 	dirMu.Unlock()
+}
+
+// petpoojaPrinted: Petpooja's slip for this KOT was let through (the safety net): no second slip.
+func petpoojaPrinted(kot int64) bool {
+	prMu.Lock()
+	defer prMu.Unlock()
+	for _, j := range prJobs {
+		if j.Kot == kot && j.Source != "console" && j.Token > 0 && (j.Status == "queued" || j.Status == "sending" || j.Status == "sent" || j.Status == "uncertain") &&
+			!strings.HasPrefix(j.Destination, "Not printed") {
+			return true
+		}
+	}
+	return false
+}
+
+// petpoojaSlipPrinters: where Petpooja's slip prints when it has to (the safety net or the
+// emergency switch): the order's bill printer, else the first main that is on, with a backup.
+// nil: no Console printers set up (Bridge Print's own settings, as before).
+func petpoojaSlipPrinters(j *Job) []string {
+	c := directConfig()
+	k := Kot{ID: j.Kot, OrderType: j.OrderType, Platform: j.Platform, Online: j.OrderType == 1 || j.Platform != "" && j.Platform != "Online"}
+	ppMu.Lock()
+	for _, x := range ppKots {
+		if x.ID == j.Kot {
+			k = x
+		}
+	}
+	ppMu.Unlock()
+	if j.Kot != 0 {
+		c2 := c
+		c2.Mode = "console"
+		if b := billPrinters(c2, k); len(b) > 0 {
+			return b[0].printers
+		}
+	}
+	for _, m := range c.Mains {
+		if m.Printer != "" && !m.Off {
+			return append([]string{m.Printer}, m.Backups...)
+		}
+	}
+	for _, m := range c.Mains {
+		if m.Printer != "" {
+			return append([]string{m.Printer}, m.Backups...)
+		}
+	}
+	return nil
 }
 
 // consoleJobFor: the Console's own job for a KOT (also after a restart, from the saved jobs).
@@ -675,19 +737,7 @@ func directPrint(c DirectCfg, k Kot, seen time.Time) {
 		return
 	}
 	prMu.Lock()
-	token := 0
-	for i := len(prJobs) - 1; i >= 0; i-- {
-		if prJobs[i].Kot == k.ID && prJobs[i].Source != "console" {
-			token = prJobs[i].Token // Petpooja's slip already came: the same token
-			break
-		}
-	}
-	if token == 0 {
-		var next counterState
-		token, next = takeToken(prCounter, prSettings.TokenLimit)
-		prCounter = next
-		_ = saveCounterLocked()
-	}
+	token := orderSlotLocked(k.ID, k.POID) // the order's slot, if it has one (Petpooja's slip printed first)
 	j := &Job{ID: newUUID(), Token: token, CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), Source: "console",
 		Status: "sending", Attempts: 1, Recv: seen.UnixMilli(), IdentBy: "petpooja"}
 	fillJobFromKot(j, &k)
@@ -816,11 +866,17 @@ func directReprint(j *Job) {
 // Returns false when it must not print (the Console prints this order).
 func directBridgeHold(j *Job) bool {
 	c := directConfig()
-	if c.Mode == "bridge" {
+	if !consoleOn(c) {
+		giveSlot(j) // the emergency switch (or nothing set up yet): Petpooja's slip, as Bridge Print
 		return true
 	}
-	if !waitForKot(j) {
-		return true // still unknown after 10 s: print it, as before (never lose a slip)
+	if !waitForKot(j) { // Petpooja's list can't be read, or the order never showed: print it (never lose a slip)
+		giveSlot(j)
+		prMu.Lock()
+		t := j.Token
+		prMu.Unlock()
+		addAlert("bad", "", fmt.Sprintf("Slot %d: Petpooja's slip printed (its order couldn't be read from Petpooja).", t), t)
+		return true
 	}
 	var k Kot
 	ppMu.Lock()
@@ -834,12 +890,13 @@ func directBridgeHold(j *Job) bool {
 	if !found {
 		k = Kot{ID: j.Kot, OrderType: j.OrderType, Platform: j.Platform, Online: j.OrderType == 1 || j.Platform != "" && j.Platform != "Online"}
 	}
-	if found && channelBlocked(c, k) { // one bill: a channel no main printer takes isn't printed by Bridge Print either
-		directSkipBridge(j, nil, "Not printed ("+firstNonEmpty(chanOf(k), "this channel")+" isn't ticked on any main printer)")
+	if found && !directWants(c, k) { // no printer is set for this order: not printed at all
+		what := map[string]string{"P": "Pick up", "I": "Dine in", "S": "Self service"}[barkChannel(k)]
+		if barkChannel(k) == "D" {
+			what = firstNonEmpty(chanOf(k), "Online")
+		}
+		directSkipBridge(j, consoleJobFor(j.Kot), "Not printed (no printer is set for "+what+")")
 		return false
-	}
-	if !directWants(c, k) {
-		return true
 	}
 	recv := time.UnixMilli(j.Recv)
 	deadline := recv.Add(directBackupWait)
@@ -848,7 +905,8 @@ func directBridgeHold(j *Job) bool {
 		if cj != nil {
 			created, _ := time.Parse("2006-01-02T15:04:05.000Z", cj.CreatedAt)
 			if !created.IsZero() && recv.Sub(created) > directReprintGap {
-				return true // Petpooja's own reprint, well after the Console's slip
+				directSkipBridge(j, cj, "Not printed (Petpooja reprint: reprint from the Console)")
+				return false
 			}
 			prMu.Lock()
 			st := cj.Status
@@ -857,30 +915,29 @@ func directBridgeHold(j *Job) bool {
 				directSkipBridge(j, cj, "Not printed (the Console printed this order)")
 				return false
 			}
-			if st == "uncertain" && c.Mode == "both" {
-				directTakeToken(j, cj) // the backup slip shows the order's slot
+			if st == "uncertain" { // every printer and backup failed: Petpooja's slip, same slot
+				directTakeToken(j, cj)
 				if found {
 					orderPrinted(&k, j)
 				}
-				addAlert("bad", "", fmt.Sprintf("Token %d: the Console's slip failed, Petpooja's slip printed instead.", cj.Token), cj.Token)
+				addAlert("bad", "", fmt.Sprintf("Slot %d: no printer took the Console's slip, Petpooja's slip printed instead.", cj.Token), cj.Token)
 				return true
 			}
 		}
-		if c.Mode == "console" && time.Now().After(deadline.Add(20*time.Second)) {
-			directSkipBridge(j, cj, "Not printed (Console only)")
-			return false // Console only: Petpooja's slip never prints for these orders
-		}
-		if c.Mode == "both" && time.Now().After(deadline) {
-			if cj == nil || cj.Status != "sent" {
-				if cj != nil {
-					directTakeToken(j, cj)
-					if found {
-						orderPrinted(&k, j)
-					}
-				}
-				addAlert("bad", "", fmt.Sprintf("Token %d: no Console slip within 10 s, Petpooja's slip printed instead.", j.Token), j.Token)
-				return true
+		if time.Now().After(deadline) && (cj == nil || cj.Status != "sent") {
+			if cj != nil {
+				directTakeToken(j, cj)
+			} else {
+				giveSlot(j)
 			}
+			if found {
+				orderPrinted(&k, j)
+			}
+			prMu.Lock()
+			t := j.Token
+			prMu.Unlock()
+			addAlert("bad", "", fmt.Sprintf("Slot %d: no Console slip within 10 s, Petpooja's slip printed instead.", t), t)
+			return true
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
@@ -890,6 +947,12 @@ func directBridgeHold(j *Job) bool {
 // 10 s for the match, or for the Console's own slip with the order ID read from it, before the
 // slip may print with a slot of its own (4.15.1: the cause of "slip says 8, TV says 7").
 func waitForKot(j *Job) bool {
+	if !ppFresh() { // Petpooja's list can't be read: nothing to wait for (Bridge Print's way)
+		prMu.Lock()
+		k := j.Kot
+		prMu.Unlock()
+		return k != 0
+	}
 	for end := time.Now().Add(directBackupWait); ; time.Sleep(250 * time.Millisecond) {
 		prMu.Lock()
 		kot := j.Kot
@@ -925,6 +988,44 @@ func waitForKot(j *Job) bool {
 	}
 }
 
+// orderSlotLocked (prMu held): the slot an order already has (a print linked to it, or its order
+// number on a printed slip), else the next one. One slot per order (4.16).
+func orderSlotLocked(kot int64, poid string) int {
+	for pass := 0; pass < 2; pass++ {
+		for i := len(prJobs) - 1; i >= 0; i-- {
+			x := prJobs[i]
+			if x.Token <= 0 || (pass == 0) != (x.Source == "console") {
+				continue
+			}
+			if kot != 0 && x.Kot == kot {
+				return x.Token
+			}
+			if d := digitsOnly(poid); len(d) >= 6 && x.Metadata != nil && digitsOnly(x.Metadata.OrderID) == d {
+				return x.Token
+			}
+		}
+	}
+	t, next := takeToken(prCounter, prSettings.TokenLimit)
+	prCounter = next
+	_ = saveCounterLocked()
+	return t
+}
+
+// giveSlot: Petpooja's slip is going to print: it gets its order's slot (or the next one).
+func giveSlot(j *Job) {
+	prMu.Lock()
+	defer prMu.Unlock()
+	if j.Token > 0 {
+		return
+	}
+	oid := ""
+	if j.Metadata != nil {
+		oid = j.Metadata.OrderID
+	}
+	j.Token = orderSlotLocked(j.Kot, oid)
+	saveJobLocked(j)
+}
+
 // directSkipBridge: Petpooja's slip is not printed; it takes the Console job's token (and gives
 // its own back when it was the last one taken).
 // directTakeToken: Petpooja's slip takes the Console job's token (and gives its own back when it
@@ -939,9 +1040,11 @@ func takeTokenLocked(j, cj *Job) {
 	if cj == nil || cj.Token == j.Token {
 		return
 	}
-	if _, after := takeToken(counterState{Next: j.Token}, prSettings.TokenLimit); after.Next == prCounter.Next {
-		prCounter.Next = j.Token
-		_ = saveCounterLocked()
+	if j.Token > 0 {
+		if _, after := takeToken(counterState{Next: j.Token}, prSettings.TokenLimit); after.Next == prCounter.Next {
+			prCounter.Next = j.Token
+			_ = saveCounterLocked()
+		}
 	}
 	j.Token = cj.Token
 	saveJobLocked(j)
@@ -987,7 +1090,7 @@ func handleDirect(w http.ResponseWriter, r *http.Request) {
 		}
 		sortStrings(cats)
 		sortStrings(items)
-		writeJSON(w, map[string]any{"cfg": directConfig(), "printers": names, "cats": cats, "items": items, "today": directToday(), "otp": otpLastCheck(), "chans": knownChans()})
+		writeJSON(w, map[string]any{"cfg": directConfig(), "printers": names, "cats": cats, "items": items, "today": directToday(), "otp": otpLastCheck(), "chans": knownChans(), "health": directHealth()})
 		return
 	}
 	if !fromOwnPage(r) {
@@ -1004,12 +1107,8 @@ func handleDirect(w http.ResponseWriter, r *http.Request) {
 	for _, m := range c.Mains {
 		hasBill = hasBill || m.Printer != ""
 	}
-	if c.Mode != "bridge" && !hasBill {
-		reply(w, false, "Choose a main printer first.")
-		return
-	}
-	if c.Mode != "bridge" && len(c.Types) == 0 {
-		reply(w, false, "Choose at least one order type (Delivery / Online, Pick up, Dine in or Self service).")
+	if !hasBill {
+		reply(w, false, "Add a main printer first.")
 		return
 	}
 	if err := writeJSONFile(directPath(), c, true); err != nil {
@@ -1064,6 +1163,122 @@ func handleDirectTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // directToday: slips printed today by the Console and by Bridge Print, and backups used.
+// directHealth: the Printers page's status line (4.16).
+func directHealth() map[string]any {
+	c := directConfig()
+	day := time.Now().Format("2006-01-02")
+	prMu.Lock()
+	orders := map[int64]bool{}
+	consoleTok := map[int64]int{}
+	ppTok := map[int64]int{}
+	slips, backups := 0, 0
+	for _, j := range prJobs {
+		if time.UnixMilli(j.Recv).Format("2006-01-02") != day {
+			continue
+		}
+		if j.Kot != 0 {
+			orders[j.Kot] = true
+		}
+		printed := j.Source == "console" || !strings.HasPrefix(j.Destination, "Not printed")
+		if printed && (j.Status == "sent" || j.Status == "uncertain" || j.Status == "sending") {
+			slips++
+		}
+		for _, o := range j.Outs {
+			if o.Fallback {
+				backups++
+				break
+			}
+		}
+		if j.Kot != 0 && j.Token > 0 {
+			if j.Source == "console" {
+				consoleTok[j.Kot] = j.Token
+			} else if printed {
+				ppTok[j.Kot] = j.Token
+				if j.Source != "console" && consoleOn(c) {
+					backups++ // Petpooja's slip printed: the safety net
+				}
+			}
+		}
+	}
+	prMu.Unlock()
+	mism := 0
+	for k, t := range ppTok {
+		if ct, ok := consoleTok[k]; ok && ct != t {
+			mism++
+		}
+	}
+	var bad []string
+	seen := map[string]bool{}
+	for _, m := range c.Mains {
+		for _, p := range append([]string{m.Printer}, m.Backups...) {
+			if p != "" && !seen[p] {
+				seen[p] = true
+				if printerProblem(p) != "" {
+					bad = append(bad, printerLabel(p))
+				}
+			}
+		}
+	}
+	for _, sm := range c.Subs {
+		if sm.Printer != "" && !seen[sm.Printer] && printerProblem(sm.Printer) != "" {
+			seen[sm.Printer] = true
+			bad = append(bad, printerLabel(sm.Printer))
+		}
+	}
+	for _, l := range c.Lines {
+		if l.Printer != "" && !seen[l.Printer] && printerProblem(l.Printer) != "" {
+			seen[l.Printer] = true
+			bad = append(bad, printerLabel(l.Printer))
+		}
+	}
+	return map[string]any{"pp": ppFresh(), "orders": len(orders), "slips": slips, "backups": backups, "mismatches": mism, "badPrinters": bad, "emergency": c.Mode != "console"}
+}
+
+// handleNetPrinter: POST {name, ip, port} adds a network printer, {name, del: true} removes it.
+func handleNetPrinter(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !fromOwnPage(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	var in struct {
+		Name string `json:"name"`
+		IP   string `json:"ip"`
+		Port int    `json:"port"`
+		Del  bool   `json:"del"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" {
+		reply(w, false, "Give the printer a name.")
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	prMu.Lock()
+	var keep []LanPrinter
+	for _, l := range prOpts.Lan {
+		if !strings.EqualFold(l.Name, in.Name) {
+			keep = append(keep, l)
+		}
+	}
+	if !in.Del {
+		if net.ParseIP(strings.TrimSpace(in.IP)) == nil {
+			prMu.Unlock()
+			reply(w, false, "Give the printer's IP address, e.g. 192.168.1.50.")
+			return
+		}
+		if in.Port <= 0 || in.Port > 65535 {
+			in.Port = 9100
+		}
+		keep = append(keep, LanPrinter{Name: in.Name, IP: strings.TrimSpace(in.IP), Port: in.Port})
+	}
+	prOpts.Lan = keep
+	err := savePrintOptionsLocked()
+	prMu.Unlock()
+	if err != nil {
+		reply(w, false, "Couldn't save: "+err.Error())
+		return
+	}
+	reply(w, true, "Saved.")
+}
+
 func directToday() map[string]int {
 	prMu.Lock()
 	defer prMu.Unlock()

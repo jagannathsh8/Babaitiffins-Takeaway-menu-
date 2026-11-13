@@ -165,7 +165,7 @@ func deliver(j *Job, out *PrintOut, printer, fallback string, data []byte, recv 
 	use := printer
 	if p := printerProblem(printer); p != "" && fallback != "" && fallback != printer {
 		if printerProblem(fallback) == "" {
-			addAlert("bad", printer, fmt.Sprintf("%s: %s. Token %d printed on %s.", printerLabel(printer), p, j.Token, printerLabel(fallback)), j.Token)
+			addAlert("bad", printer, fmt.Sprintf("%s: %s. %s %d printed on %s.", printerLabel(printer), p, tokWord(j), j.Token, printerLabel(fallback)), j.Token)
 			use, out.Fallback, out.Wanted = fallback, true, printer
 		}
 	}
@@ -173,7 +173,7 @@ func deliver(j *Job, out *PrintOut, printer, fallback string, data []byte, recv 
 	id, err := sendOnce(use, data)
 	unlock()
 	if err != nil && fallback != "" && use != fallback {
-		addAlert("bad", use, fmt.Sprintf("%s: %v. Token %d printed on %s.", printerLabel(use), err, j.Token, printerLabel(fallback)), j.Token)
+		addAlert("bad", use, fmt.Sprintf("%s: %v. %s %d goes to %s.", printerLabel(use), err, tokWord(j), j.Token, printerLabel(fallback)), j.Token)
 		out.Fallback, out.Wanted, use = true, use, fallback
 		unlock = lockPrinter(use)
 		id, err = sendOnce(use, data)
@@ -183,7 +183,7 @@ func deliver(j *Job, out *PrintOut, printer, fallback string, data []byte, recv 
 	out.Ms = int(time.Since(recv).Milliseconds())
 	if err != nil {
 		out.OK, out.Error = false, err.Error()
-		addAlert("bad", use, fmt.Sprintf("Token %d not printed on %s: %v", j.Token, printerLabel(use), err), j.Token)
+		addAlert("bad", use, fmt.Sprintf("%s %d not printed on %s: %v", tokWord(j), j.Token, printerLabel(use), err), j.Token)
 		return
 	}
 	out.OK = true

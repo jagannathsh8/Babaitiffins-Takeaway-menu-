@@ -125,7 +125,7 @@
     var segP = '<button aria-pressed="' + !M.p.length + '" data-p="">All</button>' + PLAT.map(function (p) { return '<button aria-pressed="' + (M.p.indexOf(p) >= 0) + '" data-p="' + p + '">' + PF[p] + "</button>"; }).join("");
     var segM = '<button aria-pressed="' + !M.m.length + '" data-m="">All day</button>' + MEALS.map(function (m) { return '<button aria-pressed="' + (M.m.indexOf(m[0]) >= 0) + '" data-m="' + m[0] + '">' + m[1] + "</button>"; }).join("");
     var out = '<div class="bar"><span class="ol' + (o.outlet ? "" : " off") + '">● ' + (o.outlet ? esc((o.outletName || o.outlet) + " (" + o.outlet + ")") : "Outlet not set") + '</span><span class="mute">' +
-      (o.outlet ? (RO ? "from the outlet PC" : "found from this PC's outlet setting") : "set the outlet name in Hub › Petpooja & Firebase") + "</span>" +
+      (o.outlet ? (RO ? "from the outlet PC" : "found from this PC's outlet setting") : "set the outlet name in Setup › Petpooja") + "</span>" +
       (!RO && o.lan && o.lan.length ? '<span class="grow"></span><span class="mute" title="Other computers and phones on the shop Wi-Fi can open this (view only, with the PIN)">On the Wi-Fi: <b>' + esc(o.lan[0]) + "</b></span>" : "") + "</div>" +
       '<div class="flt">' + (RO ? "" : '<button class="gear" id="mxGear" title="Targets and colours" aria-label="Targets and colours">⚙</button>') + '<div class="seg" id="mxD">' + segD + "</div>" +
       '<span class="rng" id="mxR"' + (M.day === "range" ? "" : " hidden") + '><input type="date" id="mxF" value="' + (M.from || r[0]) + '" aria-label="From"> to <input type="date" id="mxT" value="' + (M.to || r[1]) + '" aria-label="To"></span>' +
