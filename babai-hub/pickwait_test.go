@@ -111,3 +111,25 @@ func TestAutoClearChoices(t *testing.T) {
 		}
 	}
 }
+
+// 4.16.2: a dosa KOT left open in Petpooja for over 2 hours is not on the Dosa board, the
+// dosa counts or the pick-up waits.
+func TestDosaLeftoversOffTheBoard(t *testing.T) {
+	now := time.Now().UnixMilli() - clockSkew()
+	dosa := []KItem{{N: "Masala Dosa", C: "Dosa", Q: 1, S: 1}}
+	kots := []Kot{
+		{ID: 1, Token: 184, OrderType: 3, Status: "1", Created: now - 3*3600_000, Items: dosa},
+		{ID: 2, Token: 1748, OrderType: 3, Status: "1", Created: now - 5*60_000, Items: dosa},
+		{ID: 3, Token: 531, OrderType: 2, Status: "1", Created: now - 26*3600_000, Items: dosa},
+	}
+	tb, _ := dineInDosa(freshKots(kots, now+clockSkew()))
+	if len(tb) != 1 || tb[0].label != "1748" {
+		t.Fatalf("board: want only 1748, got %+v", tb)
+	}
+	if q := dosaQueue(kots); len(q) != 1 || q[2] != 0 {
+		t.Fatalf("dosa queue: want only KOT 2, got %v", q)
+	}
+	if list, _ := pickupOrders(kots, now+clockSkew()); len(list) != 0 {
+		t.Fatalf("pick-up: the day-old KOT is shown: %+v", list)
+	}
+}

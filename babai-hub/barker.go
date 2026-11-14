@@ -259,7 +259,7 @@ func barkUnits(c barkCfg, kots []Kot) []barkUnit {
 func barkSnapshot(kots []Kot, now time.Time) (string, []string, []barkUnit) {
 	barkLoad()
 	day, plan := barkPlan(barkConf, now)
-	us := barkUnits(barkConf, kots)
+	us := barkUnits(barkConf, freshKots(kots, now.UnixMilli())) // leftovers off the tawas (4.16.2)
 	ms := now.UnixMilli()
 	open := map[int64]bool{}
 	for i := range us {

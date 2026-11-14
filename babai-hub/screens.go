@@ -387,7 +387,7 @@ func pickupOrders(kots []Kot, now int64) ([]pickupOrder, string) {
 	var out []pickupOrder
 	var totals []float64
 	for _, k := range kots {
-		if !isPickup(k) || k.Status == "0" || k.Status == "10" || len(k.Items) == 0 {
+		if !isPickup(k) || k.Status == "0" || k.Status == "10" || len(k.Items) == 0 || dosaLeftover(k, now) {
 			continue
 		}
 		open[k.ID] = true

@@ -135,7 +135,7 @@ var (
 )
 
 func unreadyDosa(k Kot) bool {
-	if k.Status == "0" || k.Status == "9" || k.Status == "10" {
+	if k.Status == "0" || k.Status == "9" || k.Status == "10" || dosaLeftover(k, time.Now().UnixMilli()) {
 		return false
 	}
 	for _, it := range k.Items {

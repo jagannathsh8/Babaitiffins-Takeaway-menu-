@@ -579,6 +579,25 @@ func tokenKey(label string) string {
 }
 
 // dineInDosa builds the token-board input and the statistics input from the open KOTs.
+// dosaLeftoverAge: a KOT punched this long ago is a leftover (left open in Petpooja, never marked
+// ready or dispatched): it is not on the Dosa board, the dosa counts or the wait times (4.16.2).
+const dosaLeftoverAge = 2 * time.Hour
+
+func dosaLeftover(k Kot, now int64) bool {
+	return k.Created > 0 && now-(k.Created+clockSkew()) > dosaLeftoverAge.Milliseconds()
+}
+
+// freshKots: the KOTs of the list that are not leftovers.
+func freshKots(kots []Kot, now int64) []Kot {
+	out := make([]Kot, 0, len(kots))
+	for _, k := range kots {
+		if !dosaLeftover(k, now) {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 func dineInDosa(kots []Kot) ([]tbKot, []dsEntry) {
 	var tb []tbKot
 	var ds []dsEntry
@@ -751,7 +770,7 @@ var (
 
 // onBoard is called with every fresh KOT list from Petpooja.
 func onBoard(kots []Kot, now time.Time) {
-	tb, ds := dineInDosa(kots)
+	tb, ds := dineInDosa(freshKots(kots, now.UnixMilli())) // leftovers off the board (4.16.2)
 	mu.Lock()
 	defer mu.Unlock()
 	if !statsLoad {
@@ -766,7 +785,7 @@ func onBoard(kots []Kot, now time.Time) {
 	if math.IsNaN(dosaAvgNow) && stats.LastDayAvg > 0 {
 		dosaAvgNow = stats.LastDayAvg
 	}
-	flowUpdate(kots, now.UnixMilli())
+	flowUpdate(freshKots(kots, now.UnixMilli()), now.UnixMilli())
 	toks := phoneTokens(board, res, now.UnixMilli())
 	for label, items := range noDosaTokens(kots, now.UnixMilli()) {
 		if _, ok := toks[tokenKey(label)]; !ok { // a token with a dosa KOT too is tracked as a dosa token

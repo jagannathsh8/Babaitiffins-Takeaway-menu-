@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "4.16.1"
+	version     = "4.16.2"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
