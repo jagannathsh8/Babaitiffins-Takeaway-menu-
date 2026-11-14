@@ -91,6 +91,9 @@ public final class BoardModel {
         }
     }
 
+    /** How long a ready token stays (the Babai Screens app lets the outlet choose; the KDS patch: 30 min). */
+    public long clearMs = CLEAR_MS;
+
     private final Map<Long, Long> readyAt = new HashMap<Long, Long>();
     private final Set<Long> wasPreparing = new HashSet<Long>();
     private final List<Long> recent = new ArrayList<Long>(); // tokens off the tawa (ms)
@@ -119,7 +122,7 @@ public final class BoardModel {
                     if (wasPreparing.contains(o.id)) offTheTawa(o, now);
                 }
                 wasPreparing.remove(o.id);
-                if (now - at < CLEAR_MS) rd.add(new Ready(o, at));
+                if (now - at < clearMs) rd.add(new Ready(o, at));
             } else {
                 readyAt.remove(o.id); // back to preparing (an item was un-marked)
                 wasPreparing.add(o.id);

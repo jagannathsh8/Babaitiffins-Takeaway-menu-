@@ -115,6 +115,7 @@ final class DosaBoard {
                 try {
                     long now = System.currentTimeMillis();
                     List<BoardModel.Order> orders = fresh(orders(j, P, now), now);
+                    model.clearMs = P.getInt("dosaClearMin", 10) * 60_000L;
                     model.update(orders, now);
                     view.show(model, now);
                     host.boardOk();

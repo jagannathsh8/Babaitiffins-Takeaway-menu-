@@ -465,6 +465,7 @@ public class MainActivity extends Activity {
         pickChans = new ArrayList<String>(DosaBoard.chans(P));
         pickVoice = P.getBoolean("dosaVoice", true);
         pickPP = P.getString("ppHost", "");
+        pickClear = P.getInt("dosaClearMin", 10);
         ppMsg = "";
 
         // 3. name, PIN, start
@@ -537,6 +538,7 @@ public class MainActivity extends Activity {
     private List<String> pickChans = new ArrayList<String>();
     private boolean pickVoice = true;
     private String pickPP = null, ppMsg = "";
+    private int pickClear = 10;
 
     private void paintDosa() {
         if (dosaBox == null) return;
@@ -595,6 +597,20 @@ public class MainActivity extends Activity {
             dosaBox.addView(hs, lp(-1, -2, 4));
             if (all.isEmpty()) dosaBox.addView(text("Online channels (Swiggy, Zomato…) show here once their first order has been on the board's Console.", 14, 0xFF666666, false), lp(-1, -2, 2));
         }
+        // how long a ready token stays (when it isn't dispatched in Petpooja sooner)
+        dosaBox.addView(text("Ready tokens stay on the board for (they leave sooner when dispatched in Petpooja):", 16, BLACK, true), lp(-1, -2, 10));
+        LinearLayout cl = new LinearLayout(this);
+        for (final int m : new int[]{5, 10, 15, 30}) {
+            Button b = button((m == pickClear ? "✓ " : "") + m + " min", false);
+            style(b, m == pickClear);
+            b.setTag("t" + m);
+            b.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { pickClear = m; paintDosa(); focusTag("t" + m); } });
+            LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, -2, 1);
+            l.setMargins(0, 0, dp(6), 0);
+            cl.addView(b, l);
+        }
+        dosaBox.addView(cl, lp(-1, -2, 4));
+
         // Petpooja's billing PC: the board reads it directly, like the KDS app (no Console needed)
         dosaBox.addView(text("Petpooja billing PC (the board reads orders from it like the Petpooja KDS, also when the Console PC is off):", 16, BLACK, true), lp(-1, -2, 10));
         LinearLayout pr = new LinearLayout(this);
@@ -708,7 +724,7 @@ public class MainActivity extends Activity {
                     }
                     P.edit().putString("console", host).putString("screen", pickScreen).putInt("tawa", pickTawa).putString("ppHost", pp)
                             .putString("name", name.isEmpty() ? Build.MODEL : name).putString("key", key)
-                            .putString("dosaKinds", pickKinds).putString("dosaChans", ch.toString()).putBoolean("dosaVoice", pickVoice).apply();
+                            .putString("dosaKinds", pickKinds).putString("dosaChans", ch.toString()).putBoolean("dosaVoice", pickVoice).putInt("dosaClearMin", pickClear).apply();
                     h.post(new Runnable() { @Override public void run() { showScreen(); } });
                     return;
                 }
@@ -716,7 +732,7 @@ public class MainActivity extends Activity {
                     String r = Net.post(Net.base(host) + "/screens/api/pair", "{\"pin\":" + Net.quote(pin) + ",\"dev\":" + Net.quote(P.getString("dev", "")) + "}", 8000);
                     if (Net.jsonTrue(r, "ok")) {
                         P.edit().putString("console", host).putString("screen", pickScreen).putInt("tawa", pickTawa)
-                                .putString("dosaKinds", pickKinds).putString("dosaChans", ch.toString()).putBoolean("dosaVoice", pickVoice)
+                                .putString("dosaKinds", pickKinds).putString("dosaChans", ch.toString()).putBoolean("dosaVoice", pickVoice).putInt("dosaClearMin", pickClear)
                                 .putString("name", name.isEmpty() ? Build.MODEL : name).putString("key", Net.jsonStr(r, "key")).apply();
                         h.post(new Runnable() { @Override public void run() { showScreen(); } });
                         return;

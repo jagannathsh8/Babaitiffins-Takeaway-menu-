@@ -6,8 +6,8 @@
 # signed with the same key, or the TVs refuse it.
 set -euo pipefail
 TOOLS=$(realpath "$1"); HERE=$(cd "$(dirname "$0")" && pwd)
-VERSION_CODE=10
-VERSION_NAME=1.7.1
+VERSION_CODE=11
+VERSION_NAME=1.7.2
 KS="${BS_KS:-$HERE/keystore/babai-screens.p12}"; KS_PASS="${BS_KS_PASS:-babai-screens}" # the signing key: never in git
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 CP_TOOLS="$TOOLS/lib/*"
