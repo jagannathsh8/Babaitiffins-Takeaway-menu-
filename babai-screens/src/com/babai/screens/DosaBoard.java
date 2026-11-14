@@ -1,0 +1,243 @@
+package com.babai.screens;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Typeface;
+import android.os.Handler;
+import android.os.Looper;
+
+import com.babai.board.BoardModel;
+import com.babai.board.BoardView;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.InputStream;
+import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+/**
+ * The Dosa screen (1.6): the Babai Dosa Board design (the same drawing code as the Petpooja KDS 7.8
+ * patch, kds-78-board/), drawn by the app, fed from the Console's kitchen feed. Which orders' dosas
+ * it shows is chosen on this TV (settings): dine in, pick up, self service, online (all channels or
+ * some). Nothing changes on the Console.
+ */
+final class DosaBoard {
+    interface Host {
+        void boardOk();
+        void boardFailed(String why);
+        void say(String text, String wav);
+    }
+
+    static final long LEFTOVER_MS = 2 * 3600_000L; // left open in Petpooja this long: not shown
+
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private final SharedPreferences P;
+    private final Host host;
+    private final String url, base;
+    final BoardView view;
+    private final BoardModel model = new BoardModel();
+    private final Set<Long> called = new HashSet<Long>();
+    private boolean running, first = true, busy;
+
+    DosaBoard(Context c, SharedPreferences p, Host host, String base, String query) {
+        this.P = p;
+        this.host = host;
+        this.base = base;
+        this.url = base + "/screens/api/kitchen?" + query + "&scr=dosa";
+        view = new BoardView(c, look(c));
+        view.show(model, System.currentTimeMillis());
+    }
+
+    void start() {
+        if (running) return;
+        running = true;
+        h.post(tick);
+    }
+
+    void stop() {
+        running = false;
+        h.removeCallbacksAndMessages(null);
+    }
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!running) return;
+            if (!busy) {
+                busy = true;
+                new Thread(new Runnable() { @Override public void run() { fetch(); } }).start();
+            }
+            h.postDelayed(this, 1500);
+        }
+    };
+
+    private void fetch() {
+        String body = null, err = null;
+        try {
+            body = Net.get(url, 6000);
+        } catch (Throwable t) {
+            err = String.valueOf(t.getMessage());
+        }
+        final String b = body, e = err;
+        h.post(new Runnable() {
+            @Override public void run() {
+                busy = false;
+                if (!running) return;
+                if (b == null) { host.boardFailed(e); return; }
+                try {
+                    List<BoardModel.Order> orders = orders(new JSONObject(b), P, System.currentTimeMillis());
+                    long now = System.currentTimeMillis();
+                    model.update(orders, now);
+                    view.show(model, now);
+                    host.boardOk();
+                    calls();
+                } catch (Throwable t) {
+                    host.boardFailed("bad reply");
+                }
+            }
+        });
+    }
+
+    /** Tokens that just turned ready are called out (not the ones already ready at start). */
+    private void calls() {
+        Set<Long> live = new HashSet<Long>();
+        List<String> call = new ArrayList<String>();
+        for (BoardModel.Ready r : model.ready) {
+            live.add(r.o.id);
+            if (called.add(r.o.id) && !first) call.add(r.o.token);
+        }
+        called.retainAll(live);
+        first = false;
+        if (call.isEmpty() || !P.getBoolean("dosaVoice", true)) return;
+        StringBuilder s = new StringBuilder("Token number ");
+        for (int i = 0; i < call.size(); i++) s.append(i > 0 ? ", " : "").append(spoken(call.get(i)));
+        s.append(", dosa ready, kindly collect.");
+        String wav;
+        try {
+            wav = base + "/screens/voice.wav?t=" + URLEncoder.encode(s.toString(), "UTF-8");
+        } catch (Exception x) {
+            wav = null;
+        }
+        host.say(s.toString(), wav);
+    }
+
+    private static String spoken(String t) {
+        if (t.matches("T\\d+")) return "table " + t.substring(1);
+        return t.replace("#", "");
+    }
+
+    // ---- what this screen shows -------------------------------------------------------------------
+
+    /** The setting: "I" dine in, "P" pick up, "S" self service, "D" online; channels: none = all. */
+    static Set<String> kinds(SharedPreferences p) {
+        Set<String> s = new HashSet<String>();
+        for (String x : p.getString("dosaKinds", "IP").split("")) if (!x.isEmpty()) s.add(x);
+        if (s.isEmpty()) s.add("I");
+        return s;
+    }
+
+    static Set<String> chans(SharedPreferences p) {
+        Set<String> s = new HashSet<String>();
+        for (String x : p.getString("dosaChans", "").split("\n")) if (!x.trim().isEmpty()) s.add(x.trim());
+        return s;
+    }
+
+    /** The online channels seen so far (for the settings), newest last. */
+    static List<String> seenChans(SharedPreferences p) {
+        List<String> s = new ArrayList<String>();
+        for (String x : p.getString("dosaSeen", "").split("\n")) if (!x.trim().isEmpty() && !s.contains(x.trim())) s.add(x.trim());
+        return s;
+    }
+
+    static boolean isDosa(String cat) { return cat != null && cat.toLowerCase(Locale.US).contains("dosa"); }
+
+    /** The kitchen feed's cards -> the board's orders, as this screen is set. */
+    static List<BoardModel.Order> orders(JSONObject j, SharedPreferences p, long localNow) throws Exception {
+        Set<String> kinds = kinds(p), chans = chans(p);
+        List<String> seen = seenChans(p);
+        boolean newChan = false;
+        long srvNow = j.optLong("now", localNow), skew = j.optLong("skew", 0);
+        JSONArray cards = j.optJSONArray("cards");
+        List<BoardModel.Order> out = new ArrayList<BoardModel.Order>();
+        if (cards == null) return out;
+        for (int i = 0; i < cards.length(); i++) {
+            JSONObject c = cards.getJSONObject(i);
+            String ch = c.optString("ch", "I"), app = c.optString("app", "");
+            if ("D".equals(ch) && !app.isEmpty() && !seen.contains(app)) { seen.add(app); newChan = true; }
+            if (!kinds.contains(ch)) continue;
+            if ("D".equals(ch) && !chans.isEmpty() && !chans.contains(app)) continue;
+            JSONArray its = c.optJSONArray("i");
+            if (its == null) continue;
+            List<BoardModel.Item> items = new ArrayList<BoardModel.Item>();
+            boolean allReady = true;
+            for (int k = 0; k < its.length(); k++) {
+                JSONObject it = its.getJSONObject(k);
+                if (!isDosa(it.optString("c"))) continue;
+                boolean r = it.optBoolean("r");
+                allReady &= r;
+                items.add(new BoardModel.Item(it.optString("n"), it.optDouble("q", 1), r));
+            }
+            if (items.isEmpty()) continue;
+            long created = c.optLong("c", 0);
+            if (created > 0) created = created + skew - (srvNow - localNow); // Petpooja's clock -> this TV's
+            if (!allReady && created > 0 && localNow - created > LEFTOVER_MS) continue; // left open in Petpooja
+            String tok = c.optString("kn", "");
+            if ("D".equals(ch)) {
+                String l4 = c.optString("l4", "");
+                tok = (app.isEmpty() ? "" : app.substring(0, 1).toUpperCase(Locale.US) + " ") + (l4.isEmpty() ? tok : l4);
+            }
+            out.add(new BoardModel.Order(c.optLong("k"), tok, created, allReady, false, items));
+        }
+        if (newChan) {
+            StringBuilder s = new StringBuilder();
+            for (String x : seen) s.append(x).append('\n');
+            p.edit().putString("dosaSeen", s.toString()).apply();
+        }
+        return out;
+    }
+
+    // ---- the design's fonts and pictures (assets/babai_board, as in the KDS patch) ----------------
+
+    private static BoardView.Look look;
+
+    private static BoardView.Look look(Context c) {
+        if (look != null) return look;
+        BoardView.Look l = new BoardView.Look();
+        l.mont800 = tf(c, "montserrat-800.ttf", Typeface.DEFAULT_BOLD);
+        l.mont900 = tf(c, "montserrat-900.ttf", Typeface.DEFAULT_BOLD);
+        l.fig600 = tf(c, "figtree-600.ttf", Typeface.DEFAULT);
+        l.fig700 = tf(c, "figtree-700.ttf", Typeface.DEFAULT_BOLD);
+        l.fig800 = tf(c, "figtree-800.ttf", Typeface.DEFAULT_BOLD);
+        l.mascot = png(c, "mascot.png");
+        l.spinner = png(c, "spinner.png");
+        look = l;
+        return l;
+    }
+
+    private static Typeface tf(Context c, String name, Typeface fallback) {
+        try {
+            return Typeface.createFromAsset(c.getAssets(), "babai_board/" + name);
+        } catch (Throwable t) {
+            return fallback;
+        }
+    }
+
+    private static Bitmap png(Context c, String name) {
+        try {
+            InputStream in = c.getAssets().open("babai_board/" + name);
+            try {
+                return BitmapFactory.decodeStream(in);
+            } finally {
+                in.close();
+            }
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+}

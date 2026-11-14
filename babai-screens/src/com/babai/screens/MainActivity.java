@@ -30,6 +30,7 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -53,7 +54,7 @@ public class MainActivity extends Activity {
     static final String PREFS = "babai_screens";
     static final String[][] SCREENS = {
             {"rider", "Rider TV", "Online orders by last 4 digits and slot, ready first, voice calls"},
-            {"dosa", "Dosa order status TV", "Dine-in dosa tokens: ready, preparing, dosa wait, calls"},
+            {"dosa", "Dosa board TV", "Babai Dosa Board: ready for pickup, preparing, est. prep time, calls"},
             {"pickup", "Pick-up TV", "Pick-up tokens with their dishes, waiting and ready"},
             {"kitchen", "Kitchen screen", "Tick dishes, Food ready, dispatch (set up with the gear)"},
             {"barker", "Dosa barker", "Tawa by tawa for the dosa master, tap or foot pedal"},
@@ -61,6 +62,7 @@ public class MainActivity extends Activity {
     private static final int YELLOW = 0xFFF9BC21, BLACK = 0xFF171717, CREAM = 0xFFFFF6DF, GREEN = 0xFF568B60, RED = 0xFFB91C1C;
 
     private SharedPreferences P;
+    private DosaBoard board; // the Dosa screen: drawn by the app (1.6)
     private final Handler h = new Handler(Looper.getMainLooper());
 
     // Fit every screen page to this TV / phone (1.5): the pages ask for width=device-width but let
@@ -139,6 +141,7 @@ public class MainActivity extends Activity {
         h.removeCallbacksAndMessages(null);
         voice.shutdown();
         if (web != null) web.destroy();
+        if (board != null) board.stop();
         super.onDestroy();
     }
 
@@ -177,6 +180,8 @@ public class MainActivity extends Activity {
     @SuppressWarnings("SetJavaScriptEnabled")
     private void showScreen() {
         inSetup = false;
+        if (board != null) { board.stop(); board = null; }
+        if ("dosa".equals(P.getString("screen", ""))) { showDosaBoard(); return; }
         root.removeAllViews();
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         if (web != null) web.destroy();
@@ -247,6 +252,44 @@ public class MainActivity extends Activity {
         loadScreen();
     }
 
+    /** The Dosa screen: the Babai Dosa Board, drawn by the app from the Console's kitchen feed. */
+    private void showDosaBoard() {
+        root.removeAllViews();
+        if (web != null) { web.destroy(); web = null; }
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+        String q;
+        try {
+            q = "dev=" + URLEncoder.encode(P.getString("dev", ""), "UTF-8") + "&app=" + Version.NAME + "&name=" + URLEncoder.encode(P.getString("name", Build.MODEL), "UTF-8");
+        } catch (Exception e) {
+            q = "";
+        }
+        board = new DosaBoard(this, P, new DosaBoard.Host() {
+            @Override public void boardOk() { fails = 0; pageError = false; overlay.setVisibility(View.GONE); }
+            @Override public void boardFailed(String why) { if (!inSetup) failed(why); }
+            @Override public void say(String text, String wav) { voice.say(text, wav, true); }
+        }, base(), q);
+        board.view.setOnTouchListener(new View.OnTouchListener() {
+            @Override public boolean onTouch(View v, MotionEvent e) {
+                if (e.getAction() == MotionEvent.ACTION_DOWN && e.getX() < dp(70) && e.getY() < dp(70)) {
+                    taps[tapI++ % 5] = System.currentTimeMillis();
+                    if (fiveWithin(taps, 3000)) { taps = new long[5]; showSetup(true); return true; }
+                }
+                return true;
+            }
+        });
+        root.addView(board.view, new FrameLayout.LayoutParams(-1, -1));
+        overlay = new TextView(this);
+        overlay.setBackgroundColor(0xEE121212);
+        overlay.setTextColor(CREAM);
+        overlay.setGravity(Gravity.CENTER);
+        overlay.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        overlay.setPadding(dp(40), dp(40), dp(40), dp(40));
+        overlay.setVisibility(View.GONE);
+        root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+        immersive();
+        board.start();
+    }
+
     private void loadScreen() {
         if (inSetup || web == null) return;
         h.removeCallbacks(retry);
@@ -298,7 +341,7 @@ public class MainActivity extends Activity {
     // opens the app's settings.
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
-        if (inSetup || web == null) return super.dispatchKeyEvent(e);
+        if (inSetup || (web == null && board == null)) return super.dispatchKeyEvent(e);
         int k = e.getKeyCode();
         if (k == KeyEvent.KEYCODE_MENU || k == KeyEvent.KEYCODE_SETTINGS) {
             if (e.getAction() == KeyEvent.ACTION_UP) showSetup(true);
@@ -308,7 +351,7 @@ public class MainActivity extends Activity {
             if (e.getAction() != KeyEvent.ACTION_UP) return true;
             backs[backI++ % 5] = System.currentTimeMillis();
             if (fiveWithin(backs, 4000)) { backs = new long[5]; showSetup(true); return true; }
-            web.evaluateJavascript("window.babaiBack&&window.babaiBack()", new ValueCallback<String>() { @Override public void onReceiveValue(String v) { } });
+            if (web != null) web.evaluateJavascript("window.babaiBack&&window.babaiBack()", new ValueCallback<String>() { @Override public void onReceiveValue(String v) { } });
             return true; // never leaves the screen by accident
         }
         return super.dispatchKeyEvent(e);
@@ -342,6 +385,7 @@ public class MainActivity extends Activity {
         inSetup = true;
         h.removeCallbacks(retry);
         if (web != null) { web.destroy(); web = null; }
+        if (board != null) { board.stop(); board = null; }
         getWindow().getDecorView().setSystemUiVisibility(0);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         root.removeAllViews();
@@ -402,6 +446,12 @@ public class MainActivity extends Activity {
             tawaRow.addView(bt, l);
         }
         col.addView(tawaRow, lp(-1, -2, 6));
+        dosaBox = new LinearLayout(this);
+        dosaBox.setOrientation(LinearLayout.VERTICAL);
+        col.addView(dosaBox, lp(-1, -2, 6));
+        pickKinds = P.getString("dosaKinds", "IP");
+        pickChans = new ArrayList<String>(DosaBoard.chans(P));
+        pickVoice = P.getBoolean("dosaVoice", true);
 
         // 3. name, PIN, start
         col.addView(head("3. Name of this screen (Console PIN 1234 is filled in)"), lp(-1, -2, 18));
@@ -463,6 +513,83 @@ public class MainActivity extends Activity {
         for (Button b : screenBtns) style(b, pickScreen.equals(b.getTag()));
         for (int i = 0; i < tawaBtns.size(); i++) style(tawaBtns.get(i), i == pickTawa);
         tawaRow.setVisibility("barker".equals(pickScreen) ? View.VISIBLE : View.GONE);
+        paintDosa();
+    }
+
+    // ---- the Dosa board's choice: which orders' dosas it shows (saved on this TV) ---------------------
+
+    private LinearLayout dosaBox;
+    private String pickKinds = "IP";
+    private List<String> pickChans = new ArrayList<String>();
+    private boolean pickVoice = true;
+
+    private void paintDosa() {
+        if (dosaBox == null) return;
+        dosaBox.removeAllViews();
+        dosaBox.setVisibility("dosa".equals(pickScreen) ? View.VISIBLE : View.GONE);
+        if (!"dosa".equals(pickScreen)) return;
+        dosaBox.addView(text("Dosas on this board (tap to turn on or off):", 16, BLACK, true), lp(-1, -2, 4));
+        LinearLayout row = new LinearLayout(this);
+        String[][] kinds = {{"I", "Dine in"}, {"P", "Pick up"}, {"S", "Self service"}, {"D", "Online"}};
+        for (final String[] k : kinds) {
+            boolean on = pickKinds.contains(k[0]);
+            String label = k[1];
+            if (k[0].equals("D") && on) label += pickChans.isEmpty() ? " · all channels" : " · " + pickChans.size() + " channel" + (pickChans.size() > 1 ? "s" : "");
+            Button b = button((on ? "✓ " : "") + label, false);
+            style(b, on);
+            b.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    pickKinds = pickKinds.contains(k[0]) ? pickKinds.replace(k[0], "") : pickKinds + k[0];
+                    if (pickKinds.isEmpty()) pickKinds = "I"; // never an empty board
+                    paintDosa();
+                    focusTag("k" + k[0]);
+                }
+            });
+            b.setTag("k" + k[0]);
+            LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, -2, 1);
+            l.setMargins(0, 0, dp(6), 0);
+            row.addView(b, l);
+        }
+        dosaBox.addView(row, lp(-1, -2, 4));
+        if (pickKinds.contains("D")) {
+            List<String> all = DosaBoard.seenChans(P);
+            for (String c : pickChans) if (!all.contains(c)) all.add(c);
+            LinearLayout cr = new LinearLayout(this);
+            List<String> opts = new ArrayList<String>();
+            opts.add("");
+            opts.addAll(all);
+            for (final String c : opts) {
+                boolean on = c.isEmpty() ? pickChans.isEmpty() : pickChans.contains(c);
+                Button b = button((on ? "✓ " : "") + (c.isEmpty() ? "All channels" : c), false);
+                style(b, on);
+                b.setTag("c" + c);
+                b.setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View v) {
+                        if (c.isEmpty()) pickChans.clear();
+                        else if (!pickChans.remove(c)) pickChans.add(c);
+                        paintDosa();
+                        focusTag("c" + c);
+                    }
+                });
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-2, -2);
+                l.setMargins(0, 0, dp(6), 0);
+                cr.addView(b, l);
+            }
+            HorizontalScrollView hs = new HorizontalScrollView(this);
+            hs.addView(cr);
+            dosaBox.addView(hs, lp(-1, -2, 4));
+            if (all.isEmpty()) dosaBox.addView(text("Online channels (Swiggy, Zomato…) show here once their first order has been on the board's Console.", 14, 0xFF666666, false), lp(-1, -2, 2));
+        }
+        Button vb = button(pickVoice ? "✓ Voice calls: on" : "Voice calls: off", false);
+        style(vb, pickVoice);
+        vb.setTag("voice");
+        vb.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { pickVoice = !pickVoice; paintDosa(); focusTag("voice"); } });
+        dosaBox.addView(vb, lp(-2, -2, 6));
+    }
+
+    private void focusTag(String tag) {
+        View v = dosaBox.findViewWithTag(tag);
+        if (v != null) v.requestFocus();
     }
 
     private void find() {
@@ -514,7 +641,10 @@ public class MainActivity extends Activity {
                 try {
                     String r = Net.post(Net.base(host) + "/screens/api/pair", "{\"pin\":" + Net.quote(pin) + ",\"dev\":" + Net.quote(P.getString("dev", "")) + "}", 8000);
                     if (Net.jsonTrue(r, "ok")) {
+                        StringBuilder ch = new StringBuilder();
+                        for (String c : pickChans) ch.append(c).append('\n');
                         P.edit().putString("console", host).putString("screen", pickScreen).putInt("tawa", pickTawa)
+                                .putString("dosaKinds", pickKinds).putString("dosaChans", ch.toString()).putBoolean("dosaVoice", pickVoice)
                                 .putString("name", name.isEmpty() ? Build.MODEL : name).putString("key", Net.jsonStr(r, "key")).apply();
                         h.post(new Runnable() { @Override public void run() { showScreen(); } });
                         return;

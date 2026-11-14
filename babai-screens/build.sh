@@ -6,8 +6,8 @@
 # signed with the same key, or the TVs refuse it.
 set -euo pipefail
 TOOLS=$(realpath "$1"); HERE=$(cd "$(dirname "$0")" && pwd)
-VERSION_CODE=6
-VERSION_NAME=1.5
+VERSION_CODE=7
+VERSION_NAME=1.6
 KS="${BS_KS:-$HERE/keystore/babai-screens.p12}"; KS_PASS="${BS_KS_PASS:-babai-screens}" # the signing key: never in git
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 CP_TOOLS="$TOOLS/lib/*"
@@ -20,13 +20,16 @@ java -cp "$WORK/t" com.babai.screens.NetTest
 echo "== compile"
 mkdir -p "$WORK/gen/com/babai/screens" "$WORK/classes"
 printf 'package com.babai.screens;\n\nfinal class Version {\n    static final int CODE = %s;\n    static final String NAME = "%s";\n    private Version() {}\n}\n' "$VERSION_CODE" "$VERSION_NAME" > "$WORK/gen/com/babai/screens/Version.java"
-javac -nowarn --release 8 -d "$WORK/classes" -cp "$TOOLS/android-all.jar" $(find "$HERE/src" "$WORK/gen" -name '*.java')
+# the Dosa board (1.6): the Babai Dosa Board's drawing code, shared with the KDS 7.8 patch
+BOARD="$HERE/../kds-78-board"
+javac -nowarn --release 8 -d "$WORK/classes" -cp "$TOOLS/android-all.jar" $(find "$HERE/src" "$WORK/gen" -name '*.java') "$BOARD/src/com/babai/board/BoardModel.java" "$BOARD/src/com/babai/board/BoardView.java"
 java -cp "$CP_TOOLS" com.android.dx.command.Main --dex --min-sdk-version=21 --output="$WORK/classes.dex" "$WORK/classes"
 
 echo "== package"
 mkdir -p "$WORK/proj"
 sed -e "s/android:versionCode=\"[0-9]*\"/android:versionCode=\"$VERSION_CODE\"/" -e "s/android:versionName=\"[^\"]*\"/android:versionName=\"$VERSION_NAME\"/" "$HERE/AndroidManifest.xml" > "$WORK/proj/AndroidManifest.xml"
 cp -r "$HERE/res" "$WORK/proj/res"
+mkdir -p "$WORK/proj/assets" && cp -r "$BOARD/assets/babai_board" "$WORK/proj/assets/" # the board's fonts (OFL) and pictures
 cat > "$WORK/proj/apktool.yml" <<YML
 version: 2.10.0
 apkFileName: BabaiScreens.apk
