@@ -119,7 +119,8 @@ public class MainActivity extends Activity {
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         setContentView(root);
-        if (P.getString("console", "").isEmpty() || P.getString("screen", "").isEmpty()) showSetup(false);
+        boolean ppBoard = "dosa".equals(P.getString("screen", "")) && !P.getString("ppHost", "").isEmpty();
+        if ((P.getString("console", "").isEmpty() && !ppBoard) || P.getString("screen", "").isEmpty()) showSetup(false);
         else showScreen();
         h.postDelayed(updateLoop, 20_000);
     }
@@ -301,6 +302,15 @@ public class MainActivity extends Activity {
     private void failed(String why) {
         pageError = true;
         fails++;
+        if (board != null) {
+            // the Dosa board keeps its last picture through a short blip (3 reads, about 5 s)
+            String pp = P.getString("ppHost", ""), con = P.getString("console", "");
+            overlay.setText("Babai Screens\n\nReading the orders from " + (pp.isEmpty() ? "" : "Petpooja (" + pp + ")") + (!pp.isEmpty() && !con.isEmpty() ? " or " : "")
+                    + (con.isEmpty() ? "" : "the Babai Console (" + con + ")") + "…\n\nCheck that the billing PC is on and this TV is on the shop Wi-Fi.\n(" + why + ")\n\nMENU or Back ×5: settings");
+            if (fails >= 3) overlay.setVisibility(View.VISIBLE);
+            if (fails % 6 == 0 && !con.isEmpty()) rediscover();
+            return;
+        }
         overlay.setText("Babai Screens\n\nReconnecting to the Babai Console at " + P.getString("console", "") + "…\n\n"
                 + "Check that the Console PC is on and this TV is on the shop Wi-Fi.\n(" + why + ")\n\nMENU or Back ×5: settings");
         overlay.setVisibility(View.VISIBLE);
@@ -454,6 +464,8 @@ public class MainActivity extends Activity {
         pickKinds = P.getString("dosaKinds", "IP");
         pickChans = new ArrayList<String>(DosaBoard.chans(P));
         pickVoice = P.getBoolean("dosaVoice", true);
+        pickPP = P.getString("ppHost", "");
+        ppMsg = "";
 
         // 3. name, PIN, start
         col.addView(head("3. Name of this screen (Console PIN 1234 is filled in)"), lp(-1, -2, 18));
@@ -524,6 +536,7 @@ public class MainActivity extends Activity {
     private String pickKinds = "IP";
     private List<String> pickChans = new ArrayList<String>();
     private boolean pickVoice = true;
+    private String pickPP = null, ppMsg = "";
 
     private void paintDosa() {
         if (dosaBox == null) return;
@@ -582,11 +595,46 @@ public class MainActivity extends Activity {
             dosaBox.addView(hs, lp(-1, -2, 4));
             if (all.isEmpty()) dosaBox.addView(text("Online channels (Swiggy, Zomato…) show here once their first order has been on the board's Console.", 14, 0xFF666666, false), lp(-1, -2, 2));
         }
+        // Petpooja's billing PC: the board reads it directly, like the KDS app (no Console needed)
+        dosaBox.addView(text("Petpooja billing PC (the board reads orders from it like the Petpooja KDS, also when the Console PC is off):", 16, BLACK, true), lp(-1, -2, 10));
+        LinearLayout pr = new LinearLayout(this);
+        final EditText ppIn = edit("Petpooja billing PC address, e.g. 192.168.0.10", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        ppIn.setText(pickPP == null ? "" : pickPP);
+        ppIn.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence a, int b, int c, int d) { }
+            @Override public void onTextChanged(CharSequence a, int b, int c, int d) { }
+            @Override public void afterTextChanged(android.text.Editable e) { pickPP = e.toString().trim(); }
+        });
+        pr.addView(ppIn, new LinearLayout.LayoutParams(0, -2, 1));
+        Button fb = button("Find", false);
+        fb.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { findPetpooja(); } });
+        pr.addView(fb, new LinearLayout.LayoutParams(-2, -2));
+        dosaBox.addView(pr, lp(-1, -2, 4));
+        if (!ppMsg.isEmpty()) dosaBox.addView(text(ppMsg, 15, 0xFF444444, false), lp(-1, -2, 2));
         Button vb = button(pickVoice ? "✓ Voice calls: on" : "Voice calls: off", false);
         style(vb, pickVoice);
         vb.setTag("voice");
         vb.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { pickVoice = !pickVoice; paintDosa(); focusTag("voice"); } });
         dosaBox.addView(vb, lp(-2, -2, 6));
+    }
+
+    /** Looks for the Petpooja billing PC on this Wi-Fi (port 3000, as the KDS app). */
+    private void findPetpooja() {
+        ppMsg = "Looking for the Petpooja billing PC on this Wi-Fi…";
+        paintDosa();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                final List<String> f = Petpooja.find();
+                h.post(new Runnable() {
+                    @Override public void run() {
+                        if (f.isEmpty()) ppMsg = "Not found. Is Petpooja open on the billing PC, and this TV on the shop Wi-Fi? You can type its address.";
+                        else { pickPP = f.get(0); ppMsg = "Found Petpooja at " + f.get(0) + (f.size() > 1 ? " (also " + f.subList(1, f.size()) + ")" : "") + "."; }
+                        if (!inSetup) return;
+                        paintDosa();
+                    }
+                });
+            }
+        }).start();
     }
 
     private void focusTag(String tag) {
@@ -632,7 +680,8 @@ public class MainActivity extends Activity {
         final String host = hostIn.getText().toString().trim();
         final String pin = pinIn.getText().toString().trim();
         final String name = nameIn.getText().toString().trim();
-        if (host.isEmpty()) { msg.setText("Type or pick the Console PC's address (step 1)."); return; }
+        final String pp = "dosa".equals(pickScreen) && pickPP != null ? pickPP.trim() : "";
+        if (host.isEmpty() && pp.isEmpty()) { msg.setText("Type or pick the Console PC's address (step 1)."); return; }
         if (pickScreen.isEmpty()) { msg.setText("Pick what this screen shows (step 2)."); return; }
         if (pin.isEmpty()) { msg.setText("Type the Console PIN (step 3)."); return; }
         msg.setTextColor(0xFF444444);
@@ -640,11 +689,32 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() {
             @Override public void run() {
                 String err;
+                StringBuilder ch = new StringBuilder();
+                for (String c : pickChans) ch.append(c).append('\n');
+                if (!pp.isEmpty()) {
+                    // the Dosa board with Petpooja: Petpooja must answer; the Console is optional
+                    if (!Petpooja.isPetpooja(pp, 5000)) {
+                        h.post(new Runnable() { @Override public void run() { msg.setTextColor(RED); msg.setText("Petpooja doesn't answer at " + pp + ". Is Petpooja open on the billing PC? Try Find."); } });
+                        return;
+                    }
+                    String key = P.getString("key", "");
+                    if (!host.isEmpty()) {
+                        try {
+                            String r = Net.post(Net.base(host) + "/screens/api/pair", "{\"pin\":" + Net.quote(pin) + ",\"dev\":" + Net.quote(P.getString("dev", "")) + "}", 5000);
+                            if (Net.jsonTrue(r, "ok")) key = Net.jsonStr(r, "key");
+                        } catch (Throwable ignored) {
+                            // the Console is off: the board reads Petpooja
+                        }
+                    }
+                    P.edit().putString("console", host).putString("screen", pickScreen).putInt("tawa", pickTawa).putString("ppHost", pp)
+                            .putString("name", name.isEmpty() ? Build.MODEL : name).putString("key", key)
+                            .putString("dosaKinds", pickKinds).putString("dosaChans", ch.toString()).putBoolean("dosaVoice", pickVoice).apply();
+                    h.post(new Runnable() { @Override public void run() { showScreen(); } });
+                    return;
+                }
                 try {
                     String r = Net.post(Net.base(host) + "/screens/api/pair", "{\"pin\":" + Net.quote(pin) + ",\"dev\":" + Net.quote(P.getString("dev", "")) + "}", 8000);
                     if (Net.jsonTrue(r, "ok")) {
-                        StringBuilder ch = new StringBuilder();
-                        for (String c : pickChans) ch.append(c).append('\n');
                         P.edit().putString("console", host).putString("screen", pickScreen).putInt("tawa", pickTawa)
                                 .putString("dosaKinds", pickKinds).putString("dosaChans", ch.toString()).putBoolean("dosaVoice", pickVoice)
                                 .putString("name", name.isEmpty() ? Build.MODEL : name).putString("key", Net.jsonStr(r, "key")).apply();

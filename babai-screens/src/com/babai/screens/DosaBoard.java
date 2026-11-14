@@ -77,27 +77,41 @@ final class DosaBoard {
         }
     };
 
+    /** Petpooja's billing PC first (as the KDS app, works without the Console), else the Console. */
     private void fetch() {
-        String body = null, err = null;
-        try {
-            body = Net.get(url, 8000, 16 * 1024 * 1024); // every open KOT: can be large at a busy outlet
-        } catch (Throwable t) {
-            err = String.valueOf(t.getMessage());
+        JSONObject got = null;
+        String err = null, pp = P.getString("ppHost", "").trim();
+        if (!pp.isEmpty()) {
+            try {
+                got = Petpooja.kitchen(pp, kinds(P), 6000);
+            } catch (Throwable t) {
+                err = "Petpooja at " + pp + ": " + why(t);
+            }
         }
-        final String b = body, e = err;
+        if (got == null && !base.isEmpty()) {
+            String body = null;
+            try {
+                body = Net.get(url, 8000, 16 * 1024 * 1024); // every open KOT: can be large at a busy outlet
+                got = new JSONObject(body);
+            } catch (Throwable t) {
+                String e2;
+                if (body != null) {
+                    String head = body.trim().replaceAll("\\s+", " ");
+                    e2 = "the Console's reply isn't the kitchen list (" + body.length() + " bytes, starts: " + (head.length() > 70 ? head.substring(0, 70) + "…" : head) + ")";
+                } else {
+                    e2 = "Console: " + why(t);
+                }
+                err = err == null ? e2 : err + "\n" + e2;
+            }
+        }
+        if (got == null && err == null) err = "set the Petpooja billing PC in settings";
+        final JSONObject j = got;
+        final String e = err;
         h.post(new Runnable() {
             @Override public void run() {
                 busy = false;
                 if (!running) return;
-                if (b == null) { host.boardFailed(e); return; }
-                JSONObject j;
-                try {
-                    j = new JSONObject(b);
-                } catch (Throwable t) {
-                    String head = b.trim().replaceAll("\\s+", " ");
-                    host.boardFailed("the Console's reply isn't the kitchen list (" + b.length() + " bytes, starts: " + (head.length() > 70 ? head.substring(0, 70) + "…" : head) + ")");
-                    return;
-                }
+                if (j == null) { host.boardFailed(e); return; }
                 try {
                     List<BoardModel.Order> orders = orders(j, P, System.currentTimeMillis());
                     long now = System.currentTimeMillis();
@@ -106,10 +120,15 @@ final class DosaBoard {
                     host.boardOk();
                     calls();
                 } catch (Throwable t) {
-                    host.boardFailed("the Console's kitchen list couldn't be read: " + t.getClass().getSimpleName() + (t.getMessage() == null ? "" : " " + t.getMessage()));
+                    host.boardFailed("the kitchen list couldn't be read: " + why(t));
                 }
             }
         });
+    }
+
+    private static String why(Throwable t) {
+        String m = t.getMessage();
+        return t.getClass().getSimpleName() + (m == null ? "" : " " + m);
     }
 
     /** Tokens that just turned ready are called out (not the ones already ready at start). */
