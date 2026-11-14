@@ -48,6 +48,7 @@ func consoleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/console/api/ready", localOnly(handleConsoleReady))
 	mux.HandleFunc("/console/api/find", localOnly(handleFindOrders)) // dispatch search: last digits, 3 days
 	mux.HandleFunc("/console/api/jobs", localOnly(handleJobsTiming))
+	mux.HandleFunc("/console/api/reprint", localOnly(handleReprint)) // Today › Prints and order cards (4.16.1)
 	mux.HandleFunc("/console/api/alerts", localOnly(handleAlerts))
 	mux.HandleFunc("/console/api/rules", localOnly(handleRules))
 	mux.HandleFunc("/console/api/direct", localOnly(handleDirect))          // KOT printing by the Console

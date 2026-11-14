@@ -1307,3 +1307,86 @@ func sortStrings(l []string) {
 		}
 	}
 }
+
+// handleReprint (4.16.1): Reprint from Today › Prints and the order cards. POST {job} or {kot}.
+// The Console's slip of the order prints again with the same slot, on the same printers (and their
+// backups). Without one (emergency switch, Petpooja unreadable) Petpooja's slip prints again as it
+// printed. An order that was not printed (no printer set for it) is not printed by a reprint either.
+func handleReprint(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !fromOwnPage(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	var in struct {
+		Job string `json:"job"`
+		Kot int64  `json:"kot"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in)
+	ok, msg := reprintOrder(in.Job, in.Kot)
+	reply(w, ok, msg)
+}
+
+func reprintOrder(id string, kot int64) (bool, string) {
+	prMu.Lock()
+	var j *Job
+	if id != "" {
+		j = findJobLocked(id)
+	}
+	if j == nil && kot != 0 {
+		for i := len(prJobs) - 1; i >= 0; i-- {
+			if prJobs[i].Kot == kot {
+				j = prJobs[i]
+				break
+			}
+		}
+	}
+	if j != nil && j.Kot != 0 {
+		for i := len(prJobs) - 1; i >= 0; i-- { // the Console's slip is the order's slip
+			if prJobs[i].Kot == j.Kot && prJobs[i].Source == "console" {
+				j = prJobs[i]
+				break
+			}
+		}
+	}
+	if j == nil {
+		prMu.Unlock()
+		return false, "No slip of this order on this PC."
+	}
+	switch {
+	case j.Status == "queued" || j.Status == "sending" || j.Status == "reading":
+		prMu.Unlock()
+		return false, "This slip is printing now."
+	case j.Source != "console" && strings.HasPrefix(j.Destination, "Not printed"):
+		d := j.Destination
+		prMu.Unlock()
+		return false, d + ": nothing to reprint."
+	}
+	word, tok := tokWord(j), j.Token
+	j.Status, j.Error = "queued", ""
+	saveJobLocked(j)
+	prMu.Unlock()
+	if j.Source == "console" {
+		go directReprint(j)
+	} else {
+		raw, err := jobBytes(j)
+		if err != nil {
+			prMu.Lock()
+			j.Status = "uncertain"
+			saveJobLocked(j)
+			prMu.Unlock()
+			return false, "Petpooja's slip couldn't be read from this PC."
+		}
+		go func() {
+			if _, busy := busyJobs.LoadOrStore(j.ID, true); busy {
+				return
+			}
+			defer busyJobs.Delete(j.ID)
+			printJob(j, raw) // as it printed: no new slot, no hold
+		}()
+	}
+	log.Printf("print: reprint of %s %d (KOT %d)", word, tok, j.Kot)
+	if tok > 0 {
+		return true, fmt.Sprintf("Reprinting %s %d.", word, tok)
+	}
+	return true, "Reprinting."
+}

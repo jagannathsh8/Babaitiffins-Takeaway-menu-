@@ -284,13 +284,18 @@ function drawDispatch() {
           (i.nt ? '<i class="nt">Note: ' + esc(i.nt) + "</i>" : "") + "</li>";
       }).join("") + "</ul>" +
       (o.note ? '<div class="onote"><b>Note</b>' + esc(o.note) + "</div>" : "") +
-      '<div class="ft"><button class="btn g" data-ready="' + esc(okey(o)) + '">Food ready</button></div></article>';
+      '<div class="ft"><button class="btn g" data-ready="' + esc(okey(o)) + '">Food ready</button>' +
+      cardReprint(o, "rpb") + "</div></article>";
   }).join("");
+}
+function cardReprint(o, cls) {
+  if (!otok(o)) return "";
+  return '<button class="btn ghost ' + cls + '" title="Print this KOT again with the same number" ' + (o.kot ? 'data-rpk="' + esc(o.kot) + '"' : 'data-rp="' + esc(o.job) + '"') + ' data-rpt="' + esc((o.type === 1 ? "slot " : "token ") + otok(o)) + '">↻ Reprint</button>';
 }
 function allOrdersTable(list) {
   $("dlist").className = "";
   var st = { preparing: "warn", ready: "ok", dispatched: "", cancelled: "bad" };
-  return '<div class="panel tw"><table><thead><tr><th>Token</th><th>Brand</th><th>Order ID</th><th>KOT</th><th>Type</th><th>Items</th><th>Punched</th><th>Printed</th><th>Food ready</th><th>Dispatched</th><th>Delivered</th><th>Status</th></tr></thead><tbody>' +
+  return '<div class="panel tw"><table><thead><tr><th>Token</th><th>Brand</th><th>Order ID</th><th>KOT</th><th>Type</th><th>Items</th><th>Punched</th><th>Printed</th><th>Food ready</th><th>Dispatched</th><th>Delivered</th><th>Status</th><th></th></tr></thead><tbody>' +
     list.map(function (o) {
       var items = (o.items || []).filter(function (i) { return i.s !== -9; }).map(function (i) {
         return (i.q || 1) + "× " + i.n + (i.a || []).map(function (a) { return " + " + (a.q || 1) + "× " + a.n; }).join("") + (i.nt ? " (" + i.nt + ")" : "");
@@ -299,7 +304,7 @@ function allOrdersTable(list) {
         '</td><td class="num" title="' + esc(o.orderId) + '">' + esc(last(o.orderId, 10) || "–") + '</td><td class="num">' + esc(o.kotNo || "–") + "</td><td>" + (o.printOnly ? '<span class="chip warn">from print</span>' : typeName(o.type)) +
         '</td><td class="wrap">' + esc(items) + '</td><td class="num">' + hms(o.punched || o.seen) + '</td><td class="num">' + (o.printed ? hms(o.printed) + (o.printMs ? ' <span class="mute">' + o.printMs + " ms</span>" : "") : "–") +
         '</td><td class="num">' + (o.ready ? hms(o.ready) + ' <span class="mute">' + esc(o.readyBy || "") + "</span>" : "–") + '</td><td class="num">' + hms(o.dispatched) + '</td><td class="num">' + hms(o.delivered) +
-        '</td><td><span class="chip ' + (st[o.status] || "") + '">' + esc(o.status) + "</span></td></tr>";
+        '</td><td><span class="chip ' + (st[o.status] || "") + '">' + esc(o.status) + "</span></td><td>" + cardReprint(o, "sm") + "</td></tr>";
     }).join("") + "</tbody></table></div>";
 }
 setInterval(function () {
@@ -947,6 +952,22 @@ VIEWS.scanners = combo(["pcscan"], '<div class="panel">' + hubPart("scanners", 5
 VIEWS.sources = combo(["sources0", "cxsheet", "planner"], "", '<div class="panel">' + hubPart("prep", 260) + "</div>");
 
 // ---- Today › Prints: alerts, the status line, the last orders (4.16) -----------------------------
+// Reprint (4.16.1): the order's slip again, same slot, same printers.
+function reprintBtn(j) {
+  if (j.status === "queued" || j.status === "sending" || j.status === "reading") return '<span class="mute">printing…</span>';
+  if (j.source !== "console" && /^Not printed/.test(j.destination || "")) return "";
+  return '<button class="btn ghost sm rp" data-rp="' + esc(j.id) + '" data-rpt="' + esc((j.orderType === 1 ? "slot " : "token ") + (j.token || "")) + '">↻ Reprint</button>';
+}
+document.addEventListener("click", function (e) {
+  var b = e.target.closest && e.target.closest("[data-rp],[data-rpk]"); if (!b) return;
+  e.preventDefault();
+  if (!confirm("Reprint " + (b.dataset.rpt || "this order") + " with the same number?")) return;
+  b.disabled = true; var t = b.textContent; b.textContent = "Reprinting…";
+  post("/console/api/reprint", b.dataset.rp ? { job: b.dataset.rp } : { kot: +b.dataset.rpk }).then(function (r) {
+    b.textContent = r.ok ? "✓ Sent" : t; if (!r.ok) { b.disabled = false; alert(r.msg); } else setTimeout(function () { b.disabled = false; b.textContent = t; }, 4000);
+  }).catch(function () { b.disabled = false; b.textContent = t; alert("Couldn't reach the Console."); });
+});
+
 VIEWS.prints = {
   html: function () { return '<div id="pral"></div><div class="stats" id="prst"></div><div class="panel"><div class="hd"><h2>Last orders</h2><span class="sub">newest first</span></div><div class="tw" id="prtab"></div></div>'; },
   load: function () {
@@ -963,12 +984,12 @@ VIEWS.prints = {
     }).catch(function () {});
     getJ("/console/api/jobs").then(function (d) {
       var jobs = (d.jobs || []).filter(function (j) { return j.source === "console" || !/^Not printed/.test(j.destination || ""); }).slice(0, 60);
-      $("prtab").innerHTML = jobs.length ? "<table><thead><tr><th>Slot</th><th>Order</th><th>Printed on</th><th>Time</th><th>OTP / tag</th></tr></thead><tbody>" + jobs.map(function (j) {
+      $("prtab").innerHTML = jobs.length ? "<table><thead><tr><th>Slot</th><th>Order</th><th>Printed on</th><th>Time</th><th>OTP / tag</th><th></th></tr></thead><tbody>" + jobs.map(function (j) {
         var m = j.metadata || {}, pp = j.source !== "console";
         var ord = (j.orderType === 1 || m.orderId) ? esc(m.brand || j.platform || "Online") + " …" + esc(last(m.orderId, 4)) : esc({ 2: "Pick up", 3: "Dine in" }[j.orderType] || "Order") + (j.kotNo ? " · KOT " + esc(j.kotNo) : "");
         var outs = (j.outs || []).map(function (o) { return '<span class="chip ' + (o.ok ? (o.fallback ? "warn" : "ok") : "bad") + '" title="' + esc(o.error || "") + '">' + (o.ok ? (o.fallback ? "🛟 " : "✓ ") : "✕ ") + esc(String(o.printer).replace(/^lan:@?/, "")) + (o.fallback ? " (backup)" : "") + "</span>"; }).join(" ");
         if (pp) outs = '<span class="chip warn">🛟 Petpooja\'s slip</span> ' + outs;
-        return '<tr><td><span class="tok">' + (j.token || "–") + "</span></td><td>" + ord + "</td><td>" + (outs || '<span class="mute">' + esc(j.destination || j.status) + "</span>") + '</td><td class="num">' + hm(j.recv || Date.parse(j.createdAt)) + (j.printMs ? " · " + j.printMs + " ms" : "") + '</td><td class="mute">' + esc([j.otp ? (j.otpName || "OTP") + " " + j.otp : "", (j.tags || []).join(" ")].filter(Boolean).join(" · ")) + "</td></tr>";
+        return '<tr><td><span class="tok">' + (j.token || "–") + "</span></td><td>" + ord + "</td><td>" + (outs || '<span class="mute">' + esc(j.destination || j.status) + "</span>") + '</td><td class="num">' + hm(j.recv || Date.parse(j.createdAt)) + (j.printMs ? " · " + j.printMs + " ms" : "") + '</td><td class="mute">' + esc([j.otp ? (j.otpName || "OTP") + " " + j.otp : "", (j.tags || []).join(" ")].filter(Boolean).join(" · ")) + "</td><td>" + reprintBtn(j) + "</td></tr>";
       }).join("") + "</tbody></table>" : '<p class="empty">No orders printed yet today.</p>';
     }).catch(function () {});
   },
