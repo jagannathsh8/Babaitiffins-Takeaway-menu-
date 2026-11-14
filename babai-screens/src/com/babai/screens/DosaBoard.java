@@ -113,8 +113,8 @@ final class DosaBoard {
                 if (!running) return;
                 if (j == null) { host.boardFailed(e); return; }
                 try {
-                    List<BoardModel.Order> orders = orders(j, P, System.currentTimeMillis());
                     long now = System.currentTimeMillis();
+                    List<BoardModel.Order> orders = fresh(orders(j, P, now), now);
                     model.update(orders, now);
                     view.show(model, now);
                     host.boardOk();
@@ -124,6 +124,25 @@ final class DosaBoard {
                 }
             }
         });
+    }
+
+    // already ready and older than this when the board first sees it: collected long ago, not shown
+    static final long STALE_MS = 30 * 60_000L;
+    private final Set<Long> known = new HashSet<Long>(), stale = new HashSet<Long>();
+
+    /** Drops the KOTs that were ready long ago when the board first saw them (as the Console's screen). */
+    List<BoardModel.Order> fresh(List<BoardModel.Order> in, long now) {
+        Set<Long> live = new HashSet<Long>();
+        List<BoardModel.Order> out = new ArrayList<BoardModel.Order>();
+        for (BoardModel.Order o : in) {
+            live.add(o.id);
+            if (known.add(o.id) && o.ready && o.created > 0 && now - o.created > STALE_MS) stale.add(o.id);
+            if (!o.ready) stale.remove(o.id); // un-marked: it is cooking again
+            if (!stale.contains(o.id)) out.add(o);
+        }
+        known.retainAll(live);
+        stale.retainAll(live);
+        return out;
     }
 
     private static String why(Throwable t) {

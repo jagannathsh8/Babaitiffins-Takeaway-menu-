@@ -191,6 +191,7 @@ final class Petpooja {
         }
         Map<Long, JSONObject> cards = new LinkedHashMap<Long, JSONObject>();
         Map<Long, String> status = new LinkedHashMap<Long, String>();
+        Map<Long, Boolean> allOut = new LinkedHashMap<Long, Boolean>(); // every dish dispatched
         for (int i = 0; i < rows.length(); i++) {
             JSONObject r = rows.optJSONObject(i);
             if (r == null) continue;
@@ -230,6 +231,7 @@ final class Petpooja {
             if (name.isEmpty()) continue;
             int s = (int) Math.round(num(r, "status", 0));
             if (s < 0) continue; // cancelled dish
+            allOut.put(id, (allOut.containsKey(id) ? allOut.get(id) : true) && s == 10);
             c.getJSONArray("i").put(new JSONObject().put("n", name).put("c", str(r, "category"))
                     .put("q", Math.max(num(r, "quantity", 1), 0) > 0 ? num(r, "quantity", 1) : 1).put("r", s == 9 || s == 10));
         }
@@ -237,6 +239,7 @@ final class Petpooja {
         for (Map.Entry<Long, JSONObject> e : cards.entrySet()) {
             String ks = status.get(e.getKey());
             if ("0".equals(ks) || "10".equals(ks)) continue; // cancelled, dispatched
+            if (Boolean.TRUE.equals(allOut.get(e.getKey()))) continue; // every dish dispatched
             if ("9".equals(ks)) { // the whole KOT marked Food ready
                 JSONArray its = e.getValue().getJSONArray("i");
                 for (int i = 0; i < its.length(); i++) its.getJSONObject(i).put("r", true);
