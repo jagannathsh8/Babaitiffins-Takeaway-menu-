@@ -62,6 +62,37 @@ public class MainActivity extends Activity {
 
     private SharedPreferences P;
     private final Handler h = new Handler(Looper.getMainLooper());
+
+    // Fit every screen page to this TV / phone (1.5): the pages ask for width=device-width but let
+    // the web view zoom out when a box is wider than the screen, so the dosa and pick-up boards came
+    // out cropped or small (only the rider page locked the zoom). The app locks the zoom on every
+    // page, hides sideways overflow and stretches the 16:9 board to the screen's shape (the letters
+    // keep their size; no black bars on a phone). The pages on the Console are not changed.
+    private static final String FIT_JS =
+        "(function(){try{" +
+        "var c='width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no';" +
+        "var m=document.querySelector('meta[name=viewport]');if(!m){m=document.createElement('meta');m.name='viewport';(document.head||document.documentElement).appendChild(m);}" +
+        "if(m.getAttribute('content')!==c)m.setAttribute('content',c);" +
+        "if(!document.getElementById('babaiFit')){var s=document.createElement('style');s.id='babaiFit';s.textContent='html,body{overflow-x:hidden!important;max-width:100%}html.babai-tv,html.babai-tv body{overflow:hidden!important;width:100%;height:100%}';(document.head||document.documentElement).appendChild(s);}" +
+        "function fill(){var tv=document.querySelectorAll('.tv');if(!tv.length)return;var d=document.documentElement;if(!/babai-tv/.test(d.className))d.className+=' babai-tv';" +
+        "var w=window.innerWidth,h=window.innerHeight,rem=parseFloat(d.style.fontSize||getComputedStyle(d).fontSize)||19.2;if(!w||!h)return;" +
+        "var a=w/h,bw=100,bh=56.25;if(a>16/9)bw=bh*a;else bh=bw/a;var k=Math.min(w/(bw*rem),h/(bh*rem));" +
+        "for(var i=0;i<tv.length;i++){var t='translate(-50%,-50%) scale('+k.toFixed(4)+')';tv[i].style.width=bw.toFixed(3)+'rem';tv[i].style.height=bh.toFixed(3)+'rem';tv[i].style.webkitTransform=t;tv[i].style.transform=t;}window.scrollTo(0,0);}" +
+        "if(!window.__babaiFit){window.__babaiFit=1;window.addEventListener('resize',function(){setTimeout(fill,0);});}" +
+        "var e;try{e=new Event('resize');}catch(x){e=document.createEvent('Event');e.initEvent('resize',true,true);}window.dispatchEvent(e);fill();" +
+        "}catch(x){}})();";
+
+    private void fit() {
+        if (web == null || inSetup) return;
+        try { web.evaluateJavascript(FIT_JS, null); } catch (Throwable t) { }
+    }
+
+    private void fitSoon() {
+        fit();
+        h.postDelayed(new Runnable() { @Override public void run() { fit(); } }, 400);
+        h.postDelayed(new Runnable() { @Override public void run() { fit(); } }, 1500);
+        h.postDelayed(new Runnable() { @Override public void run() { fit(); } }, 4000);
+    }
     private FrameLayout root;
     private WebView web;
     private TextView overlay;
@@ -156,7 +187,7 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setLoadWithOverviewMode(true);
+        s.setLoadWithOverviewMode(false); // never zoomed out to show a too-wide page (1.5)
         s.setUseWideViewPort(true);
         s.setTextZoom(100); // the TV's system font size must not zoom the screen past its edges
         // no minimum font size (Android's web view enlarges any text under 8 px, which pushed small
@@ -177,7 +208,10 @@ public class MainActivity extends Activity {
 
             @Override public void onPageFinished(WebView v, String url) {
                 if (!pageError) { fails = 0; overlay.setVisibility(View.GONE); }
+                fitSoon();
             }
+
+            @Override public void onPageCommitVisible(WebView v, String url) { fit(); }
 
             @Override public boolean shouldOverrideUrlLoading(WebView v, String url) { return !url.startsWith(base()); } // stays on the Console
 
@@ -196,6 +230,11 @@ public class MainActivity extends Activity {
             }
         });
         root.addView(web, new FrameLayout.LayoutParams(-1, -1));
+        web.addOnLayoutChangeListener(new View.OnLayoutChangeListener() { // turned, resized, system bars hidden
+            @Override public void onLayoutChange(View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) {
+                if (r - l != or - ol || b - t != ob - ot) fitSoon();
+            }
+        });
         overlay = new TextView(this);
         overlay.setBackgroundColor(0xEE121212);
         overlay.setTextColor(CREAM);
