@@ -232,6 +232,9 @@ final class Petpooja {
             int s = (int) Math.round(num(r, "status", 0));
             if (s < 0) continue; // cancelled dish
             allOut.put(id, (allOut.containsKey(id) ? allOut.get(id) : true) && s == 10);
+            // as the Petpooja KDS (BuildKotBoardUseCase.isValidForCategory): a dispatched dish (10) and
+            // a dish replaced in an edited KOT (changed 1) are not shown; a KOT with none left is gone
+            if (s == 10 || Math.round(num(r, "changed", 0)) == 1) continue;
             c.getJSONArray("i").put(new JSONObject().put("n", name).put("c", str(r, "category"))
                     .put("q", Math.max(num(r, "quantity", 1), 0) > 0 ? num(r, "quantity", 1) : 1).put("r", s == 9 || s == 10));
         }

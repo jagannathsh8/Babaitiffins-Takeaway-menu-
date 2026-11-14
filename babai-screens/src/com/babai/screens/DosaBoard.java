@@ -58,6 +58,16 @@ final class DosaBoard {
     void start() {
         if (running) return;
         running = true;
+        if (P.getString("ppHost", "").trim().isEmpty()) {
+            // like the Petpooja KDS: find the billing PC on the Wi-Fi and read it directly (the
+            // Console's list is the backup; it can't tell a dispatched dish)
+            new Thread(new Runnable() {
+                @Override public void run() {
+                    List<String> f = Petpooja.find();
+                    if (!f.isEmpty() && P.getString("ppHost", "").trim().isEmpty()) P.edit().putString("ppHost", f.get(0)).apply();
+                }
+            }).start();
+        }
         h.post(tick);
     }
 
