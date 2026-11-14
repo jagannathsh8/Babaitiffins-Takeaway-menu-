@@ -87,7 +87,7 @@ final class Petpooja {
         return s;
     }
 
-    static boolean isPetpooja(String host, int timeoutMs) {
+    static boolean isPetpooja(String host, int timeoutMs) { // kept for callers that only need yes / no
         try {
             return !syncCode(host, timeoutMs).isEmpty();
         } catch (Throwable t) {
@@ -95,22 +95,65 @@ final class Petpooja {
         }
     }
 
-    /** Every Petpooja billing PC answering on this device's networks (a few seconds). */
+    /** Something listens on Petpooja's port at this address (a quick check before asking it). */
+    static boolean portOpen(String ip, int timeoutMs) {
+        java.net.Socket so = new java.net.Socket();
+        try {
+            so.connect(new java.net.InetSocketAddress(ip, PORT), timeoutMs);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        } finally {
+            try { so.close(); } catch (Throwable ignored) { }
+        }
+    }
+
+    /** Why this address isn't a Petpooja billing PC we can read ("" when it is). */
+    static String check(String host) {
+        try {
+            syncCode(host, 10000); // the billing PC can be slow to answer (the Console waits 10 s too)
+            return "";
+        } catch (java.net.SocketTimeoutException e) {
+            return "no answer from Petpooja at " + host + " within 10 s";
+        } catch (java.net.ConnectException e) {
+            return "nothing on port " + PORT + " at " + host + " (is Petpooja open there? is it the billing PC?)";
+        } catch (Throwable t) {
+            String m = t.getMessage();
+            return host + ": " + (m == null ? t.getClass().getSimpleName() : m);
+        }
+    }
+
+    /**
+     * Every Petpooja billing PC on this device's networks: a quick look for port 3000 on every
+     * address, then each one found is asked for a sync code (up to 10 s, as the Console).
+     */
     static List<String> find() {
-        final List<String> found = Collections.synchronizedList(new ArrayList<String>());
-        ExecutorService ex = Executors.newFixedThreadPool(48);
+        final List<String> open = Collections.synchronizedList(new ArrayList<String>());
+        ExecutorService ex = Executors.newFixedThreadPool(64);
         for (String me : Net.myAddresses()) {
             for (final String ip : Net.neighbours(me)) {
-                ex.execute(new Runnable() { @Override public void run() { if (isPetpooja(ip, 900)) found.add(ip); } });
+                ex.execute(new Runnable() { @Override public void run() { if (portOpen(ip, 600)) open.add(ip); } });
             }
         }
         ex.shutdown();
         try { ex.awaitTermination(20, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
         ex.shutdownNow();
+        final List<String> found = Collections.synchronizedList(new ArrayList<String>());
+        ExecutorService ex2 = Executors.newFixedThreadPool(8);
+        for (final String ip : new ArrayList<String>(open)) {
+            ex2.execute(new Runnable() { @Override public void run() { if (check(ip).isEmpty()) found.add(ip); } });
+        }
+        ex2.shutdown();
+        try { ex2.awaitTermination(25, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
+        ex2.shutdownNow();
         List<String> out = new ArrayList<String>(found);
         Collections.sort(out);
+        lastOpen = new ArrayList<String>(open);
         return out;
     }
+
+    /** The addresses with port 3000 open in the last search (for the message when none answered). */
+    static volatile List<String> lastOpen = new ArrayList<String>();
 
     /** Petpooja's order types for the board's choice: 1 delivery, 2 pick up, 3 dine in. */
     static String orderTypes(java.util.Set<String> kinds) {

@@ -93,7 +93,7 @@ final class DosaBoard {
         String err = null, pp = P.getString("ppHost", "").trim();
         if (!pp.isEmpty()) {
             try {
-                got = Petpooja.kitchen(pp, kinds(P), 6000);
+                got = Petpooja.kitchen(pp, kinds(P), 10000);
             } catch (Throwable t) {
                 err = "Petpooja at " + pp + ": " + why(t);
             }

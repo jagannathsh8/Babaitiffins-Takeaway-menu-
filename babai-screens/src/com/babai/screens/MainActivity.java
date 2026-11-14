@@ -634,19 +634,39 @@ public class MainActivity extends Activity {
         dosaBox.addView(vb, lp(-2, -2, 6));
     }
 
-    /** Looks for the Petpooja billing PC on this Wi-Fi (port 3000, as the KDS app). */
+    /** The typed address first (10 s, as the Console), else looks for the billing PC on this Wi-Fi. */
     private void findPetpooja() {
-        ppMsg = "Looking for the Petpooja billing PC on this Wi-Fi…";
+        final String typed = pickPP == null ? "" : pickPP.trim();
+        ppMsg = typed.isEmpty() ? "Looking for the Petpooja billing PC on this Wi-Fi…" : "Checking Petpooja at " + typed + "…";
         paintDosa();
         new Thread(new Runnable() {
             @Override public void run() {
-                final List<String> f = Petpooja.find();
+                String why = typed.isEmpty() ? "" : Petpooja.check(typed);
+                String m;
+                String use = null;
+                if (!typed.isEmpty() && why.isEmpty()) {
+                    m = "✓ Petpooja answers at " + typed + ".";
+                    use = typed;
+                } else {
+                    h.post(new Runnable() { @Override public void run() { if (inSetup) { ppMsg = "Looking for the Petpooja billing PC on this Wi-Fi…"; paintDosa(); } } });
+                    List<String> f = Petpooja.find();
+                    if (!f.isEmpty()) {
+                        use = f.get(0);
+                        m = "✓ Found Petpooja at " + f.get(0) + (f.size() > 1 ? " (also " + f.subList(1, f.size()) + ")" : "") + "."
+                                + (typed.isEmpty() ? "" : " (" + why + ")");
+                    } else {
+                        List<String> open = Petpooja.lastOpen;
+                        m = "Not found. " + (typed.isEmpty() ? "" : why + ". ")
+                                + (open.isEmpty() ? "No device on this Wi-Fi has Petpooja's port " + Petpooja.PORT + " open: is Petpooja open on the billing PC, and this TV on the same Wi-Fi as the billing PC?"
+                                : "Port " + Petpooja.PORT + " is open at " + open + " but Petpooja didn't give a sync code.") ;
+                    }
+                }
+                final String msgOut = m, pick = use;
                 h.post(new Runnable() {
                     @Override public void run() {
-                        if (f.isEmpty()) ppMsg = "Not found. Is Petpooja open on the billing PC, and this TV on the shop Wi-Fi? You can type its address.";
-                        else { pickPP = f.get(0); ppMsg = "Found Petpooja at " + f.get(0) + (f.size() > 1 ? " (also " + f.subList(1, f.size()) + ")" : "") + "."; }
-                        if (!inSetup) return;
-                        paintDosa();
+                        if (pick != null) pickPP = pick;
+                        ppMsg = msgOut;
+                        if (inSetup) paintDosa();
                     }
                 });
             }
@@ -709,8 +729,9 @@ public class MainActivity extends Activity {
                 for (String c : pickChans) ch.append(c).append('\n');
                 if (!pp.isEmpty()) {
                     // the Dosa board with Petpooja: Petpooja must answer; the Console is optional
-                    if (!Petpooja.isPetpooja(pp, 5000)) {
-                        h.post(new Runnable() { @Override public void run() { msg.setTextColor(RED); msg.setText("Petpooja doesn't answer at " + pp + ". Is Petpooja open on the billing PC? Try Find."); } });
+                    final String ppWhy = Petpooja.check(pp);
+                    if (!ppWhy.isEmpty()) {
+                        h.post(new Runnable() { @Override public void run() { msg.setTextColor(RED); msg.setText("Petpooja: " + ppWhy + ". Try Find."); } });
                         return;
                     }
                     String key = P.getString("key", "");
