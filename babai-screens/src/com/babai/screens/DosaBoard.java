@@ -80,7 +80,7 @@ final class DosaBoard {
     private void fetch() {
         String body = null, err = null;
         try {
-            body = Net.get(url, 6000);
+            body = Net.get(url, 8000, 16 * 1024 * 1024); // every open KOT: can be large at a busy outlet
         } catch (Throwable t) {
             err = String.valueOf(t.getMessage());
         }
@@ -90,15 +90,23 @@ final class DosaBoard {
                 busy = false;
                 if (!running) return;
                 if (b == null) { host.boardFailed(e); return; }
+                JSONObject j;
                 try {
-                    List<BoardModel.Order> orders = orders(new JSONObject(b), P, System.currentTimeMillis());
+                    j = new JSONObject(b);
+                } catch (Throwable t) {
+                    String head = b.trim().replaceAll("\\s+", " ");
+                    host.boardFailed("the Console's reply isn't the kitchen list (" + b.length() + " bytes, starts: " + (head.length() > 70 ? head.substring(0, 70) + "…" : head) + ")");
+                    return;
+                }
+                try {
+                    List<BoardModel.Order> orders = orders(j, P, System.currentTimeMillis());
                     long now = System.currentTimeMillis();
                     model.update(orders, now);
                     view.show(model, now);
                     host.boardOk();
                     calls();
                 } catch (Throwable t) {
-                    host.boardFailed("bad reply");
+                    host.boardFailed("the Console's kitchen list couldn't be read: " + t.getClass().getSimpleName() + (t.getMessage() == null ? "" : " " + t.getMessage()));
                 }
             }
         });
@@ -167,7 +175,9 @@ final class DosaBoard {
         List<BoardModel.Order> out = new ArrayList<BoardModel.Order>();
         if (cards == null) return out;
         for (int i = 0; i < cards.length(); i++) {
-            JSONObject c = cards.getJSONObject(i);
+            JSONObject c = cards.optJSONObject(i);
+            if (c == null) continue;
+            try {
             String ch = c.optString("ch", "I"), app = c.optString("app", "");
             if ("D".equals(ch) && !app.isEmpty() && !seen.contains(app)) { seen.add(app); newChan = true; }
             if (!kinds.contains(ch)) continue;
@@ -177,7 +187,8 @@ final class DosaBoard {
             List<BoardModel.Item> items = new ArrayList<BoardModel.Item>();
             boolean allReady = true;
             for (int k = 0; k < its.length(); k++) {
-                JSONObject it = its.getJSONObject(k);
+                JSONObject it = its.optJSONObject(k);
+                if (it == null) continue;
                 if (!isDosa(it.optString("c"))) continue;
                 boolean r = it.optBoolean("r");
                 allReady &= r;
@@ -193,6 +204,9 @@ final class DosaBoard {
                 tok = (app.isEmpty() ? "" : app.substring(0, 1).toUpperCase(Locale.US) + " ") + (l4.isEmpty() ? tok : l4);
             }
             out.add(new BoardModel.Order(c.optLong("k"), tok, created, allReady, false, items));
+            } catch (Throwable t) {
+                // one unreadable order never stops the board
+            }
         }
         if (newChan) {
             StringBuilder s = new StringBuilder();

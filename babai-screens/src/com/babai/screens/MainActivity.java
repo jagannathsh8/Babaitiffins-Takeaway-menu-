@@ -55,6 +55,7 @@ public class MainActivity extends Activity {
     static final String[][] SCREENS = {
             {"rider", "Rider TV", "Online orders by last 4 digits and slot, ready first, voice calls"},
             {"dosa", "Dosa board TV", "Babai Dosa Board: ready for pickup, preparing, est. prep time, calls"},
+            {"dosaweb", "Dosa order status TV (classic)", "The earlier dine-in dosa screen, from the Console"},
             {"pickup", "Pick-up TV", "Pick-up tokens with their dishes, waiting and ready"},
             {"kitchen", "Kitchen screen", "Tick dishes, Food ready, dispatch (set up with the gear)"},
             {"barker", "Dosa barker", "Tawa by tawa for the dosa master, tap or foot pedal"},
@@ -174,6 +175,7 @@ public class MainActivity extends Activity {
             int t = P.getInt("tawa", 0);
             return base() + "/barker?" + (t > 0 ? "tawa=" + t + "&" : "") + q;
         }
+        if (scr.equals("dosaweb")) scr = "dosa"; // the classic page on the Console
         return base() + "/screens/" + scr + "?" + q;
     }
 

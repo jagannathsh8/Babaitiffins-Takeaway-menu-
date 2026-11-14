@@ -22,14 +22,19 @@ final class Net {
 
     private Net() {}
 
-    static String get(String url, int timeoutMs) throws Exception {
+    static String get(String url, int timeoutMs) throws Exception { return get(url, timeoutMs, 256 * 1024); }
+
+    /** GET, at most max bytes; a longer reply is an error (never a cut-off reply). */
+    static String get(String url, int timeoutMs, int max) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(timeoutMs);
         c.setReadTimeout(timeoutMs);
         c.setUseCaches(false);
         try {
             if (c.getResponseCode() != 200) throw new java.io.IOException("HTTP " + c.getResponseCode());
-            return read(c.getInputStream(), 256 * 1024);
+            String r = read(c.getInputStream(), max + 1);
+            if (r.length() > max) throw new java.io.IOException("reply too long (over " + max / 1024 + " KB)");
+            return r;
         } finally {
             c.disconnect();
         }
