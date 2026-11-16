@@ -110,7 +110,7 @@
   function dash(v) { return v == null || v === "" ? '<span class="mute">–</span>' : v; }
   function tableCopy(id, csv) {
     var t = document.getElementById(id); if (!t) return;
-    var rows = [].slice.call(t.querySelectorAll("tr")).filter(function (tr) { return !tr.classList.contains("det"); }).map(function (tr) {
+    var rows = [].slice.call(t.querySelectorAll("tr")).filter(function (tr) { return !tr.classList.contains("mdet"); }).map(function (tr) {
       return [].slice.call(tr.children).map(function (c) { var s = c.innerText.replace(/\s*\n\s*/g, " ").trim(); return csv ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(csv ? "," : "\t");
     }).join("\n");
     if (csv) {
@@ -260,11 +260,11 @@
       var cp = e.target.closest("[data-copy]"); if (cp) { tableCopy(cp.dataset.copy, cp.dataset.csv === "1"); return; }
       var tr = e.target.closest("tr.row"); if (!tr) return;
       var was = tr.classList.contains("open");
-      root.querySelectorAll("tr.det").forEach(function (x) { x.remove(); });
+      root.querySelectorAll("tr.mdet").forEach(function (x) { x.remove(); });
       root.querySelectorAll("tr.row.open").forEach(function (x) { x.classList.remove("open"); });
       M.openRow = null; if (was) return;
       var f = find(tr), o = f[0], c = f[1];
-      var d = document.createElement("tr"); d.className = "det";
+      var d = document.createElement("tr"); d.className = "mdet";
       d.innerHTML = '<td colspan="' + tr.children.length + '">' + details(o, c, null) + "</td>"; tr.after(d); tr.classList.add("open"); M.openRow = tr.dataset.key;
       var btn = d.querySelector(".ldb"); if (btn) btn._o = o;
       if (o) getJ(API + "opsload?kot=" + o.k + "&day=" + o.day).then(function (L) {
@@ -407,7 +407,7 @@
       load: function () {
         var first = this._first; this._first = false;
         // every minute: only while the period includes today and no order or ⚙ is open
-        if (!first && (document.querySelector("#main tr.det") || document.querySelector("#mxDlg[open]") || range()[1] !== ymd(new Date()))) return;
+        if (!first && (document.querySelector("#main tr.mdet") || document.querySelector("#mxDlg[open]") || range()[1] !== ymd(new Date()))) return;
         fetchAll(draw, !first);
       },
       every: 60000

@@ -198,7 +198,7 @@ td.wrap{white-space:normal;min-width:180px}
 .mx .slt td:first-child{font-weight:600}.mx .slt td:first-child .mute{font-weight:400}
 .mx .slt tr.tot td{border-top:2px solid var(--line);font-weight:700;background:#fafbfc}
 /* one order, opened */
-.mx tr.det td{background:#fffdf7;padding:0}
+.mx tr.mdet td{background:#fffdf7;padding:0}
 .mx .dbox{position:sticky;left:0;max-width:calc(100vw - 70px);box-sizing:border-box;white-space:normal;display:grid;gap:14px;padding:14px 18px 18px;border-left:3px solid var(--acc)}
 .mx .verdict{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;font-weight:600;line-height:1.4}
 .mx .verdict .ic{flex:0 0 auto;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:14px;color:#fff;background:var(--bad)}
