@@ -53,8 +53,8 @@ func consoleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/console/api/rules", localOnly(handleRules))
 	mux.HandleFunc("/console/api/direct", localOnly(handleDirect))          // KOT printing by the Console
 	mux.HandleFunc("/console/api/direct/test", localOnly(handleDirectTest)) // test slip / its picture
-	mux.HandleFunc("/console/api/netprinter", localOnly(pinnedAPI(handleNetPrinter)))
-	mux.HandleFunc("/console/api/netfind", localOnly(handleNetFind)) // printers on the network (4.18)
+	mux.HandleFunc("/console/api/netprinter", localOnly(handleNetPrinter))  // no PIN, as the rest of the Printing page (4.18.1)
+	mux.HandleFunc("/console/api/netfind", localOnly(handleNetFind))        // printers on the network (4.18)
 	mux.HandleFunc("/console/api/menu", localOnly(handleMenu))
 	mux.HandleFunc("/console/api/testprint", localOnly(handleTestPrint))
 	mux.HandleFunc("/console/api/apps", localOnly(handleAppsJSON))

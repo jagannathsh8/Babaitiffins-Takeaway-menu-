@@ -1290,6 +1290,22 @@ func handleNetPrinter(w http.ResponseWriter, r *http.Request) {
 		reply(w, false, "Couldn't save: "+err.Error())
 		return
 	}
+	if !in.Del {
+		// say at once whether it answers, and why not (4.18.1)
+		addr := net.JoinHostPort(strings.TrimSpace(in.IP), strconv.Itoa(in.Port))
+		c, derr := net.DialTimeout("tcp", addr, 2500*time.Millisecond)
+		if derr != nil {
+			why := "no answer at that address: is its network cable in (not only USB), and is it on this PC's network?"
+			if strings.Contains(derr.Error(), "refused") {
+				why = "a device is at that address, but it doesn't take prints on port " + strconv.Itoa(in.Port)
+			}
+			reply(w, true, "Saved, but "+in.Name+" isn't answering now ("+why+").")
+			return
+		}
+		c.Close()
+		reply(w, true, "Saved. "+in.Name+" answers at "+addr+".")
+		return
+	}
 	reply(w, true, "Saved.")
 }
 

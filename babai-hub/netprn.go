@@ -33,6 +33,9 @@ func scanLan(port int) []string {
 	var cands []string
 	seen := map[string]bool{}
 	for _, me := range localIPv4s() {
+		seen[me] = true // this PC itself is never a printer (the Console listens on 9100 too)
+	}
+	for _, me := range localIPv4s() {
 		ip := net.ParseIP(me).To4()
 		if ip == nil || ip.IsLoopback() || !ip.IsPrivate() {
 			continue
@@ -47,7 +50,7 @@ func scanLan(port int) []string {
 	}
 	var mu sync.Mutex
 	var out []string
-	sem := make(chan struct{}, 64)
+	sem := make(chan struct{}, 128)
 	var wg sync.WaitGroup
 	for _, a := range cands {
 		wg.Add(1)
@@ -55,12 +58,18 @@ func scanLan(port int) []string {
 		go func(a string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			c, err := net.DialTimeout("tcp", net.JoinHostPort(a, strconv.Itoa(port)), 500*time.Millisecond)
-			if err == nil {
-				c.Close()
-				mu.Lock()
-				out = append(out, a)
-				mu.Unlock()
+			for try := 0; try < 2; try++ { // a printer waking up can miss the first knock
+				c, err := net.DialTimeout("tcp", net.JoinHostPort(a, strconv.Itoa(port)), 1200*time.Millisecond)
+				if err == nil {
+					c.Close()
+					mu.Lock()
+					out = append(out, a)
+					mu.Unlock()
+					return
+				}
+				if !strings.Contains(err.Error(), "timeout") {
+					return // refused or unreachable: nothing there on this port
+				}
 			}
 		}(a)
 	}

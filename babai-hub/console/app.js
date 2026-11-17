@@ -600,7 +600,7 @@ function kpDraw() {
   var good = !em && H.pp && !(H.badPrinters || []).length && !H.mismatches;
   var h = '<div class="panel kp2-st"><span class="kp2-big ' + (em ? "warn" : good ? "ok" : "bad") + '">' + (em ? "⚠ Emergency: Petpooja's slips print" : good ? "✓ Printing OK" : "⚠ Check printing") + "</span>" +
     '<span class="kp2-pill ' + (H.pp ? "" : "bad") + '">Petpooja ' + (H.pp ? "✓" : "✕ not reading") + "</span>" +
-    '<span class="kp2-pill ' + ((H.badPrinters || []).length ? "bad" : "") + '">' + ((H.badPrinters || []).length ? "✕ " + esc(H.badPrinters.join(", ")) : "Printers ✓") + "</span>" +
+    '<span class="kp2-pill ' + ((H.badPrinters || []).length ? "bad" : "") + '">' + ((H.badPrinters || []).length ? "✕ " + esc(H.badPrinters.join(", ")) : c.mains.concat(c.subs, c.lines).some(function (x) { return x.printer; }) ? "Printers ✓" : "No printer set yet") + "</span>" +
     '<span class="kp2-pill">Today ' + (H.orders || 0) + " orders · " + (H.slips || 0) + " slips</span>" +
     '<span class="kp2-pill ' + (H.mismatches ? "bad" : "") + '">' + (H.mismatches || 0) + " slot mismatches</span>" +
     (H.backups ? '<span class="kp2-pill warn">' + H.backups + " backup" + (H.backups > 1 ? "s" : "") + " used</span>" : "") +
