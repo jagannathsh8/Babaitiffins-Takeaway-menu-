@@ -40,22 +40,13 @@ public class DosaApp extends Activity {
     static final String PREFS = "babai_dosa_board";
     private static final int YELLOW = 0xFFF9BC21, BLACK = 0xFF171717, CREAM = 0xFFFFF6DF, GREEN = 0xFF568B60, RED = 0xFFB91C1C;
 
-    /** The "Did you know?" facts until the outlet's own list comes (then this list is replaced). */
+    /** The "Did you know?" facts until the outlet adds its own on the TV's settings page. Only neutral
+     *  lines: no recipe or ingredient claims (the outlet writes those itself if it wants them). */
     static final String[] FACTS = {
-            "Dosa batter is rice and urad dal, ground and left to ferment overnight.",
-            "Fermentation gives dosa its light tang and helps it turn crisp on the tawa.",
-            "A hot cast-iron tawa is the secret to a golden, crisp dosa.",
-            "Masala dosa is filled with potato masala tempered with mustard seeds, curry leaves and onion.",
-            "Ghee roast dosa is roasted in ghee for extra crunch and aroma.",
-            "Rava dosa is made with semolina and rice flour, so it needs no fermenting.",
-            "Podi is nicknamed \"gunpowder\" for its spicy kick.",
-            "“Kaaram” means spicy in Telugu. Your dosa comes with a delicious warning!",
-            "Pesarattu is a dosa made from whole green gram (moong).",
-            "MLA Pesarattu is pesarattu with upma folded inside, a famous Andhra combo.",
-            "\"Allam\" means ginger in Telugu. Allam chutney is pesarattu's best friend.",
-            "Pesarattu and upma: Andhra’s traditional breakfast buddies.",
             "Dosas are made fresh to order: a short wait means a hot, crisp dosa.",
-            "Filter coffee is poured between tumbler and dabarah to cool it and make it frothy.",
+            "Watch the board: your token moves to Ready for pickup the moment your dosa is done.",
+            "Pesarattu and upma: Andhra’s traditional breakfast buddies.",
+            "“Kaaram” means spicy in Telugu. Your dosa comes with a delicious warning!",
     };
 
     private final Handler h = new Handler(Looper.getMainLooper());
@@ -64,6 +55,7 @@ public class DosaApp extends Activity {
     private Voice voice;
     private DosaBoard board;
     private DosaStats stats;
+    private TvWeb web;
     private TextView overlay;
     private boolean inSetup;
     private int fails;
@@ -84,12 +76,15 @@ public class DosaApp extends Activity {
         if (P.getString("ppHost", "").isEmpty()) showSetup(false);
         else showBoard();
         h.post(factsLoop);
+        web = new TvWeb(webApp);
+        web.start();
     }
 
     @Override
     protected void onDestroy() {
         h.removeCallbacksAndMessages(null);
         if (board != null) board.stop();
+        if (web != null) web.stop();
         voice.shutdown();
         super.onDestroy();
     }
@@ -110,10 +105,129 @@ public class DosaApp extends Activity {
     /** Every minute: today's numbers first, then the facts. */
     private final Runnable factsLoop = new Runnable() {
         @Override public void run() {
-            List<String> f = new ArrayList<String>(stats.facts());
-            for (String x : FACTS) f.add(x);
+            List<String> f = new ArrayList<String>();
+            if (P.getBoolean("numbersOn", true)) f.addAll(stats.facts());
+            f.addAll(shownFacts());
+            if (f.isEmpty()) f.add(FACTS[0]);
             BoardView.FACTS = f.toArray(new String[0]);
             h.postDelayed(this, 60_000);
+        }
+    };
+
+    // ---- facts and the TV's settings page (TvWeb) ----------------------------------------------------
+
+    /** The facts list as saved on the settings page ([{t, on}]), or the built-in one. */
+    private org.json.JSONArray factsList() {
+        try {
+            String s = P.getString("facts", "");
+            if (!s.isEmpty()) return new org.json.JSONArray(s);
+        } catch (Throwable ignored) {
+        }
+        org.json.JSONArray a = new org.json.JSONArray();
+        try { for (String x : FACTS) a.put(new org.json.JSONObject().put("t", x).put("on", true)); } catch (Throwable ignored) { }
+        return a;
+    }
+
+    private List<String> shownFacts() {
+        List<String> out = new ArrayList<String>();
+        org.json.JSONArray a = factsList();
+        for (int i = 0; i < a.length(); i++) {
+            org.json.JSONObject f = a.optJSONObject(i);
+            if (f != null && f.optBoolean("on", true) && !f.optString("t").trim().isEmpty()) out.add(f.optString("t").trim());
+        }
+        return out;
+    }
+
+    private static final String[] TYPE = {"I", "Dine in", "P", "Pick up", "S", "Self service", "D", "Online"};
+
+    private final TvWeb.App webApp = new TvWeb.App() {
+        @Override public org.json.JSONObject state() {
+            org.json.JSONObject o = new org.json.JSONObject();
+            try {
+                org.json.JSONObject st = new org.json.JSONObject();
+                st.put("kinds", P.getString("dosaKinds", "I"));
+                org.json.JSONArray ch = new org.json.JSONArray();
+                for (String c : DosaBoard.chans(P)) ch.put(c);
+                st.put("chans", ch);
+                org.json.JSONArray seen = new org.json.JSONArray();
+                for (String c : DosaBoard.seenChans(P)) seen.put(c);
+                st.put("seenChans", seen);
+                st.put("clearMin", P.getInt("dosaClearMin", 10));
+                st.put("voice", P.getBoolean("dosaVoice", true));
+                boolean dg = P.getBoolean("voiceDigits", false);
+                st.put("digits", dg);
+                st.put("numbersOn", P.getBoolean("numbersOn", true));
+                List<String> ex = new ArrayList<String>();
+                ex.add("2401");
+                st.put("sample", DosaBoard.announcement(ex, dg));
+                o.put("settings", st);
+                o.put("facts", factsList());
+                org.json.JSONArray nums = new org.json.JSONArray();
+                for (String x : stats.facts()) nums.put(x);
+                o.put("numbers", nums);
+                o.put("ppHost", P.getString("ppHost", ""));
+                o.put("version", "app " + Version.NAME);
+                DosaBoard b = board;
+                org.json.JSONObject last = b == null ? null : b.last;
+                org.json.JSONArray rows = new org.json.JSONArray();
+                if (last != null) {
+                    o.put("readAt", last.optLong("now"));
+                    java.util.Set<String> kinds = DosaBoard.kinds(P), chans = DosaBoard.chans(P);
+                    org.json.JSONArray cards = last.optJSONArray("cards");
+                    for (int i = 0; cards != null && i < cards.length(); i++) {
+                        org.json.JSONObject c = cards.optJSONObject(i);
+                        if (c == null) continue;
+                        org.json.JSONArray its = c.optJSONArray("i"), dos = new org.json.JSONArray();
+                        for (int k = 0; its != null && k < its.length(); k++) {
+                            org.json.JSONObject it = its.optJSONObject(k);
+                            if (it != null && DosaBoard.isDosa(it.optString("c"))) dos.put(new org.json.JSONObject().put("n", it.optInt("q", 1) + "× " + it.optString("n")).put("s", it.optInt("s", it.optBoolean("r") ? 9 : 1)));
+                        }
+                        if (dos.length() == 0 && c.optInt("hid") == 0) continue;
+                        String chn = c.optString("ch", "I"), type = chn;
+                        for (int t = 0; t < TYPE.length; t += 2) if (TYPE[t].equals(chn)) type = TYPE[t + 1];
+                        if ("D".equals(chn)) type = c.optString("app", "Online");
+                        boolean want = kinds.contains(chn) && !("D".equals(chn) && !chans.isEmpty() && !chans.contains(c.optString("app")));
+                        String tok = c.optString("kn");
+                        if ("D".equals(chn)) { String app = c.optString("app"); tok = (app.isEmpty() ? "" : app.substring(0, 1).toUpperCase() + " ") + c.optString("l4", tok); }
+                        rows.put(new org.json.JSONObject().put("token", tok).put("type", type).put("items", dos).put("st", c.optString("st")).put("oh", c.optString("oh"))
+                                .put("hid", c.optInt("hid")).put("shown", !want ? "no (" + type + " is off)" : dos.length() == 0 ? "no (all dosas dispatched)" : "yes"));
+                    }
+                }
+                o.put("board", rows);
+            } catch (Throwable ignored) {
+            }
+            return o;
+        }
+
+        @Override public String save(final org.json.JSONObject in) {
+            try {
+                org.json.JSONArray f = in.optJSONArray("facts"), keep = new org.json.JSONArray();
+                for (int i = 0; f != null && i < f.length() && keep.length() < 200; i++) {
+                    org.json.JSONObject x = f.optJSONObject(i);
+                    String t = x == null ? "" : x.optString("t").trim();
+                    if (!t.isEmpty()) keep.put(new org.json.JSONObject().put("t", t.length() > 200 ? t.substring(0, 200) : t).put("on", x.optBoolean("on", true)));
+                }
+                String kinds = in.optString("kinds", "I").replaceAll("[^IPSD]", "");
+                if (kinds.isEmpty()) kinds = "I";
+                StringBuilder ch = new StringBuilder();
+                org.json.JSONArray c = in.optJSONArray("chans");
+                for (int i = 0; c != null && i < c.length(); i++) if (!c.optString(i).trim().isEmpty()) ch.append(c.optString(i).trim()).append('\n');
+                int clr = in.optInt("clearMin", 10);
+                if (clr != 5 && clr != 10 && clr != 15 && clr != 30) clr = 10;
+                P.edit().putString("facts", keep.toString()).putBoolean("numbersOn", in.optBoolean("numbersOn", true))
+                        .putString("dosaKinds", kinds).putString("dosaChans", ch.toString()).putInt("dosaClearMin", clr)
+                        .putBoolean("dosaVoice", in.optBoolean("voice", true)).putBoolean("voiceDigits", in.optBoolean("digits", false)).apply();
+                h.post(new Runnable() { @Override public void run() { h.removeCallbacks(factsLoop); factsLoop.run(); } });
+                return "";
+            } catch (Throwable t) {
+                return "Couldn't save: " + t.getMessage();
+            }
+        }
+
+        @Override public void announce() {
+            List<String> ex = new ArrayList<String>();
+            ex.add("2401");
+            voice.say(DosaBoard.announcement(ex, P.getBoolean("voiceDigits", false)), null, true);
         }
     };
 
@@ -323,6 +437,10 @@ public class DosaApp extends Activity {
             acts.addView(back, l);
         }
         col.addView(acts, lp(-1, -2, 6));
+        if (web != null && web.port > 0) {
+            col.addView(head("Facts and settings from your computer"), lp(-1, -2, 18));
+            col.addView(text("On a computer or phone on the shop Wi-Fi, open " + TvWeb.addresses(web.port) + "  (PIN 1234). Change the \"Did you know?\" facts, the board's settings, test the announcement, and see what the board reads from Petpooja.", 15, 0xFF444444, false), lp(-1, -2, 4));
+        }
         col.addView(text("Settings later: MENU on the remote, Back 5 times, or 5 taps in the top-left corner. The board opens by itself when the TV starts.", 14, 0xFF666666, false), lp(-1, -2, 14));
         start.requestFocus();
     }

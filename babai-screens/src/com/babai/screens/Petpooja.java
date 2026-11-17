@@ -265,11 +265,12 @@ final class Petpooja {
                     c.put("l4", digits.length() > 4 ? digits.substring(digits.length() - 4) : digits);
                 }
                 c.put("c", created(str(r, "created")));
+                c.put("oh", str(r, "oh_status")); // the order's status (shown on the TV's settings page)
                 c.put("i", new JSONArray());
                 cards.put(id, c);
             }
             String ks = str(r, "kot_status");
-            if (!ks.isEmpty()) status.put(id, ks);
+            if (!ks.isEmpty()) { status.put(id, ks); c.put("st", ks); }
             String name = str(r, "name");
             if (name.isEmpty()) continue;
             int s = (int) Math.round(num(r, "status", 0));
@@ -277,9 +278,12 @@ final class Petpooja {
             allOut.put(id, (allOut.containsKey(id) ? allOut.get(id) : true) && s == 10);
             // as the Petpooja KDS (BuildKotBoardUseCase.isValidForCategory): a dispatched dish (10) and
             // a dish replaced in an edited KOT (changed 1) are not shown; a KOT with none left is gone
-            if (s == 10 || Math.round(num(r, "changed", 0)) == 1) continue;
+            if (s == 10 || Math.round(num(r, "changed", 0)) == 1) {
+                c.put("hid", c.optInt("hid") + 1); // dishes dispatched or replaced: not shown
+                continue;
+            }
             c.getJSONArray("i").put(new JSONObject().put("n", name).put("c", str(r, "category"))
-                    .put("q", Math.max(num(r, "quantity", 1), 0) > 0 ? num(r, "quantity", 1) : 1).put("r", s == 9 || s == 10));
+                    .put("q", Math.max(num(r, "quantity", 1), 0) > 0 ? num(r, "quantity", 1) : 1).put("r", s == 9 || s == 10).put("s", s));
         }
         JSONArray out = new JSONArray();
         for (Map.Entry<Long, JSONObject> e : cards.entrySet()) {

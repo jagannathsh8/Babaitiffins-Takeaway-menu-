@@ -48,6 +48,7 @@ final class DosaBoard {
      *  the board still shows only the chosen ones), and hand each list to its stats. */
     boolean fetchAll;
     DosaStats stats;
+    volatile JSONObject last; // the last kitchen list read (the TV's settings page shows it)
     static String defaultKinds = "IP"; // Babai Screens: dine in + pick up; the Dosa Board app: dine in
     private boolean running, first = true, busy;
 
@@ -133,7 +134,8 @@ final class DosaBoard {
                     model.clearMs = P.getInt("dosaClearMin", 10) * 60_000L;
                     model.update(orders, now);
                     view.show(model, now);
-                    if (stats != null) stats.add(j);
+                    last = j;
+                    if (stats != null) stats.add(j, kinds(P), chans(P));
                     host.boardOk();
                     calls();
                 } catch (Throwable t) {
@@ -179,7 +181,7 @@ final class DosaBoard {
         first = false;
         if (call.isEmpty() || !P.getBoolean("dosaVoice", true)) return;
         StringBuilder s = new StringBuilder("Token number ");
-        for (int i = 0; i < call.size(); i++) s.append(i > 0 ? ", " : "").append(spoken(call.get(i)));
+        for (int i = 0; i < call.size(); i++) s.append(i > 0 ? ", " : "").append(spoken(call.get(i), P.getBoolean("voiceDigits", false)));
         s.append(", dosa ready, kindly collect.");
         String wav;
         try {
@@ -190,9 +192,24 @@ final class DosaBoard {
         host.say(s.toString(), wav);
     }
 
-    private static String spoken(String t) {
+    /** How a token is said: "2401", or digit by digit ("2, 4, 0, 1") when chosen. */
+    static String spoken(String t, boolean digits) {
         if (t.matches("T\\d+")) return "table " + t.substring(1);
-        return t.replace("#", "");
+        t = t.replace("#", "");
+        if (!digits) return t;
+        StringBuilder b = new StringBuilder();
+        for (char ch : t.toCharArray()) {
+            if (Character.isDigit(ch)) b.append(b.length() > 0 ? " " : "").append(ch);
+            else if (ch != ' ') b.append(ch);
+        }
+        return b.toString();
+    }
+
+    /** The announcement for these tokens, as the board says it. */
+    static String announcement(List<String> tokens, boolean digits) {
+        StringBuilder s = new StringBuilder("Token number ");
+        for (int i = 0; i < tokens.size(); i++) s.append(i > 0 ? ", " : "").append(spoken(tokens.get(i), digits));
+        return s.append(", dosa ready, kindly collect.").toString();
     }
 
     // ---- what this screen shows -------------------------------------------------------------------

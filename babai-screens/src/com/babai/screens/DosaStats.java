@@ -53,8 +53,9 @@ final class DosaStats {
         dirty = true;
     }
 
-    /** One kitchen list (the cards as DosaBoard reads them). */
-    synchronized void add(JSONObject j) {
+    /** One kitchen list (the cards as DosaBoard reads them). Only the order types and online channels
+     *  chosen for the board are counted (dine in only: only dine-in dosas). */
+    synchronized void add(JSONObject j, Set<String> kinds, Set<String> chans) {
         long now = System.currentTimeMillis();
         String d = today(now);
         if (!d.equals(day)) newDay(d);
@@ -65,6 +66,8 @@ final class DosaStats {
                 if (c == null) continue;
                 long id = c.optLong("k"), created = c.optLong("c", 0);
                 if (id == 0 || seen.contains(id)) continue;
+                String ch = c.optString("ch", "I");
+                if (!kinds.contains(ch) || ("D".equals(ch) && !chans.isEmpty() && !chans.contains(c.optString("app")))) continue;
                 if (created > 0 && !today(created).equals(d)) continue; // a KOT from another day
                 JSONArray its = c.optJSONArray("i");
                 double q = 0;
