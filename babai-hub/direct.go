@@ -33,9 +33,16 @@ import (
 	"time"
 )
 
+// DirectLine: a KOT printer (4.17, as Petpooja's Assign Printer): it prints a KOT slip with the
+// dishes ticked for it: every category (All), whole categories (Cats) and single items (Items).
+// A dish ticked for two printers prints on both. Kind / Values: how configs before 4.17 named
+// one category or item printer; read into Cats / Items.
 type DirectLine struct {
-	Kind    string   `json:"kind"`   // "cat" or "item"
-	Values  []string `json:"values"` // category or item names
+	Kind    string   `json:"kind,omitempty"`
+	Values  []string `json:"values,omitempty"`
+	All     bool     `json:"all,omitempty"`   // every category, also ones added later in Petpooja
+	Cats    []string `json:"cats,omitempty"`  // whole categories
+	Items   []string `json:"items,omitempty"` // single items
 	Printer string   `json:"printer"`
 	Backups []string `json:"backups,omitempty"` // up to 3, in order
 	Off     bool     `json:"off,omitempty"`     // switched off (the setup is kept)
@@ -188,16 +195,13 @@ func cleanDirect(c DirectCfg) DirectCfg {
 	c.Subs = subs
 	var lines []DirectLine
 	for _, l := range c.Lines {
-		if l.Kind != "item" {
-			l.Kind = "cat"
+		if l.Kind == "item" { // a config from before 4.17
+			l.Items = append(l.Items, l.Values...)
+		} else {
+			l.Cats = append(l.Cats, l.Values...)
 		}
-		var v []string
-		for _, x := range l.Values {
-			if x = strings.TrimSpace(x); x != "" && !containsStr(v, x) && len(v) < 100 {
-				v = append(v, x)
-			}
-		}
-		l.Values = v
+		l.Kind, l.Values = "", nil
+		l.Cats, l.Items = cleanList(l.Cats, 200), cleanList(l.Items, 1000)
 		l.Backups = cleanBackups(l.Printer, l.Backups)
 		l.Skip, l.Chans = cleanSkip(l.Skip), cleanNames(l.Chans)
 		if len(lines) < 30 {
@@ -285,15 +289,27 @@ type directSlip struct {
 	also     []KItem
 }
 
-func lineName(l DirectLine) string {
-	if len(l.Values) == 0 {
-		return "Line"
+// cleanList: trimmed, no blanks, no repeats (whatever the case), at most max.
+func cleanList(in []string, max int) []string {
+	var v []string
+	for _, x := range in {
+		if x = strings.TrimSpace(x); x != "" && !containsStr(v, x) && len(v) < max {
+			v = append(v, x)
+		}
 	}
-	return strings.Join(l.Values, " + ")
+	return v
 }
 
-// directPlan: the slips for a KOT. An item goes to the first item line naming it, else the
-// first category line with its category; the main printer gets the whole order (or the rest).
+func lineName(l DirectLine) string { return "KOT · " + printerLabel(l.Printer) }
+
+// lineHas: this KOT printer prints the dish.
+func lineHas(l DirectLine, it KItem) bool {
+	return l.All || containsStr(l.Items, it.N) || containsStr(l.Cats, strings.TrimSpace(it.C))
+}
+
+// directPlan: the slips for a KOT. The main / sub main printer gets the whole order (or, with
+// MainRest, what no KOT printer prints); every KOT printer gets a KOT slip with its dishes (a
+// dish ticked for two KOT printers prints on both).
 func directPlan(c DirectCfg, k Kot) []directSlip {
 	var items []KItem
 	for _, it := range k.Items {
@@ -301,28 +317,16 @@ func directPlan(c DirectCfg, k Kot) []directSlip {
 			items = append(items, it)
 		}
 	}
-	taken := make([]int, len(items)) // line index + 1
-	for i, it := range items {
-		for li, l := range c.Lines {
-			if l.Kind == "item" && containsStr(l.Values, it.N) {
-				taken[i] = li + 1
-				break
-			}
-		}
-		if taken[i] != 0 {
-			continue
-		}
-		for li, l := range c.Lines {
-			if l.Kind == "cat" && containsStr(l.Values, strings.TrimSpace(it.C)) {
-				taken[i] = li + 1
-				break
-			}
-		}
-	}
 	var out []directSlip
 	var mine []KItem
-	for i, it := range items {
-		if !c.MainRest || taken[i] == 0 || !lineOn(c.Lines[taken[i]-1], k) {
+	for _, it := range items {
+		taken := false
+		for _, l := range c.Lines {
+			if lineOn(l, k) && lineHas(l, it) {
+				taken = true
+			}
+		}
+		if !c.MainRest || !taken {
 			mine = append(mine, it)
 		}
 	}
@@ -332,20 +336,18 @@ func directPlan(c DirectCfg, k Kot) []directSlip {
 			out = append(out, bill)
 		}
 	}
-	for li, l := range c.Lines {
+	for _, l := range c.Lines {
 		if !lineOn(l, k) {
 			continue
 		}
-		var mine, rest []KItem
-		for i, it := range items {
-			if taken[i] == li+1 {
+		var mine []KItem
+		for _, it := range items {
+			if lineHas(l, it) {
 				mine = append(mine, it)
-			} else {
-				rest = append(rest, it)
 			}
 		}
 		if len(mine) > 0 {
-			out = append(out, directSlip{name: lineName(l), station: lineName(l), printers: append([]string{l.Printer}, l.Backups...), items: mine, also: rest})
+			out = append(out, directSlip{name: lineName(l), station: lineName(l), printers: append([]string{l.Printer}, l.Backups...), items: mine})
 		}
 	}
 	return out
@@ -392,11 +394,7 @@ func slipForOTP(k Kot, token int, s directSlip, cancel bool, otp, otpName string
 	if s.station != "" {
 		d.Token = 0 // the slot prints only on the main / sub main slip
 		d.Note = ""
-		var also []string
-		for _, it := range s.also {
-			also = append(also, it.N+" ×"+qtyStr(it.Q))
-		}
-		d.Also = strings.Join(also, ", ")
+		d.Code = "" // a KOT slip, as Petpooja's: no barcode (that is on the main slip)
 	}
 	return d
 }
@@ -1084,13 +1082,20 @@ func handleDirect(w http.ResponseWriter, r *http.Request) {
 			names = append(names, map[string]any{"name": p.Name, "label": printerLabel(p.Name), "problem": printerProblem(p.Name), "mm": map[bool]int{true: 58, false: 80}[paperDots(p.Name) == 384]})
 		}
 		cats, items := []string{}, []string{}
+		menu := []map[string]any{} // category -> its items, for the KOT printers' tick lists
 		for c, its := range menuSeenSnapshot() {
 			cats = append(cats, c)
 			items = append(items, its...)
+			sorted := append([]string(nil), its...)
+			sortStrings(sorted)
+			menu = append(menu, map[string]any{"name": c, "items": sorted})
 		}
+		sort.Slice(menu, func(i, j int) bool {
+			return strings.ToLower(menu[i]["name"].(string)) < strings.ToLower(menu[j]["name"].(string))
+		})
 		sortStrings(cats)
 		sortStrings(items)
-		writeJSON(w, map[string]any{"cfg": directConfig(), "printers": names, "cats": cats, "items": items, "today": directToday(), "otp": otpLastCheck(), "chans": knownChans(), "health": directHealth()})
+		writeJSON(w, map[string]any{"cfg": directConfig(), "printers": names, "cats": cats, "items": items, "menu": menu, "today": directToday(), "otp": otpLastCheck(), "chans": knownChans(), "health": directHealth()})
 		return
 	}
 	if !fromOwnPage(r) {

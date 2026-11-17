@@ -386,7 +386,51 @@ func renderSlip(d slipData, w int) *image.Gray {
 	return out
 }
 
+// drawKotSlip: a KOT printer's slip (4.17), as Petpooja's own KOT: date, "KOT - 411", the order
+// type, then Item / Qty. Online orders also name the app and the order's last digits. No slot,
+// OTP or barcode: those are on the main / sub main slip that goes with the order.
+func drawKotSlip(d slipData, w int) *image.Gray {
+	c := newCanvas(w)
+	if d.Cancel {
+		c.text("CANCELLED", "b", 64, "c", true, 0)
+	}
+	c.text(d.When.Format("02/01/06 15:04"), "m", 28, "c", false, 0)
+	c.text("KOT - "+d.KotNo, "m", 30, "c", false, 0)
+	switch {
+	case d.OrderID != "":
+		c.idLine(d.Brand+" : ", d.OrderID)
+	case d.Brand != "":
+		c.text(d.Brand, "b", 30, "c", false, 0)
+	}
+	if d.Type != "" {
+		c.text(d.Type, "b", 32, "c", false, 0)
+	}
+	for _, t := range d.Tags {
+		c.text(t, "b", 34, "c", false, 0)
+	}
+	c.dash()
+	c.row("Item", "Qty.", "m", 26, "m", 26, 0)
+	for _, it := range d.Items {
+		q := it.Q
+		if q <= 0 {
+			q = 1
+		}
+		c.row(it.N, qtyStr(q), "b", 30, "b", 32, 0)
+		for _, a := range it.A {
+			c.addon("+ "+a.N+" × "+qtyStr(a.Q), int(28*c.scale))
+		}
+		if it.Nt != "" {
+			c.wrap("Note: "+it.Nt, "b", 25, int(28*c.scale), false)
+		}
+	}
+	c.y += 14
+	return c.img.SubImage(image.Rect(0, 0, w, c.y)).(*image.Gray)
+}
+
 func drawSlip(d slipData, w int) *image.Gray {
+	if d.Station != "" {
+		return drawKotSlip(d, w)
+	}
 	c := newCanvas(w)
 	if d.Cancel {
 		c.text("CANCELLED", "b", 64, "c", true, 0)

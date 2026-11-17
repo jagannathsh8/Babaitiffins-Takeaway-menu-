@@ -33,7 +33,7 @@ function brandColor(name, type) {
 function last(s, n) { s = String(s || ""); return s.length > n ? "…" + s.slice(-n) : s; }
 
 var AREAS = { // 4.16: five areas
-  today: { label: "Today", items: [["dispatch", "Orders"], ["prints", "Prints"]], open: true },
+  today: { label: "Live", items: [["dispatch", "Orders"], ["prints", "Prints"]], open: true },
   printing: { label: "Printing", items: [["kotprint", "Printers"]], open: true },
   screens: { label: "Screens", items: [["screensapps", "Screens & apps"]], open: true },
   metrics: { label: "Metrics", items: [["cx", "CX metrics"], ["ops", "Ops metrics"]], open: true },
@@ -290,7 +290,7 @@ function drawDispatch() {
 }
 function cardReprint(o, cls) {
   if (!otok(o)) return "";
-  return '<button class="btn ghost ' + cls + '" title="Print this KOT again with the same number" ' + (o.kot ? 'data-rpk="' + esc(o.kot) + '"' : 'data-rp="' + esc(o.job) + '"') + ' data-rpt="' + esc((o.type === 1 ? "slot " : "token ") + otok(o)) + '">↻ Reprint</button>';
+  return '<button class="btn ghost ' + cls + '" title="Reprint this KOT with the same number" aria-label="Reprint" ' + (o.kot ? 'data-rpk="' + esc(o.kot) + '"' : 'data-rp="' + esc(o.job) + '"') + ' data-rpt="' + esc((o.type === 1 ? "slot " : "token ") + otok(o)) + '">' + (cls === "rpb" ? "↻" : "↻ Reprint") + "</button>";
 }
 function allOrdersTable(list) {
   $("dlist").className = "";
@@ -505,7 +505,7 @@ VIEWS.apps = {
 };
 
 // ---- Bridge: KOT printing by the Console (direct.go) -------------------------------------------------
-var KP = null, KPmsg = null, KPhelp = false, KPdirty = false;
+var KP = null, KPmsg = null, KPhelp = false, KPdirty = false, KPline = 0, KPcat = {};
 VIEWS.kotprint = {
   html: function () { return '<div id="kp"><p class="help">Loading…</p></div>'; },
   load: function () {
@@ -514,8 +514,8 @@ VIEWS.kotprint = {
       c.lines = c.lines || []; c.subs = c.subs || []; c.types = c.types || []; c.mains = c.mains || [];
       c.mains.forEach(function (x) { x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
       c.subs.forEach(function (x) { x.cats = x.cats || []; x.items = x.items || []; x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
-      c.lines.forEach(function (x) { x.values = x.values || []; x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
-      c.extraChans = c.extraChans || []; KP.chans = KP.chans || [];
+      c.lines.forEach(function (x) { x.cats = x.cats || []; x.items = x.items || []; x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
+      c.extraChans = c.extraChans || []; KP.chans = KP.chans || []; KP.menu = KP.menu || []; if (KPline >= c.lines.length) KPline = 0;
       getJ("/console/api/rules").then(function (r) { KP.lan = (r.options && r.options.lan) || []; if (KPnet) kpDraw(); }).catch(function () {});
       kpDraw();
     }).catch(function () {});
@@ -524,7 +524,7 @@ VIEWS.kotprint = {
 var KP_OT = [["D", "Delivery"], ["P", "Pick up"], ["I", "Dine in"], ["S", "Self service"]];
 var KP_HELP = [
   ["1 · How printing works", ["The Console prints every KOT: <b>one slip and one slot per order</b>. The slip, the TV, the scanners and every screen use that slot.", "Petpooja's own slip still reaches this PC: it is only read (OTP / passcode, Bolt) and not printed."]],
-  ["2 · Add printers", ["<b>+ Add printer → Main</b>: prints the whole bill with the slot. Add more mains for more copies (e.g. packing).", "<b>Sub main</b>: bills that contain the chosen categories or items print whole here instead of on the mains.", "<b>Category / Item</b>: a slip with just those dishes (no slot).", "<b>+ Network printer (IP)</b> adds a printer by its address; Windows printers show by themselves."]],
+  ["2 · Add printers", ["<b>Main printers → + Add printer → Main</b>: prints the whole bill with the slot / token, OTP and barcode; it goes with the order. Add more mains for more copies (e.g. packing).", "<b>Sub main</b>: bills that contain the chosen categories or items print whole on it instead of the main.", "<b>KOT printers</b> (counters): + Add KOT printer, choose the printer, then tick whole categories or open a category and tick single items. It prints a plain KOT slip (date, KOT number, order type, its dishes). A dish ticked for two KOT printers prints on both."]],
   ["3 · For", ["Tap <b>Pick up</b>, <b>Dine in</b>, <b>Self service</b> to switch them on or off for that printer.", "<b>Online</b> opens its channels: <b>All</b> (new channels too), pick channels, or <b>Off</b>. A new channel from Petpooja shows with its first order; + Add channel adds one before.", "An order no printer is set for is <b>not printed</b>."]],
   ["4 · Safety net (automatic)", ["A printer fails: its <b>backup</b> prints, same slot.", "No printer took the slip within 10 s: <b>Petpooja's slip</b> prints on the order's printer, same slot, and an alert shows.", "Petpooja can't be read: Petpooja's slips print, as Bridge Print did."]],
   ["5 · Emergency switch", ["On: Petpooja's slips print (with slots) instead of the Console's, on the main printers here. Off again: the Console prints."]]
@@ -606,25 +606,62 @@ function kpDraw() {
       sm.items.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-sdel="' + i + ":i:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") + kpPick('data-sadd="' + i + '"', taken, true, true),
       sel: kpSel(sm.printer, "", 'data-sp="' + i + '"'), del: 'data-sxdel="' + i + '"' });
   });
-  c.lines.forEach(function (l, i) {
-    var taken = l.values.map(function (x) { return (l.kind === "item" ? "i:" : "c:") + x; });
-    rows.push({ k: "l" + i, o: l, kind: l.kind === "item" ? "Item" : "Category", cls: l.kind === "item" ? "i" : "c", what: l.values.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-tagdel="' + i + ":" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
-      kpPick('data-addval="' + i + '"', taken, l.kind !== "item", l.kind === "item"), sel: kpSel(l.printer, "", 'data-lp="' + i + '"'), del: 'data-ldel="' + i + '"' });
-  });
-  h += '<div class="panel"><div class="kp-hd"><h2>Printers</h2></div><div class="kp2-wrap"><table class="kp2"><thead><tr><th>Type</th><th>Prints</th><th>Printer</th><th>For</th><th>Backup</th><th>On</th><th></th></tr></thead><tbody>' +
+  h += '<div class="panel"><div class="kp-hd"><h2>Main printers</h2><span class="sub">the whole bill: slot / token, OTP, barcode · handed over with the order</span></div><div class="kp2-wrap"><table class="kp2"><thead><tr><th>Type</th><th>Prints</th><th>Printer</th><th>For</th><th>Backup</th><th>On</th><th></th></tr></thead><tbody>' +
     rows.map(function (r) {
       return '<tr class="' + (r.o.off ? "off" : "") + '"><td><span class="kp2-kind ' + r.cls + '">' + r.kind + '</span></td><td class="kp2-what">' + r.what + "</td><td>" + r.sel + kpState2(r.o.printer) + "</td><td class=\"kp2-for\">" + kpTypes(r.k, r.o) + '</td><td class="kp2-bk">' + kpBk(r.o.backups, r.k) + "</td><td>" + kpSwitch(r.k, r.o.off) + '</td><td><button class="kp-del" ' + r.del + ' aria-label="Delete">🗑</button></td></tr>';
     }).join("") + (rows.length ? "" : '<tr><td colspan="7" class="mute">No printers yet: + Add printer, then Main.</td></tr>') + "</tbody></table></div>" +
     '<div class="kp-row kp2-foot"><button class="kp-add" id="kpAddBtn" aria-expanded="' + KPadd + '">+ Add printer</button>' +
-    (KPadd ? '<button class="kp-o" id="kpAddMain">Main</button><button class="kp-o" id="kpAddSub">Sub main</button><button class="kp-o" id="kpAddLine">Category</button><button class="kp-o" id="kpAddItem">Item</button>' : "") +
+    (KPadd ? '<button class="kp-o" id="kpAddMain">Main</button><button class="kp-o" id="kpAddSub">Sub main</button>' : "") +
     '<span class="kp-sp"></span><button class="btn ghost sm" id="kpNetBtn">+ Network printer (IP)</button><button class="btn ghost sm" data-test="0">Test print</button><a class="mute" href="/console/api/direct/test" target="_blank" rel="noopener">Sample slip</a></div>' +
     (KPnet ? '<div class="kp-row kp2-net"><input id="kpNetName" placeholder="Name, e.g. Packing"><input id="kpNetIP" placeholder="IP, e.g. 192.168.1.50"><input id="kpNetPort" value="9100" style="width:80px" aria-label="Port"><button class="kp-savebtn dirty" id="kpNetAdd">Add</button>' +
       (KP.lan || []).map(function (l) { return '<span class="kp-tag">' + esc(l.name) + " · " + esc(l.ip) + '<button class="kp-x" data-netdel="' + esc(l.name) + '" aria-label="Remove">×</button></span>'; }).join("") + "</div>" : "") +
-    '<label class="kp-sw2"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + "> Bill slips: the whole order (off: leave out what a category / item printer prints)</label></div>";
+    '<label class="kp-sw2"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + "> Bill slips: the whole order (off: leave out what a KOT printer prints)</label></div>";
+  h += kpKot();
   if (KPdirty) h += '<div class="kp-bar" role="status"><span>● Unsaved changes: printing works as before until you save.</span><button class="kp-savebtn dirty" data-save="1">Save changes</button><button class="kp-discard" id="kpDiscard">Discard</button></div>';
   var open = [].map.call(document.querySelectorAll("#kp details"), function (d) { return d.open; });
   $("kp").innerHTML = h;
   document.querySelectorAll("#kp details").forEach(function (d, i) { if (open[i]) d.open = true; });
+}
+// ---- KOT printers (4.17): as Petpooja's Assign Printer. Tick categories or single items per printer.
+function kpEq(a, b) { return String(a).toLowerCase() === String(b).toLowerCase(); }
+function kpIn(list, v) { return (list || []).some(function (x) { return kpEq(x, v); }); }
+function kpDrop(list, v) { for (var i = list.length - 1; i >= 0; i--) if (kpEq(list[i], v)) list.splice(i, 1); }
+function kpLabel(name) { var p = (KP.printers || []).filter(function (x) { return x.name === name; })[0]; return p ? p.label : (name || "").replace(/^lan:@?/, ""); }
+function kpSum(l) {
+  if (l.all) return "All categories";
+  var a = []; if (l.cats.length) a.push(l.cats.length + (l.cats.length > 1 ? " categories" : " category")); if (l.items.length) a.push(l.items.length + (l.items.length > 1 ? " items" : " item"));
+  return a.join(" · ") || "nothing ticked yet";
+}
+function kpOthers(i, cat, item) { // the other KOT printers that print this category / item
+  return KP.cfg.lines.filter(function (l, j) { return j !== i && l.printer && (l.all || kpIn(l.cats, cat) || (item ? kpIn(l.items, item) : false)); }).map(function (l) { return kpLabel(l.printer); });
+}
+function kpKot() {
+  var c = KP.cfg, L = c.lines, l = L[KPline];
+  var h = '<div class="panel"><div class="kp-hd"><h2>KOT printers</h2><span class="sub">a KOT slip with the dishes ticked for that printer · a dish ticked for two printers prints on both</span></div><div class="kk">' +
+    '<div class="kk-list">' + L.map(function (x, i) {
+      var st = (KP.printers || []).filter(function (q) { return q.name === x.printer; })[0];
+      return '<button class="kk-pr' + (i === KPline ? " on" : "") + (x.off ? " off" : "") + '" data-ksel="' + i + '"><span class="kk-dot' + (!x.printer || (st && st.problem) || !st ? " bad" : "") + '"></span><b>' + esc(x.printer ? kpLabel(x.printer) : "Choose a printer") + "</b><small>" + esc(kpSum(x)) + (x.off ? " · off" : "") + "</small></button>";
+    }).join("") + '<button class="kp-add" id="kpAddLine">+ Add KOT printer</button></div>';
+  if (!l) return h + '<div class="kk-as mute">No KOT printer yet. + Add KOT printer, choose the printer, then tick what it prints.</div></div></div>';
+  var k = "l" + KPline, nc = 0, ni = l.items.length;
+  h += '<div class="kk-as"><div class="kk-top"><b>Assign printer</b>' + kpSel(l.printer, "", 'data-lp="' + KPline + '"') + kpState2(l.printer) +
+    '<span class="kp-sp"></span><span class="mute">Backup</span>' + kpBk(l.backups, k) + kpSwitch(k, l.off) + '<button class="kp-del" data-ldel="' + KPline + '" aria-label="Delete this KOT printer">🗑</button></div>' +
+    '<div class="kk-for"><span class="mute">Prints for</span>' + kpTypes(k, l) + "</div>";
+  var cols = [[], [], []];
+  KP.menu.forEach(function (m, mi) {
+    var whole = l.all || kpIn(l.cats, m.name), some = m.items.filter(function (it) { return kpIn(l.items, it); }).length, oth = kpOthers(KPline, m.name), open = !!KPcat[m.name];
+    if (whole) nc++;
+    var box = '<div class="kk-cat"><div class="kk-hd"><button class="kk-cb' + (whole ? " on" : some ? " part" : "") + '" data-kcat="' + esc(m.name) + '" aria-pressed="' + whole + '" aria-label="' + esc(m.name) + '"' + (l.all ? " disabled" : "") + ">" + (whole ? "✓" : some ? "–" : "") + '</button><button class="kk-nm" data-kexp="' + esc(m.name) + '" aria-expanded="' + open + '">' + esc(m.name) +
+      (some && !whole ? ' <i>' + some + "</i>" : "") + '<span>' + (oth.length ? '<em title="Also printed by ' + esc(oth.join(", ")) + '">🖨</em> ' : "") + (open ? "▴" : "▾") + "</span></button></div>";
+    if (open) box += '<div class="kk-items">' + m.items.map(function (it) {
+      var on = whole || kpIn(l.items, it), o2 = kpOthers(KPline, m.name, it);
+      return '<div><button class="kk-cb sm' + (on ? " on" : "") + '" data-kitem="' + esc(m.name + "\u0001" + it) + '" aria-pressed="' + on + '" aria-label="' + esc(it) + '"' + (l.all ? " disabled" : "") + ">" + (on ? "✓" : "") + "</button><span>" + esc(it) + "</span>" + (o2.length ? '<em title="Also printed by ' + esc(o2.join(", ")) + '">🖨 ' + esc(o2.join(", ")) + "</em>" : "") + "</div>";
+    }).join("") + (m.items.length ? "" : '<div class="mute">No items seen yet.</div>') + "</div>";
+    cols[mi % 3].push(box + "</div>");
+  });
+  h += '<div class="kk-all"><button class="kk-cb' + (l.all ? " on" : nc || ni ? " part" : "") + '" data-kall="1" aria-pressed="' + !!l.all + '" aria-label="All categories">' + (l.all ? "✓" : nc || ni ? "–" : "") + "</button> <b>All categories</b> (" + (l.all ? "every category" : nc + (nc === 1 ? " category" : " categories") + " assigned, " + ni + (ni === 1 ? " item" : " items") + " assigned") + ")<small>All categories also takes categories added later in Petpooja. 🖨 = another KOT printer prints it too.</small></div>" +
+    (KP.menu.length ? '<div class="kk-grid">' + cols.map(function (x) { return "<div>" + x.join("") + "</div>"; }).join("") + "</div>" : '<p class="mute">The categories show here once Petpooja has sent its first orders.</p>') + "</div></div></div>";
+  return h;
 }
 function kpState2(name) {
   var p = (KP.printers || []).filter(function (x) { return x.name === name; })[0];
@@ -680,15 +717,21 @@ document.addEventListener("click", function (e) {
   else if (d.ot) { var q = d.ot.split(":"), sk = kpObj(q[0]).skip, si = sk.indexOf(q[1]); if (si >= 0) sk.splice(si, 1); else sk.push(q[1]); }
   else if (d.bkadd) { var L = kpObj(d.bkadd).backups; if (L.length < 3) L.push(""); }
   else if (d.bkdel) { var p = d.bkdel.split(":"); kpObj(p[0]).backups.splice(+p[1], 1); }
-  else if (d.kind) { var r = d.kind.split(":"); if (c.lines[+r[0]].kind !== r[1]) { c.lines[+r[0]].kind = r[1]; c.lines[+r[0]].values = []; } }
-  else if (d.tagdel) { var u = d.tagdel.split(":"); c.lines[+u[0]].values.splice(+u[1], 1); }
+  else if (d.ksel !== undefined) { KPline = +d.ksel; kpDraw(); return; }
+  else if (d.kexp !== undefined) { KPcat[d.kexp] = !KPcat[d.kexp]; kpDraw(); return; }
+  else if (d.kall) { var la = c.lines[KPline]; la.all = !la.all; }
+  else if (d.kcat !== undefined) { var lc = c.lines[KPline]; if (kpIn(lc.cats, d.kcat)) kpDrop(lc.cats, d.kcat); else { lc.cats.push(d.kcat); ((KP.menu.filter(function (m) { return m.name === d.kcat; })[0] || {}).items || []).forEach(function (it) { kpDrop(lc.items, it); }); } }
+  else if (d.kitem !== undefined) {
+    var ki = d.kitem.split("\u0001"), li = c.lines[KPline];
+    if (kpIn(li.cats, ki[0])) { kpDrop(li.cats, ki[0]); ((KP.menu.filter(function (m) { return m.name === ki[0]; })[0] || {}).items || []).forEach(function (it) { if (!kpEq(it, ki[1]) && !kpIn(li.items, it)) li.items.push(it); }); }
+    else if (kpIn(li.items, ki[1])) kpDrop(li.items, ki[1]); else li.items.push(ki[1]);
+  }
   else if (d.sdel) { var v = d.sdel.split(":"); c.subs[+v[0]][v[1] === "c" ? "cats" : "items"].splice(+v[2], 1); }
-  else if (d.ldel) c.lines.splice(+d.ldel, 1);
+  else if (d.ldel) { c.lines.splice(+d.ldel, 1); KPline = Math.max(0, Math.min(KPline, c.lines.length - 1)); }
   else if (d.sxdel) c.subs.splice(+d.sxdel, 1);
   else if (d.mxdel) c.mains.splice(+d.mxdel, 1);
   else if (b.id === "kpAddMain") { c.mains.push({ printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
-  else if (b.id === "kpAddLine") { c.lines.push({ kind: "cat", values: [], printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
-  else if (b.id === "kpAddItem") { c.lines.push({ kind: "item", values: [], printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
+  else if (b.id === "kpAddLine") { c.lines.push({ cats: [], items: [], printer: "", backups: [], skip: [], chans: [] }); KPline = c.lines.length - 1; }
   else if (b.id === "kpAddSub") { c.subs.push({ cats: [], items: [], printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
   else if (d.test !== undefined) { var tp = (c.mains[+d.test] || {}).printer; post("/console/api/direct/test", { Printer: tp || "" }).then(function (r) { KPmsg = r; kpDraw(); }); return; }
   else if (d.save) {
@@ -696,7 +739,7 @@ document.addEventListener("click", function (e) {
     if (out.mode !== "bridge") out.mode = "console";
     out.mains = out.mains.filter(function (x) { return x.printer; }).map(function (x) { x.backups = x.backups.filter(Boolean); return x; });
     out.subs = out.subs.filter(function (x) { return x.printer || x.cats.length || x.items.length; }).map(function (x) { x.backups = x.backups.filter(Boolean); return x; });
-    out.lines = out.lines.filter(function (l) { return l.printer || l.values.length; }).map(function (l) { l.backups = l.backups.filter(Boolean); return l; });
+    out.lines = out.lines.filter(function (l) { return l.printer || l.all || l.cats.length || l.items.length; }).map(function (l) { l.backups = l.backups.filter(Boolean); return l; });
     post("/console/api/direct", out).then(function (r) { KPmsg = r; if (r.ok) VIEWS.kotprint.load(); else kpDraw(); setTimeout(function () { KPmsg = null; if (KP) kpDraw(); }, 5000); });
     return;
   } else return;
@@ -710,7 +753,6 @@ document.addEventListener("change", function (e) {
   else if (d.bk) { var p = d.bk.split(":"); kpObj(p[0]).backups[+p[1]] = t.value; }
   else if (d.lp !== undefined) c.lines[+d.lp].printer = t.value;
   else if (d.sp !== undefined) c.subs[+d.sp].printer = t.value;
-  else if (d.addval !== undefined) { if (t.value) c.lines[+d.addval].values.push(t.value.slice(2)); }
   else if (d.sadd !== undefined) { if (t.value) c.subs[+d.sadd][t.value[0] === "c" ? "cats" : "items"].push(t.value.slice(2)); }
   else if (t.id === "kpWhole") c.mainRest = !t.checked;
   else return;

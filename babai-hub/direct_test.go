@@ -20,7 +20,7 @@ func TestDirectPlan(t *testing.T) {
 	if len(p) != 3 || !p[0].bill || len(p[0].items) != 3 || p[0].printers[0] != "EPSON" || len(p[0].printers) != 4 {
 		t.Fatalf("main gets the whole order (cancelled dish left out): %+v", p)
 	}
-	if p[1].station != "Dosa" || len(p[1].items) != 1 || p[1].items[0].N != "Masala Dosa" || len(p[1].also) != 2 || p[1].bill {
+	if p[1].station == "" || p[1].printers[0] != "TVS" || len(p[1].items) != 1 || p[1].items[0].N != "Masala Dosa" || p[1].bill {
 		t.Fatalf("dosa line: %+v", p[1])
 	}
 	if p[2].printers[0] != "COFFEE" || p[2].items[0].N != "Filter Coffee" {
@@ -31,11 +31,20 @@ func TestDirectPlan(t *testing.T) {
 	if len(p[0].items) != 1 || p[0].items[0].N != "Idli" {
 		t.Fatalf("main prints only the rest: %+v", p[0].items)
 	}
-	c.Lines = append([]DirectLine{{Kind: "cat", Values: []string{"Beverages"}, Printer: "JUICE"}}, c.Lines...)
+	c.Lines = append([]DirectLine{{Cats: []string{"Beverages"}, Printer: "JUICE"}}, c.Lines...)
+	// 4.17: a dish ticked for two KOT printers prints on both
+	n := 0
 	for _, s := range directPlan(c, k) {
-		if s.printers[0] == "JUICE" {
-			t.Fatal("Filter Coffee belongs to its item line, not the Beverages category line")
+		if (s.printers[0] == "JUICE" || s.printers[0] == "COFFEE") && len(s.items) == 1 && s.items[0].N == "Filter Coffee" {
+			n++
 		}
+	}
+	if n != 2 {
+		t.Fatalf("Filter Coffee is ticked for two KOT printers (its item, its category): %d slips", n)
+	}
+	c.MainRest, c.Lines = false, []DirectLine{{All: true, Printer: "ALL"}}
+	if p = directPlan(cleanDirect(c), k); len(p) != 2 || p[1].printers[0] != "ALL" || len(p[1].items) != 3 {
+		t.Fatalf("All categories: every dish on that KOT printer: %+v", p)
 	}
 }
 
@@ -93,7 +102,7 @@ func TestDirectSubMainsAndSwitches(t *testing.T) {
 	if s := slipForOTP(dosaBill, 47, p[0], false, "", ""); s.Code != "252475655137731" {
 		t.Fatal("delivery slips: the order ID barcode")
 	}
-	if s := slipForOTP(dosaBill, 47, p[1], false, "5557", "Delivery Passcode"); s.Token != 0 || s.Station != "Dosa" || s.OTP != "" {
+	if s := slipForOTP(dosaBill, 47, p[1], false, "5557", "Delivery Passcode"); s.Token != 0 || s.Station == "" || s.OTP != "" || s.Code != "" {
 		t.Fatal("the station slip has no slot and no OTP")
 	}
 	if p := directPlan(c, idliBill); len(p) != 2 || p[0].printers[0] != "EPSON" || p[1].printers[0] != "PACKING" || !p[1].bill {
