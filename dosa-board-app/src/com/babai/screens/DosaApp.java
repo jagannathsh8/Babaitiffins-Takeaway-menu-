@@ -69,8 +69,10 @@ public class DosaApp extends Activity {
         P = getSharedPreferences(PREFS, 0);
         DosaBoard.defaultKinds = "I"; // this app: dine-in dosas unless chosen otherwise
         DosaBoard.remindMins = new int[]{1, 2, 4, 5}; // calls again while ready and not dispatched
-        DosaBoard.defaultDigits = true; // "token number two four zero one"
+        DosaBoard.defaultDigits = true; // "token two four zero one"
+        DosaBoard.shortCalls = true;    // the outlet's choice: "Token 2 4 0 1, dosa ready."
         voice = new Voice(this);
+        voice.tune(0.95f, 1.05f, P.getString("ttsVoice", "")); // the outlet's choice: speed 0.95, pitch 1.05
         stats = new DosaStats(new File(getFilesDir(), "today.json"));
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
@@ -159,6 +161,10 @@ public class DosaApp extends Activity {
                 boolean dg = P.getBoolean("voiceDigits", true);
                 st.put("digits", dg);
                 st.put("numbersOn", P.getBoolean("numbersOn", true));
+                st.put("ttsVoice", P.getString("ttsVoice", ""));
+                org.json.JSONArray vs = new org.json.JSONArray();
+                for (String v : voice.voices()) vs.put(v);
+                st.put("voices", vs);
                 List<String> ex = new ArrayList<String>();
                 ex.add("2401");
                 st.put("sample", DosaBoard.announcement(ex, dg));
@@ -218,7 +224,9 @@ public class DosaApp extends Activity {
                 if (clr != 5 && clr != 10 && clr != 15 && clr != 30) clr = 10;
                 P.edit().putString("facts", keep.toString()).putBoolean("numbersOn", in.optBoolean("numbersOn", true))
                         .putString("dosaKinds", kinds).putString("dosaChans", ch.toString()).putInt("dosaClearMin", clr)
-                        .putBoolean("dosaVoice", in.optBoolean("voice", true)).putBoolean("voiceDigits", in.optBoolean("digits", true)).apply();
+                        .putBoolean("dosaVoice", in.optBoolean("voice", true)).putBoolean("voiceDigits", in.optBoolean("digits", true))
+                        .putString("ttsVoice", in.optString("ttsVoice", "")).apply();
+                voice.tune(0.95f, 1.05f, in.optString("ttsVoice", ""));
                 h.post(new Runnable() { @Override public void run() { h.removeCallbacks(factsLoop); factsLoop.run(); } });
                 return "";
             } catch (Throwable t) {

@@ -36,10 +36,67 @@ final class Voice implements TextToSpeech.OnInitListener {
         try {
             int r = tts.setLanguage(new Locale("en", "IN"));
             if (r < 0) r = tts.setLanguage(Locale.US);
-            tts.setSpeechRate(0.9f);
+            tts.setSpeechRate(rate);
+            tts.setPitch(pitch);
             ttsOk = r >= 0;
+            if (ttsOk) useVoice(wanted);
         } catch (Throwable t) {
             ttsOk = false;
+        }
+    }
+
+    // The Dosa Board app: speed, pitch and which of the TV's voices (chosen on its laptop page).
+    private float rate = 0.9f, pitch = 1f;
+    private String wanted = "";
+
+    void tune(float rate, float pitch, String voiceName) {
+        this.rate = rate;
+        this.pitch = pitch;
+        this.wanted = voiceName == null ? "" : voiceName;
+        if (!ttsOk) return;
+        try {
+            tts.setSpeechRate(rate);
+            tts.setPitch(pitch);
+            useVoice(wanted);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** The TV's English voices, Indian English first (names as the TV's voice engine gives them). */
+    java.util.List<String> voices() {
+        java.util.List<String> in = new java.util.ArrayList<String>(), other = new java.util.ArrayList<String>();
+        if (!ttsOk || android.os.Build.VERSION.SDK_INT < 21) return in;
+        try {
+            for (android.speech.tts.Voice v : tts.getVoices()) {
+                Locale l = v.getLocale();
+                if (l == null || !"en".equals(l.getLanguage())) continue;
+                if ("IN".equals(l.getCountry())) in.add(v.getName()); else other.add(v.getName());
+            }
+        } catch (Throwable ignored) {
+        }
+        java.util.Collections.sort(in);
+        java.util.Collections.sort(other);
+        in.addAll(other);
+        return in;
+    }
+
+    /** The chosen voice, else a female Indian English one when the engine says so, else the default. */
+    private void useVoice(String name) {
+        if (android.os.Build.VERSION.SDK_INT < 21) return;
+        try {
+            android.speech.tts.Voice best = null;
+            int bestScore = -1;
+            for (android.speech.tts.Voice v : tts.getVoices()) {
+                if (!name.isEmpty() && v.getName().equals(name)) { tts.setVoice(v); return; }
+                Locale l = v.getLocale();
+                if (l == null || !"en".equals(l.getLanguage()) || !"IN".equals(l.getCountry())) continue;
+                String n = v.getName().toLowerCase(Locale.US);
+                int sc = 1 + (n.contains("female") ? 4 : 0) - (n.contains("male") && !n.contains("female") ? 3 : 0) + (v.isNetworkConnectionRequired() ? 0 : 1);
+                if (v.getFeatures() != null && v.getFeatures().contains("notInstalled")) sc -= 5;
+                if (sc > bestScore) { bestScore = sc; best = v; }
+            }
+            if (best != null && name.isEmpty() && best.getName().toLowerCase(Locale.US).contains("female")) tts.setVoice(best);
+        } catch (Throwable ignored) {
         }
     }
 

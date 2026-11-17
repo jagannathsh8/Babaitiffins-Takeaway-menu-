@@ -204,6 +204,7 @@ final class DosaBoard {
 
     /** "Reminder for token number 2 4 0 1. Your dosa is waiting at the counter." */
     static String reminder(List<String> t, boolean digits) {
+        if (shortCalls) return announcement(t, digits); // the same words as the first call
         return "Reminder for token number" + (t.size() > 1 ? "s " : " ") + tokens(t, digits) + ". Your dosa" + (t.size() > 1 ? "s are" : " is") + " waiting at the counter.";
     }
 
@@ -222,8 +223,12 @@ final class DosaBoard {
 
     /** The announcement for these tokens, as the board says it. */
     static String announcement(List<String> t, boolean digits) {
+        if (shortCalls) return "Token " + tokens(t, digits) + ", dosa ready.";
         return "Token number" + (t.size() > 1 ? "s " : " ") + tokens(t, digits) + ". Your dosa" + (t.size() > 1 ? "s are" : " is") + " ready. Kindly collect.";
     }
+
+    /** The Dosa Board app: the short call the outlet chose ("Token 2 4 0 1, dosa ready."). */
+    static boolean shortCalls = false;
 
     // ---- what this screen shows -------------------------------------------------------------------
 
