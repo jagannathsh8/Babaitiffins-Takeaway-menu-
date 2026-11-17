@@ -47,6 +47,11 @@ public final class BoardView extends View {
             "Pesarattu and upma: Andhra’s traditional breakfast buddies.",
             "“Kaaram” means spicy in Telugu. Your dosa comes with a delicious warning!"};
 
+    /** The middle box at the bottom: its label, small line and number (an app may set them; the
+     *  number -1 = the dosas in the preparing orders, as the design). */
+    public static volatile String boxLabel = "DOSAS IN THE MAKING", boxLine = "Freshly made, just for you!";
+    public static volatile int boxValue = -1;
+
     /** The page's fonts and pictures. */
     public static final class Look {
         public Typeface mont800, mont900, fig600, fig700, fig800;
@@ -587,11 +592,12 @@ public final class BoardView extends View {
         // Dosas in the making
         round(c, x2, tp, x2 + u, b, 16, PURPLE);
         font(look.fig800, 19, Color.WHITE, 1);
-        mid(c, "DOSAS IN THE MAKING", x2 + 18, cy - 10, Paint.Align.LEFT);
+        mid(c, boxLabel, x2 + 18, cy - 10, Paint.Align.LEFT);
         font(look.fig600, 14, Color.WHITE, .2f);
-        mid(c, "Freshly made, just for you!", x2 + 18, cy + 13, Paint.Align.LEFT);
+        mid(c, boxLine, x2 + 18, cy + 13, Paint.Align.LEFT);
         font(look.mont800, 32, Color.WHITE, 0);
-        mid(c, String.valueOf(model.dosasInMaking), x2 + u - 18, cy + 1, Paint.Align.RIGHT);
+        int bv = boxValue;
+        mid(c, bv >= 0 ? String.valueOf(bv) : String.valueOf(model.dosasInMaking), x2 + u - 18, cy + 1, Paint.Align.RIGHT);
         // Did you know?
         float w3 = rt - x3;
         round(c, x3, tp, rt, b, 16, MAGENTA);
