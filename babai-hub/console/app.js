@@ -505,7 +505,8 @@ VIEWS.apps = {
 };
 
 // ---- Bridge: KOT printing by the Console (direct.go) -------------------------------------------------
-var KP = null, KPmsg = null, KPhelp = false, KPdirty = false, KPline = 0, KPcat = {};
+var KP = null, KPmsg = null, KPhelp = false, KPdirty = false, KPline = -1, KPcat = {}, KPother = false;
+var KPsec = (function () { var v = LS.get("kp.sec", null); return v && typeof v === "object" ? v : { s1: true, s2: false, s3: false }; })();
 VIEWS.kotprint = {
   html: function () { return '<div id="kp"><p class="help">Loading…</p></div>'; },
   load: function () {
@@ -515,8 +516,7 @@ VIEWS.kotprint = {
       c.mains.forEach(function (x) { x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
       c.subs.forEach(function (x) { x.cats = x.cats || []; x.items = x.items || []; x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
       c.lines.forEach(function (x) { x.cats = x.cats || []; x.items = x.items || []; x.backups = x.backups || []; x.skip = x.skip || []; x.chans = x.chans || []; });
-      c.extraChans = c.extraChans || []; KP.chans = KP.chans || []; KP.menu = KP.menu || []; if (KPline >= c.lines.length) KPline = 0;
-      getJ("/console/api/rules").then(function (r) { KP.lan = (r.options && r.options.lan) || []; if (KPnet) kpDraw(); }).catch(function () {});
+      c.extraChans = c.extraChans || []; KP.chans = KP.chans || []; KP.menu = KP.menu || []; if (KPline >= c.lines.length) KPline = -1; KP.lan = d.lan || [];
       kpDraw();
     }).catch(function () {});
   }
@@ -608,25 +608,7 @@ function kpDraw() {
     '<button class="kp-help' + (KPhelp ? " on" : "") + '" id="kpHelp" aria-expanded="' + KPhelp + '">❓ Help</button><button class="kp-savebtn' + (KPdirty ? " dirty" : "") + '" data-save="1">' + (KPdirty ? "Save changes" : "Saved ✓") + "</button></div>" +
     (KPmsg ? '<p class="msg kp-topmsg ' + (KPmsg.ok ? "ok" : "bad") + '">' + esc(KPmsg.msg) + "</p>" : "");
   if (KPhelp) h += '<div class="panel kp-helpbox"><div class="kp-hd"><h2>❓ How printing works</h2><a href="#" id="kpExpand">Expand all</a></div>' + KP_HELP.map(function (x) { return "<details><summary>" + x[0] + "</summary><ul>" + x[1].map(function (l) { return "<li>" + l + "</li>"; }).join("") + "</ul></details>"; }).join("") + "</div>";
-  var rows = [];
-  c.mains.forEach(function (m, i) { rows.push({ k: "m" + i, o: m, kind: "Main", cls: "", what: '<b>Whole bill</b><small>slot · OTP</small>', sel: kpSel(m.printer, "kp-main", 'data-mp="' + i + '"'), del: 'data-mxdel="' + i + '"' }); });
-  c.subs.forEach(function (sm, i) {
-    var taken = sm.cats.map(function (x) { return "c:" + x; }).concat(sm.items.map(function (x) { return "i:" + x; }));
-    rows.push({ k: "s" + i, o: sm, kind: "Sub main", cls: "s", what: '<b>Bills with</b> ' + sm.cats.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-sdel="' + i + ":c:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
-      sm.items.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-sdel="' + i + ":i:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") + kpPick('data-sadd="' + i + '"', taken, true, true),
-      sel: kpSel(sm.printer, "", 'data-sp="' + i + '"'), del: 'data-sxdel="' + i + '"' });
-  });
-  h += '<div class="panel"><div class="kp-hd"><h2>Main printers</h2><span class="sub">the whole bill: slot / token, OTP, barcode · handed over with the order</span></div><div class="kp2-wrap"><table class="kp2"><thead><tr><th>Type</th><th>Prints</th><th>Printer</th><th>For</th><th>Backup</th><th>On</th><th></th></tr></thead><tbody>' +
-    rows.map(function (r) {
-      return '<tr class="' + (r.o.off ? "off" : "") + '"><td><span class="kp2-kind ' + r.cls + '">' + r.kind + '</span></td><td class="kp2-what">' + r.what + "</td><td>" + r.sel + kpState2(r.o.printer) + "</td><td class=\"kp2-for\">" + kpTypes(r.k, r.o) + '</td><td class="kp2-bk">' + kpBk(r.o.backups, r.k) + "</td><td>" + kpSwitch(r.k, r.o.off) + '</td><td><button class="kp-del" ' + r.del + ' aria-label="Delete">🗑</button></td></tr>';
-    }).join("") + (rows.length ? "" : '<tr><td colspan="7" class="mute">No printers yet: + Add printer, then Main.</td></tr>') + "</tbody></table></div>" +
-    '<div class="kp-row kp2-foot"><button class="kp-add" id="kpAddBtn" aria-expanded="' + KPadd + '">+ Add printer</button>' +
-    (KPadd ? '<button class="kp-o" id="kpAddMain">Main</button><button class="kp-o" id="kpAddSub">Sub main</button>' : "") +
-    '<span class="kp-sp"></span><button class="btn ghost sm" id="kpNetBtn">+ Network printer (IP)</button><button class="btn ghost sm" data-test="0">Test print</button><a class="mute" href="/console/api/direct/test" target="_blank" rel="noopener">Sample slip</a></div>' +
-    (KPnet ? '<div class="kp-row kp2-net"><input id="kpNetName" placeholder="Name, e.g. Packing"><input id="kpNetIP" placeholder="IP, e.g. 192.168.1.50"><input id="kpNetPort" value="9100" style="width:80px" aria-label="Port"><button class="kp-savebtn dirty" id="kpNetAdd">Add</button><span class="mute">or</span><button class="kp-add" id="kpNetFind"' + (KPfind === "busy" ? " disabled" : "") + '>' + (KPfind === "busy" ? "Looking…" : "🔍 Find printers on this network") + "</button>" +
-      (KP.lan || []).map(function (l) { return '<span class="kp-tag" title="' + (l.mac ? "Hardware ID " + esc(l.mac) + ": the Console follows this printer if its address changes" : "Hardware ID not known yet (learned when the printer answers)") + '">' + esc(l.name) + " · " + esc(l.ip) + (l.mac ? " ✓" : "") + '<button class="kp-x" data-netdel="' + esc(l.name) + '" aria-label="Remove">×</button></span>'; }).join("") + "</div>" + kpFound() : "") +
-    '<label class="kp-sw2"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + "> Bill slips: the whole order (off: leave out what a KOT printer prints)</label></div>";
-  h += kpKot();
+  h += kpStep1() + kpStep2() + kpStep3();
   if (KPdirty) h += '<div class="kp-bar" role="status"><span>● Unsaved changes: printing works as before until you save.</span><button class="kp-savebtn dirty" data-save="1">Save changes</button><button class="kp-discard" id="kpDiscard">Discard</button></div>';
   var open = [].map.call(document.querySelectorAll("#kp details"), function (d) { return d.open; });
   $("kp").innerHTML = h;
@@ -645,33 +627,103 @@ function kpSum(l) {
 function kpOthers(i, cat, item) { // the other KOT printers that print this category / item
   return KP.cfg.lines.filter(function (l, j) { return j !== i && l.printer && (l.all || kpIn(l.cats, cat) || (item ? kpIn(l.items, item) : false)); }).map(function (l) { return kpLabel(l.printer); });
 }
-function kpKot() {
-  var c = KP.cfg, L = c.lines, l = L[KPline];
-  var h = '<div class="panel"><div class="kp-hd"><h2>KOT printers</h2><span class="sub">a KOT slip with the dishes ticked for that printer · a dish ticked for two printers prints on both</span></div><div class="kk">' +
-    '<div class="kk-list">' + L.map(function (x, i) {
-      var st = (KP.printers || []).filter(function (q) { return q.name === x.printer; })[0];
-      return '<button class="kk-pr' + (i === KPline ? " on" : "") + (x.off ? " off" : "") + '" data-ksel="' + i + '"><span class="kk-dot' + (!x.printer || (st && st.problem) || !st ? " bad" : "") + '"></span><b>' + esc(x.printer ? kpLabel(x.printer) : "Choose a printer") + "</b><small>" + esc(kpSum(x)) + (x.off ? " · off" : "") + "</small></button>";
-    }).join("") + '<button class="kp-add" id="kpAddLine">+ Add KOT printer</button></div>';
-  if (!l) return h + '<div class="kk-as mute">No KOT printer yet. + Add KOT printer, choose the printer, then tick what it prints.</div></div></div>';
-  var k = "l" + KPline, nc = 0, ni = l.items.length;
-  h += '<div class="kk-as"><div class="kk-top"><b>Assign printer</b>' + kpSel(l.printer, "", 'data-lp="' + KPline + '"') + kpState2(l.printer) +
-    '<span class="kp-sp"></span><span class="mute">Backup</span>' + kpBk(l.backups, k) + kpSwitch(k, l.off) + '<button class="kp-del" data-ldel="' + KPline + '" aria-label="Delete this KOT printer">🗑</button></div>' +
+// ---- 4.19: the page in three steps that minimise --------------------------------------------------
+function kpPr(name) { return (KP.printers || []).filter(function (x) { return x.name === name; })[0]; }
+function kpLanOf(name) { var n = String(name || "").replace(/^lan:/, ""); return (KP.lan || []).filter(function (l) { return kpEq(l.name, n); })[0]; }
+function kpUses(name) { // what this printer is used for in the settings
+  var c = KP.cfg, u = [];
+  if (c.mains.some(function (x) { return x.printer === name; })) u.push("Main");
+  if (c.subs.some(function (x) { return x.printer === name; })) u.push("Sub main");
+  if (c.lines.some(function (x) { return x.printer === name; })) u.push("KOT");
+  if (c.mains.concat(c.subs, c.lines).some(function (x) { return (x.backups || []).indexOf(name) >= 0; })) u.push("backup");
+  return u;
+}
+function kpTestBtn(name) { return name ? '<button class="btn ghost sm" data-tp="' + esc(name) + '">Test print</button>' : ""; }
+function kpDotOf(name) { var p = kpPr(name); return '<span class="kk-dot' + (!name || !p || p.problem ? " bad" : "") + '"></span>'; }
+function kpSecHd(k, n, title, sum, bad) {
+  var open = !!KPsec[k];
+  return '<button class="ks-hd" data-ksec="' + k + '" aria-expanded="' + open + '"><span class="ks-n">' + n + "</span><b>" + title + "</b><small" + (bad ? ' class="bad"' : "") + ">" + sum + '</small><span class="ks-ar">' + (open ? "▾" : "▸") + "</span></button>";
+}
+var KP_VIRTUAL = /pdf|xps|onenote|fax|anydesk|send to|snagit|adobe/i;
+function kpStep1() {
+  var used = {}, list = (KP.printers || []).filter(function (p) { var u = kpUses(p.name).length; used[p.name] = u; return p.lan || u || !KP_VIRTUAL.test(p.name); });
+  var shown = list.filter(function (p) { return p.lan || used[p.name] || KPother; }), hidden = list.length - shown.length;
+  var bad = shown.filter(function (p) { return p.problem && (p.lan || used[p.name]); }).length;
+  var sum = shown.length ? shown.length + (shown.length === 1 ? " printer" : " printers") + (bad ? " · " + bad + " not answering" : " · all answering") : "no printer yet: Find network printers, or install a USB printer in Windows";
+  var h = '<div class="panel ks">' + kpSecHd("s1", 1, "Printers at this outlet", sum, bad);
+  if (!KPsec.s1) return h + "</div>";
+  h += '<div class="ks-body">' + shown.map(function (p) {
+    var l = p.lan ? kpLanOf(p.name) : null, u = kpUses(p.name);
+    var where = p.lan ? (l ? esc(l.ip) + (l.mac ? ' · <span title="Hardware ID ' + esc(l.mac) + ': the Console follows it if its address changes">follows ✓</span>' : "") : "") : esc(p.driver || p.port || "");
+    return '<div class="ks-row"><span class="kk-dot' + (p.problem ? " bad" : "") + '"></span><b>' + esc(p.label) + '</b><span class="ks-tag' + (p.lan ? "" : " u") + '">' + (p.lan ? "Network" : "USB · Windows") + '</span><span class="ks-where">' + where + (p.problem ? ' · <span class="bad">' + esc(p.problem) + "</span>" : "") + '</span><span class="mute">' + esc(u.join(" · ") || "not used yet") + "</span>" + kpTestBtn(p.name) +
+      (p.lan ? '<button class="kp-x" data-netdel="' + esc(p.name.replace(/^lan:/, "")) + '" aria-label="Remove this network printer" title="Remove">×</button>' : "<span></span>") + "</div>";
+  }).join("") + (hidden ? '<button class="ks-more" id="kpOther">' + (KPother ? "Hide" : "Show") + " other Windows printers (" + hidden + ")</button>" : (KPother ? '<button class="ks-more" id="kpOther">Hide other Windows printers</button>' : "")) +
+    '<div class="kp-row ks-add"><button class="kp-add" id="kpNetFind"' + (KPfind === "busy" ? " disabled" : "") + ">" + (KPfind === "busy" ? "Looking on the network…" : "🔍 Find network printers") + '</button><button class="btn ghost sm" id="kpNetBtn" aria-expanded="' + KPnet + '">+ Add by IP</button><span class="mute">USB printers installed in Windows show here by themselves. Adding a printer here doesn\'t install anything on this PC.</span></div>' +
+    (KPnet ? '<div class="kp-row kp2-net"><input id="kpNetName" placeholder="Name, e.g. Packing"><input id="kpNetIP" placeholder="IP, e.g. 192.168.1.50"><input id="kpNetPort" value="9100" style="width:80px" aria-label="Port"><button class="kp-savebtn dirty" id="kpNetAdd">Add</button></div>' : "") + kpFound() + "</div>";
+  return h + "</div>";
+}
+function kpStep2() {
+  var c = KP.cfg, names = c.mains.concat(c.subs).filter(function (x) { return x.printer; }).map(function (x) { return kpLabel(x.printer); });
+  var bad = c.mains.concat(c.subs).some(function (x) { var p = kpPr(x.printer); return x.printer && (!p || p.problem); });
+  var h = '<div class="panel ks">' + kpSecHd("s2", 2, "Main printers", names.length ? esc(names.join(" · ")) + " · the whole bill: slot / token, OTP, barcode" : "none yet: + Add printer, then Main", bad);
+  if (!KPsec.s2) return h + "</div>";
+  var rows = [];
+  c.mains.forEach(function (m, i) { rows.push({ k: "m" + i, o: m, kind: "Main", cls: "", what: '<b>Whole bill</b><small>slot · OTP</small>', sel: kpSel(m.printer, "kp-main", 'data-mp="' + i + '"'), del: 'data-mxdel="' + i + '"' }); });
+  c.subs.forEach(function (sm, i) {
+    var taken = sm.cats.map(function (x) { return "c:" + x; }).concat(sm.items.map(function (x) { return "i:" + x; }));
+    rows.push({ k: "s" + i, o: sm, kind: "Sub main", cls: "s", what: '<b>Bills with</b> ' + sm.cats.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-sdel="' + i + ":c:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") +
+      sm.items.map(function (v, vi) { return '<span class="kp-tag">' + esc(v) + '<button class="kp-x" data-sdel="' + i + ":i:" + vi + '" aria-label="Remove">×</button></span>'; }).join("") + kpPick('data-sadd="' + i + '"', taken, true, true),
+      sel: kpSel(sm.printer, "", 'data-sp="' + i + '"'), del: 'data-sxdel="' + i + '"' });
+  });
+  h += '<div class="ks-body"><div class="kp2-wrap"><table class="kp2"><thead><tr><th>Type</th><th>Prints</th><th>Printer</th><th>For</th><th>Backup</th><th>On</th><th></th></tr></thead><tbody>' +
+    rows.map(function (r) {
+      return '<tr class="' + (r.o.off ? "off" : "") + '"><td><span class="kp2-kind ' + r.cls + '">' + r.kind + '</span></td><td class="kp2-what">' + r.what + "</td><td>" + r.sel + kpState2(r.o.printer) + '<div class="ks-tp">' + kpTestBtn(r.o.printer) + "</div></td><td class=\"kp2-for\">" + kpTypes(r.k, r.o) + '</td><td class="kp2-bk">' + kpBk(r.o.backups, r.k) + "</td><td>" + kpSwitch(r.k, r.o.off) + '</td><td><button class="kp-del" ' + r.del + ' aria-label="Delete">🗑</button></td></tr>';
+    }).join("") + (rows.length ? "" : '<tr><td colspan="7" class="mute">No main printer yet: + Add printer, then Main.</td></tr>') + "</tbody></table></div>" +
+    '<div class="kp-row kp2-foot"><button class="kp-add" id="kpAddBtn" aria-expanded="' + KPadd + '">+ Add printer</button>' +
+    (KPadd ? '<button class="kp-o" id="kpAddMain">Main</button><button class="kp-o" id="kpAddSub">Sub main</button>' : "") +
+    '<span class="kp-sp"></span><a class="mute" href="/console/api/direct/test" target="_blank" rel="noopener">Sample slip</a></div>' +
+    '<label class="kp-sw2"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + "> Bill slips: the whole order (off: leave out what a KOT printer prints)</label></div>";
+  return h + "</div>";
+}
+function kpTypeSum(o) {
+  var on = KP_OT.filter(function (t) { return (o.skip || []).indexOf(t[0]) < 0; });
+  if (on.length === KP_OT.length && !(o.chans || []).length) return "all order types";
+  return on.map(function (t) { return t[0] === "D" ? (o.chans.length ? o.chans.join(", ") : "Online") : t[1]; }).join(", ") || "no order type";
+}
+function kpStep3() {
+  var c = KP.cfg, L = c.lines;
+  var bad = L.some(function (x) { var p = kpPr(x.printer); return !x.off && (!x.printer || !p || p.problem); });
+  var h = '<div class="panel ks">' + kpSecHd("s3", 3, "KOT printers", L.length ? esc(L.map(function (x) { return x.printer ? kpLabel(x.printer) : "printer not chosen"; }).join(" · ")) : "none yet: + Add KOT printer for each counter", bad);
+  if (!KPsec.s3) return h + "</div>";
+  h += '<div class="ks-body"><p class="mute ks-note">A KOT slip with the dishes ticked for that printer. A dish ticked for two printers prints on both. Open a printer to set it.</p>' + L.map(function (l, i) {
+    var open = i === KPline;
+    var head = '<div class="kk-line"><button class="kk-open" data-ksel="' + i + '" aria-expanded="' + open + '">' + kpDotOf(l.printer) + "<b>" + esc(l.printer ? kpLabel(l.printer) : "Choose a printer") + "</b><small>" + esc(kpSum(l) + " · " + kpTypeSum(l)) + (l.off ? " · off" : "") + "</small></button>" + kpTestBtn(l.printer) + '<button class="kk-ar" data-ksel="' + i + '" aria-label="' + (open ? "Close" : "Open") + '">' + (open ? "▾" : "▸") + "</button></div>";
+    return '<div class="kk-box' + (open ? " open" : "") + (l.off ? " off" : "") + '">' + head + (open ? kpEditor(l, i) : "") + "</div>";
+  }).join("") +
+    '<div class="kp-row"><button class="kp-add" id="kpAddLine">+ Add KOT printer</button></div>' +
+    '<label class="kp-sw2"><input type="checkbox" id="kpKotBar"' + (c.kotBarcode ? " checked" : "") + "> Barcode on KOT slips (scan it to mark Food ready, as on the main slip)</label></div>";
+  return h + "</div>";
+}
+function kpEditor(l, i) {
+  var k = "l" + i, nc = 0, ni = l.items.length;
+  var h = '<div class="kk-as"><div class="kk-top"><span class="mute">Printer</span>' + kpSel(l.printer, "", 'data-lp="' + i + '"') + kpState2(l.printer) +
+    '<span class="kp-sp"></span><span class="mute">Backup</span>' + kpBk(l.backups, k) + kpSwitch(k, l.off) + '<button class="kp-del" data-ldel="' + i + '" aria-label="Delete this KOT printer">🗑</button></div>' +
     '<div class="kk-for"><span class="mute">Prints for</span>' + kpTypes(k, l) + "</div>";
   var cols = [[], [], []];
   KP.menu.forEach(function (m, mi) {
-    var whole = l.all || kpIn(l.cats, m.name), some = m.items.filter(function (it) { return kpIn(l.items, it); }).length, oth = kpOthers(KPline, m.name), open = !!KPcat[m.name];
+    var whole = l.all || kpIn(l.cats, m.name), some = m.items.filter(function (it) { return kpIn(l.items, it); }).length, oth = kpOthers(i, m.name), open = !!KPcat[m.name];
     if (whole) nc++;
     var box = '<div class="kk-cat"><div class="kk-hd"><button class="kk-cb' + (whole ? " on" : some ? " part" : "") + '" data-kcat="' + esc(m.name) + '" aria-pressed="' + whole + '" aria-label="' + esc(m.name) + '"' + (l.all ? " disabled" : "") + ">" + (whole ? "✓" : some ? "–" : "") + '</button><button class="kk-nm" data-kexp="' + esc(m.name) + '" aria-expanded="' + open + '">' + esc(m.name) +
       (some && !whole ? ' <i>' + some + "</i>" : "") + '<span>' + (oth.length ? '<em title="Also printed by ' + esc(oth.join(", ")) + '">🖨</em> ' : "") + (open ? "▴" : "▾") + "</span></button></div>";
     if (open) box += '<div class="kk-items">' + m.items.map(function (it) {
-      var on = whole || kpIn(l.items, it), o2 = kpOthers(KPline, m.name, it);
+      var on = whole || kpIn(l.items, it), o2 = kpOthers(i, m.name, it);
       return '<div><button class="kk-cb sm' + (on ? " on" : "") + '" data-kitem="' + esc(m.name + "\u0001" + it) + '" aria-pressed="' + on + '" aria-label="' + esc(it) + '"' + (l.all ? " disabled" : "") + ">" + (on ? "✓" : "") + "</button><span>" + esc(it) + "</span>" + (o2.length ? '<em title="Also printed by ' + esc(o2.join(", ")) + '">🖨 ' + esc(o2.join(", ")) + "</em>" : "") + "</div>";
     }).join("") + (m.items.length ? "" : '<div class="mute">No items seen yet.</div>') + "</div>";
     cols[mi % 3].push(box + "</div>");
   });
   h += '<div class="kk-all"><button class="kk-cb' + (l.all ? " on" : nc || ni ? " part" : "") + '" data-kall="1" aria-pressed="' + !!l.all + '" aria-label="All categories">' + (l.all ? "✓" : nc || ni ? "–" : "") + "</button> <b>All categories</b> (" + (l.all ? "every category" : nc + (nc === 1 ? " category" : " categories") + " assigned, " + ni + (ni === 1 ? " item" : " items") + " assigned") + ")<small>All categories also takes categories added later in Petpooja. 🖨 = another KOT printer prints it too.</small></div>" +
-    (KP.menu.length ? '<div class="kk-grid">' + cols.map(function (x) { return "<div>" + x.join("") + "</div>"; }).join("") + "</div>" : '<p class="mute">The categories show here once Petpooja has sent its first orders.</p>') + "</div></div></div>";
-  return h + '<div class="panel"><label class="kp-sw2"><input type="checkbox" id="kpKotBar"' + (c.kotBarcode ? " checked" : "") + '> Barcode on KOT slips (scan it to mark Food ready, as on the main slip)</label></div>';
+    (KP.menu.length ? '<div class="kk-grid">' + cols.map(function (x) { return "<div>" + x.join("") + "</div>"; }).join("") + "</div>" : '<p class="mute">The categories show here once Petpooja has sent its first orders.</p>') + "</div>";
+  return h;
 }
 function kpState2(name) {
   var p = (KP.printers || []).filter(function (x) { return x.name === name; })[0];
@@ -688,8 +740,15 @@ document.addEventListener("click", function (e) {
   if (b.id === "kpDiscard") { KPmsg = null; VIEWS.kotprint.load(); return; }
   if (b.id === "kpAddBtn") { KPadd = !KPadd; kpDraw(); return; }
   if (b.id === "kpNetBtn") { KPnet = !KPnet; kpDraw(); return; }
+  if (d.ksec) { KPsec[d.ksec] = !KPsec[d.ksec]; LS.set("kp.sec", KPsec); kpDraw(); return; }
+  if (b.id === "kpOther") { KPother = !KPother; kpDraw(); return; }
+  if (d.tp) {
+    b.disabled = true; b.textContent = "Printing…";
+    post("/console/api/testprint", { Printer: d.tp }).then(function (r) { KPmsg = r; kpDraw(); setTimeout(function () { KPmsg = null; if (KP) kpDraw(); }, 6000); });
+    return;
+  }
   if (b.id === "kpNetFind") {
-    KPfind = "busy"; kpDraw();
+    KPfind = "busy"; KPsec.s1 = true; kpDraw();
     getJ("/console/api/netfind").then(function (r) { KPfind = r; VIEWS.kotprint.load(); }).catch(function () { KPfind = null; KPmsg = { ok: false, msg: "Couldn't search the network." }; kpDraw(); });
     return;
   }
@@ -738,7 +797,7 @@ document.addEventListener("click", function (e) {
   else if (d.ot) { var q = d.ot.split(":"), sk = kpObj(q[0]).skip, si = sk.indexOf(q[1]); if (si >= 0) sk.splice(si, 1); else sk.push(q[1]); }
   else if (d.bkadd) { var L = kpObj(d.bkadd).backups; if (L.length < 3) L.push(""); }
   else if (d.bkdel) { var p = d.bkdel.split(":"); kpObj(p[0]).backups.splice(+p[1], 1); }
-  else if (d.ksel !== undefined) { KPline = +d.ksel; kpDraw(); return; }
+  else if (d.ksel !== undefined) { KPline = KPline === +d.ksel ? -1 : +d.ksel; kpDraw(); return; }
   else if (d.kexp !== undefined) { KPcat[d.kexp] = !KPcat[d.kexp]; kpDraw(); return; }
   else if (d.kall) { var la = c.lines[KPline]; la.all = !la.all; }
   else if (d.kcat !== undefined) { var lc = c.lines[KPline]; if (kpIn(lc.cats, d.kcat)) kpDrop(lc.cats, d.kcat); else { lc.cats.push(d.kcat); ((KP.menu.filter(function (m) { return m.name === d.kcat; })[0] || {}).items || []).forEach(function (it) { kpDrop(lc.items, it); }); } }
@@ -751,8 +810,8 @@ document.addEventListener("click", function (e) {
   else if (d.ldel) { c.lines.splice(+d.ldel, 1); KPline = Math.max(0, Math.min(KPline, c.lines.length - 1)); }
   else if (d.sxdel) c.subs.splice(+d.sxdel, 1);
   else if (d.mxdel) c.mains.splice(+d.mxdel, 1);
-  else if (b.id === "kpAddMain") { c.mains.push({ printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
-  else if (b.id === "kpAddLine") { c.lines.push({ cats: [], items: [], printer: "", backups: [], skip: [], chans: [] }); KPline = c.lines.length - 1; }
+  else if (b.id === "kpAddMain" && (KPsec.s2 = true)) { c.mains.push({ printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
+  else if (b.id === "kpAddLine") { c.lines.push({ cats: [], items: [], printer: "", backups: [], skip: [], chans: [] }); KPline = c.lines.length - 1; KPsec.s3 = true; }
   else if (b.id === "kpAddSub") { c.subs.push({ cats: [], items: [], printer: "", backups: [], skip: [], chans: [] }); KPadd = false; }
   else if (d.test !== undefined) { var tp = (c.mains[+d.test] || {}).printer; post("/console/api/direct/test", { Printer: tp || "" }).then(function (r) { KPmsg = r; kpDraw(); }); return; }
   else if (d.save) {

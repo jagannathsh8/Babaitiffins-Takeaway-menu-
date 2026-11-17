@@ -1083,7 +1083,8 @@ func handleDirect(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		var names []map[string]any
 		for _, p := range allPrintersCached() {
-			names = append(names, map[string]any{"name": p.Name, "label": printerLabel(p.Name), "problem": printerProblem(p.Name), "mm": map[bool]int{true: 58, false: 80}[paperDots(p.Name) == 384]})
+			names = append(names, map[string]any{"name": p.Name, "label": printerLabel(p.Name), "problem": printerProblem(p.Name), "mm": map[bool]int{true: 58, false: 80}[paperDots(p.Name) == 384],
+				"lan": p.Lan, "driver": p.DriverName, "port": p.PortName})
 		}
 		cats, items := []string{}, []string{}
 		menu := []map[string]any{} // category -> its items, for the KOT printers' tick lists
@@ -1099,7 +1100,7 @@ func handleDirect(w http.ResponseWriter, r *http.Request) {
 		})
 		sortStrings(cats)
 		sortStrings(items)
-		writeJSON(w, map[string]any{"cfg": directConfig(), "printers": names, "cats": cats, "items": items, "menu": menu, "today": directToday(), "otp": otpLastCheck(), "chans": knownChans(), "health": directHealth()})
+		writeJSON(w, map[string]any{"cfg": directConfig(), "printers": names, "cats": cats, "items": items, "menu": menu, "today": directToday(), "otp": otpLastCheck(), "chans": knownChans(), "health": directHealth(), "lan": lanList()})
 		return
 	}
 	if !fromOwnPage(r) {
@@ -1241,6 +1242,12 @@ func directHealth() map[string]any {
 		}
 	}
 	return map[string]any{"pp": ppFresh(), "orders": len(orders), "slips": slips, "backups": backups, "mismatches": mism, "badPrinters": bad, "emergency": c.Mode != "console"}
+}
+
+func lanList() []LanPrinter {
+	prMu.Lock()
+	defer prMu.Unlock()
+	return append([]LanPrinter{}, prOpts.Lan...)
 }
 
 // handleNetPrinter: POST {name, ip, port} adds a network printer, {name, del: true} removes it.
