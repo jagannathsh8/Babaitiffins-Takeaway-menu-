@@ -326,19 +326,18 @@ public class DosaApp extends Activity {
         sv.setBackgroundColor(CREAM);
         col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(dp(24), dp(16), dp(24), dp(40));
+        col.setPadding(dp(24), dp(16), dp(24), dp(32));
         sv.addView(col);
         root.addView(sv, new FrameLayout.LayoutParams(-1, -1));
-        TextView top = text("Babai Dosa Board", 28, BLACK, true);
+        TextView top = text("Babai Dosa Board  ·  " + Version.NAME, 26, BLACK, true);
         top.setBackgroundColor(YELLOW);
-        top.setPadding(dp(16), dp(14), dp(16), dp(14));
+        top.setPadding(dp(16), dp(12), dp(16), dp(12));
         col.addView(top, lp(-1, -2, 0));
-        col.addView(text("Only for the dosa pick-up TV. Reads the orders straight from Petpooja, like the Petpooja KDS. No Console needed. Version " + Version.NAME, 15, 0xFF444444, false), lp(-1, -2, 10));
 
-        // 1. Petpooja
-        col.addView(head("1. Petpooja billing PC"), lp(-1, -2, 18));
+        // Petpooja
+        col.addView(head("Petpooja billing PC"), lp(-1, -2, 16));
         LinearLayout pr = new LinearLayout(this);
-        final EditText ppIn = edit("Billing PC address, e.g. 192.168.1.34", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        final EditText ppIn = edit("e.g. 192.168.1.34", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         ppIn.setText(pickPP);
         ppIn.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence a, int b, int c, int d) { }
@@ -350,17 +349,15 @@ public class DosaApp extends Activity {
         fb.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { findPetpooja(); } });
         pr.addView(fb, new LinearLayout.LayoutParams(-2, -2));
         col.addView(pr, lp(-1, -2, 6));
-        if (!ppMsg.isEmpty()) col.addView(text(ppMsg, 15, 0xFF444444, false), lp(-1, -2, 4));
+        if (!ppMsg.isEmpty()) col.addView(text(ppMsg, 15, ppMsg.startsWith("✓") ? GREEN : RED, false), lp(-1, -2, 4));
 
-        // 2. which dosas
-        col.addView(head("2. Dosas on this board"), lp(-1, -2, 18));
+        // which dosas
+        col.addView(head("Dosas on this board"), lp(-1, -2, 16));
         LinearLayout kr = new LinearLayout(this);
         String[][] kinds = {{"I", "Dine in"}, {"P", "Pick up"}, {"S", "Self service"}, {"D", "Online"}};
         for (final String[] k : kinds) {
             boolean on = pickKinds.contains(k[0]);
-            String label = k[1];
-            if (k[0].equals("D") && on) label += pickChans.isEmpty() ? " · all channels" : " · " + pickChans.size() + " channel" + (pickChans.size() > 1 ? "s" : "");
-            Button b = button((on ? "✓ " : "") + label, false);
+            Button b = button((on ? "✓ " : "") + k[1], false);
             style(b, on);
             b.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
@@ -399,28 +396,43 @@ public class DosaApp extends Activity {
             HorizontalScrollView hs = new HorizontalScrollView(this);
             hs.addView(cr);
             col.addView(hs, lp(-1, -2, 6));
-            if (all.isEmpty()) col.addView(text("Online channels (Swiggy, Zomato…) show here once their first order has been read from Petpooja.", 14, 0xFF666666, false), lp(-1, -2, 2));
         }
 
-        // 3. ready tokens
-        col.addView(head("3. Ready tokens stay on the board for"), lp(-1, -2, 18));
-        col.addView(text("They leave sooner when the order is dispatched in Petpooja.", 15, 0xFF444444, false), lp(-1, -2, 2));
-        LinearLayout tr = new LinearLayout(this);
-        for (final int m : new int[]{5, 10, 15, 30}) {
-            Button b = button((m == pickClear ? "✓ " : "") + m + " min", false);
-            style(b, m == pickClear);
-            b.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { pickClear = m; drawSetup(again); } });
-            LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, -2, 1);
-            l.setMargins(0, 0, dp(6), 0);
-            tr.addView(b, l);
-        }
-        col.addView(tr, lp(-1, -2, 6));
-
-        // 4. voice
-        Button vb = button(pickVoice ? "✓ Voice calls: on" : "Voice calls: off", false);
-        style(vb, pickVoice);
-        vb.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { pickVoice = !pickVoice; drawSetup(again); } });
-        col.addView(vb, lp(-2, -2, 18));
+        // always on
+        col.addView(head("Always on"), lp(-1, -2, 16));
+        LinearLayout ar = new LinearLayout(this);
+        final boolean auto = P.getBoolean("autostart", true);
+        Button ab = button((auto ? "✓ " : "") + "Open when the TV turns on", false);
+        style(ab, auto);
+        ab.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                P.edit().putBoolean("autostart", !auto).apply();
+                if (!auto) askOverlay(); // newer TVs only let an app open itself at power-on with this permission
+                drawSetup(again);
+            }
+        });
+        LinearLayout.LayoutParams l1 = new LinearLayout.LayoutParams(0, -2, 1);
+        l1.setMargins(0, 0, dp(6), 0);
+        ar.addView(ab, l1);
+        final android.content.ComponentName home = new android.content.ComponentName(this, "com.babai.screens.DosaHome");
+        final boolean kiosk = getPackageManager().getComponentEnabledSetting(home) == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
+        Button kb = button((kiosk ? "✓ " : "") + "Kiosk mode", false);
+        style(kb, kiosk);
+        kb.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                getPackageManager().setComponentEnabledSetting(home, kiosk ? android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                        : android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED, android.content.pm.PackageManager.DONT_KILL_APP);
+                if (!kiosk) {
+                    try { startActivity(new android.content.Intent(android.provider.Settings.ACTION_HOME_SETTINGS)); } catch (Throwable t) {
+                        msg.setText("Press the remote's Home key and choose Babai Dosa Board, Always.");
+                    }
+                }
+                drawSetup(again);
+            }
+        });
+        ar.addView(kb, new LinearLayout.LayoutParams(0, -2, 1));
+        col.addView(ar, lp(-1, -2, 6));
+        if (kiosk) col.addView(text("Home key opens the board. To leave kiosk mode, tap Kiosk mode again.", 14, 0xFF666666, false), lp(-1, -2, 4));
 
         // start
         msg = text("", 16, RED, true);
@@ -437,18 +449,23 @@ public class DosaApp extends Activity {
             acts.addView(back, l);
         }
         col.addView(acts, lp(-1, -2, 6));
-        if (web != null && web.port > 0) {
-            col.addView(head("Facts and settings from your computer"), lp(-1, -2, 18));
-            col.addView(text("On a computer or phone on the shop Wi-Fi, open " + TvWeb.addresses(web.port) + "  (PIN 1234). Change the \"Did you know?\" facts, the board's settings, test the announcement, and see what the board reads from Petpooja.", 15, 0xFF444444, false), lp(-1, -2, 4));
-        }
-        col.addView(text("Settings later: MENU on the remote, Back 5 times, or 5 taps in the top-left corner. The board opens by itself when the TV starts.", 14, 0xFF666666, false), lp(-1, -2, 14));
+        if (web != null && web.port > 0) col.addView(text("Facts, ready time, voice: on a laptop on this Wi-Fi open " + TvWeb.addresses(web.port) + " (PIN 1234)", 15, 0xFF444444, false), lp(-1, -2, 14));
         start.requestFocus();
+    }
+
+    /** Android 10+: an app may open itself at power-on only with "display over other apps". */
+    private void askOverlay() {
+        if (android.os.Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this)) return;
+        try {
+            startActivity(new android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:" + getPackageName())));
+        } catch (Throwable ignored) {
+        }
     }
 
     /** The typed address first (10 s, as the Console waits), else looks on the Wi-Fi. */
     private void findPetpooja() {
         final String typed = pickPP.trim();
-        ppMsg = typed.isEmpty() ? "Looking for the Petpooja billing PC on this Wi-Fi…" : "Checking Petpooja at " + typed + "…";
+        ppMsg = typed.isEmpty() ? "Looking on this Wi-Fi…" : "Checking " + typed + "…";
         if (inSetup) drawSetup(board == null);
         new Thread(new Runnable() {
             @Override public void run() {
@@ -465,8 +482,8 @@ public class DosaApp extends Activity {
                     } else {
                         List<String> open = Petpooja.lastOpen;
                         m = "Not found. " + (typed.isEmpty() ? "" : why + ". ") + (open.isEmpty()
-                                ? "No device on this Wi-Fi has Petpooja's port " + Petpooja.PORT + " open: is Petpooja open on the billing PC, and this TV on the same Wi-Fi?"
-                                : "Port " + Petpooja.PORT + " is open at " + open + " but Petpooja didn't give a sync code.");
+                                ? "Check: Petpooja open on the billing PC, this TV on the same Wi-Fi. Or type the address from Console › Setup › Petpooja."
+                                : "Port " + Petpooja.PORT + " open at " + open + ", but no Petpooja answer.");
                     }
                 }
                 final String out = m, pick = use;
