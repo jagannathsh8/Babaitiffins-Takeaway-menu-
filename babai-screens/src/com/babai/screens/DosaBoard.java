@@ -182,8 +182,8 @@ final class DosaBoard {
         CallPlan.Due d = plan.next(ready, System.currentTimeMillis(), remindMins, host.speaking());
         if (!P.getBoolean("dosaVoice", true)) return;
         boolean dg = P.getBoolean("voiceDigits", defaultDigits);
-        if (!d.fresh.isEmpty()) say(announcement(d.fresh, dg));
-        if (!d.remind.isEmpty()) say(reminder(d.remind, dg));
+        for (List<String> c : CallPlan.chunks(d.fresh, 3)) say(announcement(c, dg)); // at most 3 tokens a sentence
+        for (List<String> c : CallPlan.chunks(d.remind, 3)) say(reminder(c, dg));
     }
 
     private void say(String text) {

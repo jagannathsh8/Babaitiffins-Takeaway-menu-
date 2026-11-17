@@ -15,6 +15,10 @@ does. No Console.
   (whole number or digit by digit), a test announcement, and what the board reads from Petpooja now
   (token, dish status, KOT status, order status, shown or why not). Nothing leaves the shop network.
 * Today's numbers count only the order types and channels chosen for the board.
+* Calls: "Token 2 4 0 1, dosa ready." when a token is ready, and the same words again at 1, 2, 4
+  and 5 minutes while it is still ready and not dispatched. New tokens first; at most 3 tokens a
+  sentence; in a rush (more than 8 ready in a minute) reminders pause; one chime per run of calls.
+  Speed 0.95, pitch 1.05; the TV's voice can be chosen on the laptop page.
 * Settings on the TV: MENU on the remote, Back 5 times, or 5 taps in the top-left corner. Opens by itself
   when the TV starts.
 

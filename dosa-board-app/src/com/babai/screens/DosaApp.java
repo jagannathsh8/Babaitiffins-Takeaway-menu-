@@ -56,6 +56,7 @@ public class DosaApp extends Activity {
     private DosaBoard board;
     private DosaStats stats;
     private TvWeb web;
+    private long lastCall; // when the last call was queued (one chime per run of calls)
     private TextView overlay;
     private boolean inSetup;
     private int fails;
@@ -257,7 +258,13 @@ public class DosaApp extends Activity {
                         + "Check that the billing PC is on with Petpooja open, and this TV is on the shop Wi-Fi.\n(" + why + ")\n\nMENU or Back ×5: settings");
                 if (fails >= 3) overlay.setVisibility(View.VISIBLE); // a short blip keeps the last picture
             }
-            @Override public void say(String text, String wav) { voice.say(text, null, true); }
+            @Override public void say(String text, String wav) {
+                // one chime for a run of calls: not while still speaking, nor within 4 s of the last call
+                long now = System.currentTimeMillis();
+                boolean chime = !voice.speaking() && now - lastCall > 4000;
+                lastCall = now;
+                voice.say(text, null, chime);
+            }
             @Override public boolean speaking() { return voice.speaking(); }
         }, "", "");
         board.fetchAll = true;
