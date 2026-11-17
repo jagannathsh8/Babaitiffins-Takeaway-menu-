@@ -44,6 +44,11 @@ final class DosaBoard {
     final BoardView view;
     private final BoardModel model = new BoardModel();
     private final Set<Long> called = new HashSet<Long>();
+    /** The Babai Dosa Board app: read every order type from Petpooja (today's numbers count every dosa;
+     *  the board still shows only the chosen ones), and hand each list to its stats. */
+    boolean fetchAll;
+    DosaStats stats;
+    static String defaultKinds = "IP"; // Babai Screens: dine in + pick up; the Dosa Board app: dine in
     private boolean running, first = true, busy;
 
     DosaBoard(Context c, SharedPreferences p, Host host, String base, String query) {
@@ -93,7 +98,7 @@ final class DosaBoard {
         String err = null, pp = P.getString("ppHost", "").trim();
         if (!pp.isEmpty()) {
             try {
-                got = Petpooja.kitchen(pp, kinds(P), 10000);
+                got = Petpooja.kitchen(pp, fetchAll ? allKinds() : kinds(P), 10000);
             } catch (Throwable t) {
                 err = "Petpooja at " + pp + ": " + why(t);
             }
@@ -128,6 +133,7 @@ final class DosaBoard {
                     model.clearMs = P.getInt("dosaClearMin", 10) * 60_000L;
                     model.update(orders, now);
                     view.show(model, now);
+                    if (stats != null) stats.add(j);
                     host.boardOk();
                     calls();
                 } catch (Throwable t) {
@@ -194,8 +200,14 @@ final class DosaBoard {
     /** The setting: "I" dine in, "P" pick up, "S" self service, "D" online; channels: none = all. */
     static Set<String> kinds(SharedPreferences p) {
         Set<String> s = new HashSet<String>();
-        for (String x : p.getString("dosaKinds", "IP").split("")) if (!x.isEmpty()) s.add(x);
+        for (String x : p.getString("dosaKinds", defaultKinds).split("")) if (!x.isEmpty()) s.add(x);
         if (s.isEmpty()) s.add("I");
+        return s;
+    }
+
+    static Set<String> allKinds() {
+        Set<String> s = new HashSet<String>();
+        for (String x : new String[]{"I", "P", "S", "D"}) s.add(x);
         return s;
     }
 

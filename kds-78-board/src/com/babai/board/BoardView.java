@@ -41,7 +41,8 @@ public final class BoardView extends View {
             GREEN = 0xFF087C45, FRESH = 0xFF00A85A, YELLOW = 0xFFFAAC23, PREP_INK = 0xFF000000, MAGENTA = 0xFFCF126D,
             PURPLE = 0xFF4F267A, RING = 0xFF171717;
 
-    static final String[] FACTS = {
+    /** The "Did you know?" facts. An app may swap the whole list (the Babai Dosa Board app does, every minute). */
+    public static volatile String[] FACTS = {
             "Pesarattu’s protein partner: green gram, with 22.5 g protein per 100 g dry grain.",
             "Pesarattu and upma: Andhra’s traditional breakfast buddies.",
             "“Kaaram” means spicy in Telugu. Your dosa comes with a delicious warning!"};
@@ -606,16 +607,18 @@ public final class BoardView extends View {
     private void ticker(Canvas c, float l, float tp, float rt, float b, float cy) {
         // each fact: 28 px | fact | 56 px | ✦ | 28 px (the page's <i> with its ::after star)
         font(look.fig700, 20, Color.WHITE, 0);
+        String[] fs = FACTS; // the list as it is now (it can be swapped while drawing)
+        if (fs == null || fs.length == 0) return;
         float star = width("✦"), one = 0;
-        for (String f : FACTS) one += 28 + width(f) + 56 + star + 28;
+        for (String f : fs) one += 28 + width(f) + 56 + star + 28;
         int chars = 0;
-        for (String f : FACTS) chars += f.length();
+        for (String f : fs) chars += f.length();
         float dur = Math.max(18f, chars * .28f), off = (t() % dur) / dur * one;
         int layer = c.saveLayer(l, tp, rt, b, null);
         c.clipRect(l, tp, rt, b);
         float x = l - off;
         while (x < rt) {
-            for (String f : FACTS) {
+            for (String f : fs) {
                 font(look.fig700, 20, Color.WHITE, 0);
                 float fw = width(f);
                 mid(c, f, x + 28, cy, Paint.Align.LEFT);

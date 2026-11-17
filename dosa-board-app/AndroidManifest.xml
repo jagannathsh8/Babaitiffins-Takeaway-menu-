@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.babai.dosaboard"
+    android:versionCode="1" android:versionName="1.0">
+    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="29"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-feature android:name="android.software.leanback" android:required="false"/>
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+    <uses-feature android:name="android.hardware.wifi" android:required="false"/>
+    <application android:label="Babai Dosa Board" android:icon="@mipmap/ic_launcher" android:banner="@drawable/banner"
+        android:allowBackup="false" android:usesCleartextTraffic="true" android:hardwareAccelerated="true"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <activity android:name="com.babai.screens.DosaApp" android:exported="true" android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <receiver android:name="com.babai.screens.DosaBoot" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
