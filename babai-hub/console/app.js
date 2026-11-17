@@ -661,7 +661,7 @@ function kpKot() {
   });
   h += '<div class="kk-all"><button class="kk-cb' + (l.all ? " on" : nc || ni ? " part" : "") + '" data-kall="1" aria-pressed="' + !!l.all + '" aria-label="All categories">' + (l.all ? "✓" : nc || ni ? "–" : "") + "</button> <b>All categories</b> (" + (l.all ? "every category" : nc + (nc === 1 ? " category" : " categories") + " assigned, " + ni + (ni === 1 ? " item" : " items") + " assigned") + ")<small>All categories also takes categories added later in Petpooja. 🖨 = another KOT printer prints it too.</small></div>" +
     (KP.menu.length ? '<div class="kk-grid">' + cols.map(function (x) { return "<div>" + x.join("") + "</div>"; }).join("") + "</div>" : '<p class="mute">The categories show here once Petpooja has sent its first orders.</p>') + "</div></div></div>";
-  return h;
+  return h + '<div class="panel"><label class="kp-sw2"><input type="checkbox" id="kpKotBar"' + (c.kotBarcode ? " checked" : "") + '> Barcode on KOT slips (scan it to mark Food ready, as on the main slip)</label></div>';
 }
 function kpState2(name) {
   var p = (KP.printers || []).filter(function (x) { return x.name === name; })[0];
@@ -755,6 +755,7 @@ document.addEventListener("change", function (e) {
   else if (d.sp !== undefined) c.subs[+d.sp].printer = t.value;
   else if (d.sadd !== undefined) { if (t.value) c.subs[+d.sadd][t.value[0] === "c" ? "cats" : "items"].push(t.value.slice(2)); }
   else if (t.id === "kpWhole") c.mainRest = !t.checked;
+  else if (t.id === "kpKotBar") c.kotBarcode = t.checked;
   else return;
   KPdirty = true;
   kpDraw();

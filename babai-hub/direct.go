@@ -79,7 +79,8 @@ type DirectCfg struct {
 	// before 4.11: one main printer (read once, moved into Mains)
 	Main        string       `json:"main,omitempty"`
 	MainBackups []string     `json:"mainBackups,omitempty"`
-	MainRest    bool         `json:"mainRest,omitempty"` // main prints only what no line takes (off: the whole order)
+	MainRest    bool         `json:"mainRest,omitempty"`   // main prints only what no line takes (off: the whole order)
+	KotBarcode  bool         `json:"kotBarcode,omitempty"` // KOT printers' slips carry the Food ready barcode too (4.17.1)
 	MainOff     bool         `json:"mainOff,omitempty"`
 	MainSkip    []string     `json:"mainSkip,omitempty"`
 	Subs        []SubMain    `json:"subs,omitempty"`
@@ -287,6 +288,7 @@ type directSlip struct {
 	printers []string
 	items    []KItem
 	also     []KItem
+	code     bool // a KOT slip with the barcode
 }
 
 // cleanList: trimmed, no blanks, no repeats (whatever the case), at most max.
@@ -347,7 +349,7 @@ func directPlan(c DirectCfg, k Kot) []directSlip {
 			}
 		}
 		if len(mine) > 0 {
-			out = append(out, directSlip{name: lineName(l), station: lineName(l), printers: append([]string{l.Printer}, l.Backups...), items: mine})
+			out = append(out, directSlip{name: lineName(l), station: lineName(l), printers: append([]string{l.Printer}, l.Backups...), items: mine, code: c.KotBarcode})
 		}
 	}
 	return out
@@ -394,7 +396,9 @@ func slipForOTP(k Kot, token int, s directSlip, cancel bool, otp, otpName string
 	if s.station != "" {
 		d.Token = 0 // the slot prints only on the main / sub main slip
 		d.Note = ""
-		d.Code = "" // a KOT slip, as Petpooja's: no barcode (that is on the main slip)
+		if !s.code {
+			d.Code = "" // a KOT slip, as Petpooja's: no barcode unless switched on (Printing page)
+		}
 	}
 	return d
 }

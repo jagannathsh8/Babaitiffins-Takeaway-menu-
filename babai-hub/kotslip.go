@@ -423,6 +423,11 @@ func drawKotSlip(d slipData, w int) *image.Gray {
 			c.wrap("Note: "+it.Nt, "b", 25, int(28*c.scale), false)
 		}
 	}
+	if code := digitsOnly(d.Code); code != "" && !d.Cancel { // switched on for KOT slips
+		c.dash()
+		c.text("Scan to Mark food ready", "b", 26, "c", false, 0)
+		c.barcode(code)
+	}
 	c.y += 14
 	return c.img.SubImage(image.Rect(0, 0, w, c.y)).(*image.Gray)
 }

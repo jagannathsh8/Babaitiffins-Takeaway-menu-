@@ -181,3 +181,22 @@ func TestDirectChannels(t *testing.T) {
 		}
 	}
 }
+
+// 4.17.1: the barcode on KOT printers' slips is a setting (off: as Petpooja's own KOT).
+func TestKotSlipBarcodeSetting(t *testing.T) {
+	k := Kot{ID: 4411, Token: 411, OrderType: 2, Items: []KItem{{N: "Poori", C: "Poori", Q: 2}}}
+	c := cleanDirect(DirectCfg{Mode: "console", Mains: []MainPrinter{{Printer: "EPSON"}}, Lines: []DirectLine{{Cats: []string{"Poori"}, Printer: "CHAAT"}}})
+	p := directPlan(c, k)
+	if s := slipFor(k, 0, p[1], false); s.Code != "" {
+		t.Fatal("off: no barcode on the KOT slip")
+	}
+	c.KotBarcode = true
+	p = directPlan(c, k)
+	off, on := renderSlip(slipFor(k, 0, directPlan(cleanDirect(DirectCfg{Mode: "console", Lines: c.Lines}), k)[0], false), 576), renderSlip(slipFor(k, 0, p[1], false), 576)
+	if s := slipFor(k, 0, p[1], false); s.Code != kotScanCode(k) || on.Bounds().Dy() <= off.Bounds().Dy() {
+		t.Fatalf("on: the KOT's scan code prints on the KOT slip (%q, %d vs %d)", s.Code, on.Bounds().Dy(), off.Bounds().Dy())
+	}
+	if s := slipFor(k, 0, p[0], false); s.Code == "" {
+		t.Fatal("the main slip always has its barcode")
+	}
+}
