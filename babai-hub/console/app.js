@@ -580,7 +580,17 @@ function kpPick(attr, taken, cats, items) {
   if (items) o += '<optgroup label="Items">' + (KP.items || []).filter(function (x) { return taken.indexOf("i:" + x) < 0; }).map(function (x) { return '<option value="i:' + esc(x) + '">' + esc(x) + "</option>"; }).join("") + "</optgroup>";
   return '<select class="kp-sel kp-addval" ' + attr + ">" + o + "</select>";
 }
-var KPadd = false, KPnet = false;
+var KPadd = false, KPnet = false, KPfind = null; // KPfind: null, "busy", or the Find result
+function kpFound() {
+  if (!KPfind || KPfind === "busy") return "";
+  var f = KPfind.found || [];
+  if (!f.length) return '<p class="mute kp2-found">No printer found on ' + esc((KPfind.nets || []).join(", ") || "this network") + ". Is the printer on, and on the same network as this PC? You can still type its IP.</p>";
+  return '<table class="kp2-found"><thead><tr><th>Found on the shop network</th><th>Address now</th><th>Hardware ID (never changes)</th><th></th><th></th></tr></thead><tbody>' + f.map(function (x, i) {
+    return "<tr><td>" + (x.name ? "<b>" + esc(x.name) + '</b> <span class="mute">already added' + (x.moved ? " · moved from " + esc(x.moved) : "") + "</span>" : "New printer") + '</td><td class="num">' + esc(x.ip) + '</td><td class="num">' + esc(x.mac || "not read") + "</td><td>" +
+      (x.name ? '<span class="chip ok">in use</span>' : '<span class="chip warn">new</span>') + "</td><td>" + (x.name ? "" : '<input id="kpFn' + i + '" placeholder="Name it, e.g. Chaat counter"> <button class="kp-savebtn dirty" data-fadd="' + i + '">Add</button> ') +
+      '<button class="btn ghost sm" data-ftest="' + esc(x.ip) + '">Test print</button></td></tr>';
+  }).join("") + '</tbody></table><p class="mute">Test print makes that printer print its own address, so you know which one it is.</p>';
+}
 function kpBk(list, k) {
   return list.map(function (b, i) { return '<span class="kp-bk2">' + kpSel(b, "sm", 'data-bk="' + k + ":" + i + '"') + '<button class="kp-x" data-bkdel="' + k + ":" + i + '" aria-label="Remove backup">×</button></span>'; }).join("") +
     (list.length < 3 ? '<button class="kp-plus" data-bkadd="' + k + '" aria-label="Add a backup printer">+</button>' : "");
@@ -613,8 +623,8 @@ function kpDraw() {
     '<div class="kp-row kp2-foot"><button class="kp-add" id="kpAddBtn" aria-expanded="' + KPadd + '">+ Add printer</button>' +
     (KPadd ? '<button class="kp-o" id="kpAddMain">Main</button><button class="kp-o" id="kpAddSub">Sub main</button>' : "") +
     '<span class="kp-sp"></span><button class="btn ghost sm" id="kpNetBtn">+ Network printer (IP)</button><button class="btn ghost sm" data-test="0">Test print</button><a class="mute" href="/console/api/direct/test" target="_blank" rel="noopener">Sample slip</a></div>' +
-    (KPnet ? '<div class="kp-row kp2-net"><input id="kpNetName" placeholder="Name, e.g. Packing"><input id="kpNetIP" placeholder="IP, e.g. 192.168.1.50"><input id="kpNetPort" value="9100" style="width:80px" aria-label="Port"><button class="kp-savebtn dirty" id="kpNetAdd">Add</button>' +
-      (KP.lan || []).map(function (l) { return '<span class="kp-tag">' + esc(l.name) + " · " + esc(l.ip) + '<button class="kp-x" data-netdel="' + esc(l.name) + '" aria-label="Remove">×</button></span>'; }).join("") + "</div>" : "") +
+    (KPnet ? '<div class="kp-row kp2-net"><input id="kpNetName" placeholder="Name, e.g. Packing"><input id="kpNetIP" placeholder="IP, e.g. 192.168.1.50"><input id="kpNetPort" value="9100" style="width:80px" aria-label="Port"><button class="kp-savebtn dirty" id="kpNetAdd">Add</button><span class="mute">or</span><button class="kp-add" id="kpNetFind"' + (KPfind === "busy" ? " disabled" : "") + '>' + (KPfind === "busy" ? "Looking…" : "🔍 Find printers on this network") + "</button>" +
+      (KP.lan || []).map(function (l) { return '<span class="kp-tag" title="' + (l.mac ? "Hardware ID " + esc(l.mac) + ": the Console follows this printer if its address changes" : "Hardware ID not known yet (learned when the printer answers)") + '">' + esc(l.name) + " · " + esc(l.ip) + (l.mac ? " ✓" : "") + '<button class="kp-x" data-netdel="' + esc(l.name) + '" aria-label="Remove">×</button></span>'; }).join("") + "</div>" + kpFound() : "") +
     '<label class="kp-sw2"><input type="checkbox" id="kpWhole"' + (c.mainRest ? "" : " checked") + "> Bill slips: the whole order (off: leave out what a KOT printer prints)</label></div>";
   h += kpKot();
   if (KPdirty) h += '<div class="kp-bar" role="status"><span>● Unsaved changes: printing works as before until you save.</span><button class="kp-savebtn dirty" data-save="1">Save changes</button><button class="kp-discard" id="kpDiscard">Discard</button></div>';
@@ -678,6 +688,17 @@ document.addEventListener("click", function (e) {
   if (b.id === "kpDiscard") { KPmsg = null; VIEWS.kotprint.load(); return; }
   if (b.id === "kpAddBtn") { KPadd = !KPadd; kpDraw(); return; }
   if (b.id === "kpNetBtn") { KPnet = !KPnet; kpDraw(); return; }
+  if (b.id === "kpNetFind") {
+    KPfind = "busy"; kpDraw();
+    getJ("/console/api/netfind").then(function (r) { KPfind = r; VIEWS.kotprint.load(); }).catch(function () { KPfind = null; KPmsg = { ok: false, msg: "Couldn't search the network." }; kpDraw(); });
+    return;
+  }
+  if (d.ftest) { post("/console/api/testprint", { Printer: "lan:@" + d.ftest + ":9100" }).then(function (r) { KPmsg = r; kpDraw(); }); return; }
+  if (d.fadd !== undefined) {
+    var fx = KPfind.found[+d.fadd];
+    post("/console/api/netprinter", { name: $("kpFn" + d.fadd).value, ip: fx.ip, port: 9100, mac: fx.mac }).then(function (r) { KPmsg = r; if (r.ok) { fx.name = $("kpFn" + d.fadd).value.trim(); VIEWS.kotprint.load(); } else kpDraw(); });
+    return;
+  }
   if (b.id === "kpNetAdd" || d.netdel) {
     var body = d.netdel ? { name: d.netdel, del: true } : { name: $("kpNetName").value, ip: $("kpNetIP").value, port: +$("kpNetPort").value || 9100 };
     post("/console/api/netprinter", body).then(function (r) { KPmsg = r; if (r.ok) VIEWS.kotprint.load(); else kpDraw(); });
@@ -1016,7 +1037,7 @@ VIEWS.prints = {
   load: function () {
     getJ("/console/api/alerts").then(function (d) {
       var a = (d.alerts || []).slice(0, 5);
-      $("pral").innerHTML = a.map(function (x) { return '<div class="banner-line ' + (x.lvl === "bad" ? "bad" : "") + '">⚠ ' + esc(x.msg) + ' <span class="mute">· ' + hm(x.t) + "</span></div>"; }).join("");
+      $("pral").innerHTML = a.map(function (x) { return '<div class="banner-line ' + (x.lvl === "bad" ? "bad" : x.lvl === "ok" ? "good" : "") + '">' + (x.lvl === "ok" ? "✓ " : "⚠ ") + esc(x.msg) + ' <span class="mute">· ' + hm(x.t) + "</span></div>"; }).join("");
     }).catch(function () {});
     getJ("/console/api/direct").then(function (d) {
       var H = d.health || {};

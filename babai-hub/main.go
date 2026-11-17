@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	version     = "4.17.1"
+	version     = "4.18"
 	defaultPort = 8790
 	defaultPage = "https://babaidosa.netlify.app/"
 )
@@ -122,6 +122,7 @@ func runWorker() {
 	go cxLoop()
 	go metricsLoop()
 	go comScanLoop()
+	go lanWatch()         // network printers follow their printer when its IP changes (4.18)
 	go keepAwake()        // the PC never sleeps while the Console runs (the display may)
 	go menuSeenSnapshot() // read the saved menu (or build it from the order history) before the first Petpooja read needs it
 

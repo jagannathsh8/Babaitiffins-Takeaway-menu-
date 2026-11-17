@@ -61,6 +61,7 @@ type LanPrinter struct {
 	Name string `json:"name"`
 	IP   string `json:"ip"`
 	Port int    `json:"port"`
+	MAC  string `json:"mac,omitempty"` // its hardware address: the Console follows it when the IP changes (4.18)
 }
 
 type counterState struct {

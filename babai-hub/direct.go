@@ -1254,6 +1254,7 @@ func handleNetPrinter(w http.ResponseWriter, r *http.Request) {
 		IP   string `json:"ip"`
 		Port int    `json:"port"`
 		Del  bool   `json:"del"`
+		MAC  string `json:"mac"`
 	}
 	if json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" {
 		reply(w, false, "Give the printer a name.")
@@ -1276,7 +1277,11 @@ func handleNetPrinter(w http.ResponseWriter, r *http.Request) {
 		if in.Port <= 0 || in.Port > 65535 {
 			in.Port = 9100
 		}
-		keep = append(keep, LanPrinter{Name: in.Name, IP: strings.TrimSpace(in.IP), Port: in.Port})
+		mac := strings.ToUpper(strings.TrimSpace(in.MAC))
+		if mac == "" {
+			mac = macLookup(strings.TrimSpace(in.IP)) // "" when it doesn't answer now: learned later
+		}
+		keep = append(keep, LanPrinter{Name: in.Name, IP: strings.TrimSpace(in.IP), Port: in.Port, MAC: mac})
 	}
 	prOpts.Lan = keep
 	err := savePrintOptionsLocked()

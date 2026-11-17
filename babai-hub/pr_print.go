@@ -115,6 +115,7 @@ func printerProblem(name string) string {
 		}
 		c, err := net.DialTimeout("tcp", addr, 700*time.Millisecond)
 		if err != nil {
+			lanRelocateSoon(name) // its address may have changed: look for it (4.18)
 			return "not answering on the network"
 		}
 		c.Close()
@@ -129,7 +130,11 @@ func sendOnce(name string, data []byte) (uint32, error) {
 		if addr == "" {
 			return 0, errors.New("network printer not found in the list")
 		}
-		return 0, sendTCP(addr, data, 12*time.Second)
+		err := sendTCP(addr, data, 12*time.Second)
+		if err != nil && strings.Contains(err.Error(), "not answering") {
+			lanRelocateSoon(name)
+		}
+		return 0, err
 	}
 	return sendWindowsRaw(name, data, "Babai Console")
 }
