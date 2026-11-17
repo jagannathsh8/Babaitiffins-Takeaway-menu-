@@ -68,6 +68,8 @@ public class DosaApp extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         P = getSharedPreferences(PREFS, 0);
         DosaBoard.defaultKinds = "I"; // this app: dine-in dosas unless chosen otherwise
+        DosaBoard.remindMins = new int[]{1, 2, 4, 5}; // calls again while ready and not dispatched
+        DosaBoard.defaultDigits = true; // "token number two four zero one"
         voice = new Voice(this);
         stats = new DosaStats(new File(getFilesDir(), "today.json"));
         root = new FrameLayout(this);
@@ -154,7 +156,7 @@ public class DosaApp extends Activity {
                 st.put("seenChans", seen);
                 st.put("clearMin", P.getInt("dosaClearMin", 10));
                 st.put("voice", P.getBoolean("dosaVoice", true));
-                boolean dg = P.getBoolean("voiceDigits", false);
+                boolean dg = P.getBoolean("voiceDigits", true);
                 st.put("digits", dg);
                 st.put("numbersOn", P.getBoolean("numbersOn", true));
                 List<String> ex = new ArrayList<String>();
@@ -216,7 +218,7 @@ public class DosaApp extends Activity {
                 if (clr != 5 && clr != 10 && clr != 15 && clr != 30) clr = 10;
                 P.edit().putString("facts", keep.toString()).putBoolean("numbersOn", in.optBoolean("numbersOn", true))
                         .putString("dosaKinds", kinds).putString("dosaChans", ch.toString()).putInt("dosaClearMin", clr)
-                        .putBoolean("dosaVoice", in.optBoolean("voice", true)).putBoolean("voiceDigits", in.optBoolean("digits", false)).apply();
+                        .putBoolean("dosaVoice", in.optBoolean("voice", true)).putBoolean("voiceDigits", in.optBoolean("digits", true)).apply();
                 h.post(new Runnable() { @Override public void run() { h.removeCallbacks(factsLoop); factsLoop.run(); } });
                 return "";
             } catch (Throwable t) {
@@ -227,7 +229,7 @@ public class DosaApp extends Activity {
         @Override public void announce() {
             List<String> ex = new ArrayList<String>();
             ex.add("2401");
-            voice.say(DosaBoard.announcement(ex, P.getBoolean("voiceDigits", false)), null, true);
+            voice.say(DosaBoard.announcement(ex, P.getBoolean("voiceDigits", true)), null, true);
         }
     };
 
@@ -248,6 +250,7 @@ public class DosaApp extends Activity {
                 if (fails >= 3) overlay.setVisibility(View.VISIBLE); // a short blip keeps the last picture
             }
             @Override public void say(String text, String wav) { voice.say(text, null, true); }
+            @Override public boolean speaking() { return voice.speaking(); }
         }, "", "");
         board.fetchAll = true;
         board.stats = stats;

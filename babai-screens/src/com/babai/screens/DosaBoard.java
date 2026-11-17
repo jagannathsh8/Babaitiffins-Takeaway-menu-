@@ -33,6 +33,7 @@ final class DosaBoard {
         void boardOk();
         void boardFailed(String why);
         void say(String text, String wav);
+        boolean speaking();
     }
 
     static final long LEFTOVER_MS = 2 * 3600_000L; // left open in Petpooja this long: not shown
@@ -169,27 +170,41 @@ final class DosaBoard {
         return t.getClass().getSimpleName() + (m == null ? "" : " " + m);
     }
 
-    /** Tokens that just turned ready are called out (not the ones already ready at start). */
+    /** Calls: a token as soon as it turns ready; then reminders at remindMins after that (the Dosa Board
+     *  app: 1, 2, 4, 5) while it is still ready; new tokens first. Babai Screens: no reminders. */
+    static int[] remindMins = {};
+    static boolean defaultDigits = false; // the Dosa Board app: "two four zero one"
+    private final CallPlan plan = new CallPlan();
+
     private void calls() {
-        Set<Long> live = new HashSet<Long>();
-        List<String> call = new ArrayList<String>();
-        for (BoardModel.Ready r : model.ready) {
-            live.add(r.o.id);
-            if (called.add(r.o.id) && !first) call.add(r.o.token);
-        }
-        called.retainAll(live);
-        first = false;
-        if (call.isEmpty() || !P.getBoolean("dosaVoice", true)) return;
-        StringBuilder s = new StringBuilder("Token number ");
-        for (int i = 0; i < call.size(); i++) s.append(i > 0 ? ", " : "").append(spoken(call.get(i), P.getBoolean("voiceDigits", false)));
-        s.append(", dosa ready, kindly collect.");
+        List<CallPlan.Token> ready = new ArrayList<CallPlan.Token>();
+        for (BoardModel.Ready r : model.ready) ready.add(new CallPlan.Token(r.o.id, r.o.token));
+        CallPlan.Due d = plan.next(ready, System.currentTimeMillis(), remindMins, host.speaking());
+        if (!P.getBoolean("dosaVoice", true)) return;
+        boolean dg = P.getBoolean("voiceDigits", defaultDigits);
+        if (!d.fresh.isEmpty()) say(announcement(d.fresh, dg));
+        if (!d.remind.isEmpty()) say(reminder(d.remind, dg));
+    }
+
+    private void say(String text) {
         String wav;
         try {
-            wav = base + "/screens/voice.wav?t=" + URLEncoder.encode(s.toString(), "UTF-8");
+            wav = base.isEmpty() ? null : base + "/screens/voice.wav?t=" + URLEncoder.encode(text, "UTF-8");
         } catch (Exception x) {
             wav = null;
         }
-        host.say(s.toString(), wav);
+        host.say(text, wav);
+    }
+
+    static String tokens(List<String> t, boolean digits) {
+        StringBuilder s = new StringBuilder();
+        for (int i = 0; i < t.size(); i++) s.append(i == 0 ? "" : i == t.size() - 1 ? " and " : ", ").append(spoken(t.get(i), digits));
+        return s.toString();
+    }
+
+    /** "Reminder for token number 2 4 0 1. Your dosa is waiting at the counter." */
+    static String reminder(List<String> t, boolean digits) {
+        return "Reminder for token number" + (t.size() > 1 ? "s " : " ") + tokens(t, digits) + ". Your dosa" + (t.size() > 1 ? "s are" : " is") + " waiting at the counter.";
     }
 
     /** How a token is said: "2401", or digit by digit ("2, 4, 0, 1") when chosen. */
@@ -206,10 +221,8 @@ final class DosaBoard {
     }
 
     /** The announcement for these tokens, as the board says it. */
-    static String announcement(List<String> tokens, boolean digits) {
-        StringBuilder s = new StringBuilder("Token number ");
-        for (int i = 0; i < tokens.size(); i++) s.append(i > 0 ? ", " : "").append(spoken(tokens.get(i), digits));
-        return s.append(", dosa ready, kindly collect.").toString();
+    static String announcement(List<String> t, boolean digits) {
+        return "Token number" + (t.size() > 1 ? "s " : " ") + tokens(t, digits) + ". Your dosa" + (t.size() > 1 ? "s are" : " is") + " ready. Kindly collect.";
     }
 
     // ---- what this screen shows -------------------------------------------------------------------

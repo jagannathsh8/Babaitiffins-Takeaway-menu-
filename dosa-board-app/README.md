@@ -19,5 +19,5 @@ does. No Console.
   when the TV starts.
 
 Build: `./build.sh <tools dir>` (tools: `babai-screens/tools/get-tools.sh`). Shared code:
-`babai-screens/src` (DosaBoard, DosaStats, Petpooja, Net, Voice) and `kds-78-board` (drawing code,
+`babai-screens/src` (DosaBoard, DosaStats, CallPlan, Petpooja, Net, Voice) and `kds-78-board` (drawing code,
 fonts, pictures). Signed with the Babai Screens key (never in git).

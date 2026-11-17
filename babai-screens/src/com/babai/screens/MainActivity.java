@@ -270,6 +270,7 @@ public class MainActivity extends Activity {
             @Override public void boardOk() { fails = 0; pageError = false; overlay.setVisibility(View.GONE); }
             @Override public void boardFailed(String why) { if (!inSetup) failed(why); }
             @Override public void say(String text, String wav) { voice.say(text, wav, true); }
+            @Override public boolean speaking() { return voice.speaking(); }
         }, base(), q);
         board.view.setOnTouchListener(new View.OnTouchListener() {
             @Override public boolean onTouch(View v, MotionEvent e) {
