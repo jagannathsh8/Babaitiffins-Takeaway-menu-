@@ -158,6 +158,7 @@ public class DosaApp extends Activity {
                 for (String c : DosaBoard.seenChans(P)) seen.put(c);
                 st.put("seenChans", seen);
                 st.put("clearMin", P.getInt("dosaClearMin", 10));
+                st.put("tawa", P.getInt("tawaOrders", 4));
                 st.put("voice", P.getBoolean("dosaVoice", true));
                 boolean dg = P.getBoolean("voiceDigits", true);
                 st.put("digits", dg);
@@ -223,8 +224,9 @@ public class DosaApp extends Activity {
                 for (int i = 0; c != null && i < c.length(); i++) if (!c.optString(i).trim().isEmpty()) ch.append(c.optString(i).trim()).append('\n');
                 int clr = in.optInt("clearMin", 10);
                 if (clr != 5 && clr != 10 && clr != 15 && clr != 30) clr = 10;
+                int tawa = Math.max(1, Math.min(12, in.optInt("tawa", 4)));
                 P.edit().putString("facts", keep.toString()).putBoolean("numbersOn", in.optBoolean("numbersOn", true))
-                        .putString("dosaKinds", kinds).putString("dosaChans", ch.toString()).putInt("dosaClearMin", clr)
+                        .putString("dosaKinds", kinds).putString("dosaChans", ch.toString()).putInt("dosaClearMin", clr).putInt("tawaOrders", tawa)
                         .putBoolean("dosaVoice", in.optBoolean("voice", true)).putBoolean("voiceDigits", in.optBoolean("digits", true))
                         .putString("ttsVoice", in.optString("ttsVoice", "")).apply();
                 voice.tune(0.95f, 1.05f, in.optString("ttsVoice", ""));

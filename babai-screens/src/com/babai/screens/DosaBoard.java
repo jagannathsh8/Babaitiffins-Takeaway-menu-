@@ -133,6 +133,7 @@ final class DosaBoard {
                     long now = System.currentTimeMillis();
                     List<BoardModel.Order> orders = fresh(orders(j, P, now), now);
                     model.clearMs = P.getInt("dosaClearMin", 10) * 60_000L;
+                    model.tawaOrders = P.getInt("tawaOrders", 4); // orders the tawa works on at once (laptop page)
                     model.update(orders, now);
                     view.show(model, now);
                     last = j;

@@ -173,10 +173,19 @@ public final class BoardModel {
         return completed > 0 ? totalPrepMs / (double) completed / 60000.0 : DEFAULT_AVG_MIN;
     }
 
+    /** Orders the tawa works on at once (an app may set it; 4 by default). */
+    public int tawaOrders = (int) START_KOTS;
+
+    /**
+     * Tokens off the tawa per minute. Measured over the last 15 min, but never slower than the tawa
+     * can go (tawaOrders at a time, each taking today's average): at a quiet time few tokens turn
+     * ready because few were ordered, not because the kitchen is slow.
+     */
     double perMin(long now, double avg) {
-        if (recent.isEmpty()) return START_KOTS / avg; // not measured yet: ~4 tokens on the tawas at once
+        double can = Math.max(1, tawaOrders) / avg;
+        if (recent.isEmpty()) return can;
         double window = Math.max(MIN_WIN_MS, Math.min(WIN_MS, now - since)) / 60000.0;
-        return recent.size() / window;
+        return Math.max(can, recent.size() / window);
     }
 
     /** The Dosa screen's rule: today's average minus time waited, and the queue at the tawa's pace. */
