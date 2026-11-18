@@ -101,7 +101,7 @@ final class DosaBoard {
         String err = null, pp = P.getString("ppHost", "").trim();
         if (!pp.isEmpty()) {
             try {
-                got = Petpooja.kitchen(pp, fetchAll ? allKinds() : kinds(P), 10000);
+                got = Petpooja.kitchen(pp, fetchAll ? allKinds() : kinds(P), 20000); // a busy billing PC can be slow to answer
             } catch (Throwable t) {
                 err = "Petpooja at " + pp + ": " + why(t);
             }
