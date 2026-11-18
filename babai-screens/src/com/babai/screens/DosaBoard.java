@@ -63,6 +63,8 @@ final class DosaBoard {
         view.show(model, System.currentTimeMillis());
     }
 
+    BoardModel model() { return model; }
+
     void start() {
         if (running) return;
         running = true;
@@ -184,7 +186,8 @@ final class DosaBoard {
     private void calls() {
         List<CallPlan.Token> ready = new ArrayList<CallPlan.Token>();
         for (BoardModel.Ready r : model.ready) ready.add(new CallPlan.Token(r.o.id, r.o.token));
-        CallPlan.Due d = plan.next(ready, System.currentTimeMillis(), remindMins, host.speaking());
+        int[] rem = P.getBoolean("reminders", true) ? remindMins : new int[0]; // reminder calls on / off (laptop page)
+        CallPlan.Due d = plan.next(ready, System.currentTimeMillis(), rem, host.speaking());
         if (!P.getBoolean("dosaVoice", true)) return;
         boolean dg = P.getBoolean("voiceDigits", defaultDigits);
         for (List<String> c : CallPlan.chunks(d.fresh, 3)) say(announcement(c, dg)); // at most 3 tokens a sentence

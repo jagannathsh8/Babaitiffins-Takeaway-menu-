@@ -51,6 +51,9 @@ public final class BoardView extends View {
      *  number -1 = the dosas in the preparing orders, as the design). */
     public static volatile String boxLabel = "DOSAS IN THE MAKING", boxLine = "Freshly made, just for you!";
     public static volatile int boxValue = -1;
+    /** Or the box takes turns (6 s each) through these {label, line, number} (number "" = none);
+     *  null: the single box above. */
+    public static volatile String[][] boxTurns = null;
 
     /** The page's fonts and pictures. */
     public static final class Look {
@@ -469,6 +472,18 @@ public final class BoardView extends View {
         float PH = b - 7 - moreH - 16 - py;
         if (n > 0) {
             float rh = Math.min((PH - 8 * (n - 1)) / n, (PH - 8 * 3) / 4.5f);
+            // one dish size for every row: the biggest (up to 24 px) at which each row's dishes fit
+            float room = PW - 32 - 122 - 74 - 32;
+            chipSize = 16;
+            for (float fs = 24; fs > 16; fs -= 1) {
+                boolean ok = true;
+                for (int i = 0; i < n && ok; i++) {
+                    if (chipLines(list.get(i), room, 16) < 0) continue; // too many dishes at any size: it shows "+N more"
+                    int ln = chipLines(list.get(i), room, fs);
+                    ok = ln >= 0 && ln * (fs * 1.2f + 6) + 6 <= rh - 10;
+                }
+                if (ok) { chipSize = fs; break; }
+            }
             for (int i = 0; i < n; i++) prepRow(c, list.get(i), i, px, py + i * (rh + 8), PW, rh);
         }
         int extra = list.size() - 7;
@@ -513,9 +528,27 @@ public final class BoardView extends View {
         mid(c, "MIN", rx, cy + 11, Paint.Align.CENTER);
     }
 
+    private float chipSize = 16;
+
+    /** Lines (1 or 2) the dishes take at this size, or -1 when they don't fit in two lines. */
+    private int chipLines(BoardModel.Prep p, float room, float fs) {
+        font(look.fig700, fs, PREP_INK, 0);
+        float pad = 20 * fs / 16, gap = 6, x = 0;
+        int line = 0;
+        for (BoardModel.Item it : p.o.items) {
+            float cw = width((it.ready ? "✓ " : "") + it.label()) + pad;
+            if (cw > room) return -1;
+            if (x > 0 && x + cw > room) { line++; x = 0; }
+            if (line > 1) return -1;
+            x += cw + gap;
+        }
+        return line + 1;
+    }
+
     private void chips(Canvas c, BoardModel.Prep p, float x0, float cy, float room) {
-        font(look.fig700, 16, PREP_INK, 0);
-        float ch = 16 * 1.2f + 6, gap = 6;
+        float fs = chipSize, pad = 20 * fs / 16;
+        font(look.fig700, fs, PREP_INK, 0);
+        float ch = fs * 1.2f + 6, gap = 6;
         List<String> labels = new ArrayList<String>();
         for (BoardModel.Item it : p.o.items) labels.add((it.ready ? "✓ " : "") + it.label());
         // lay out in up to two lines; what doesn't fit becomes "+N more"
@@ -525,7 +558,7 @@ public final class BoardView extends View {
         int line = 0;
         int i = 0;
         for (; i < labels.size(); i++) {
-            float cw = Math.min(room, width(labels.get(i)) + 20);
+            float cw = Math.min(room, width(labels.get(i)) + pad);
             if (x > 0 && x + cw > room) {
                 line++;
                 x = 0;
@@ -538,14 +571,14 @@ public final class BoardView extends View {
         int hidden = labels.size() - shown.size();
         if (hidden > 0) {
             String more = "+" + hidden + " more";
-            float mw = width(more) + 20;
+            float mw = width(more) + pad;
             float[] last = pos.get(pos.size() - 1);
             while (last[0] + last[2] + gap + mw > room && pos.size() > 1 && last[1] >= 1) {
                 pos.remove(pos.size() - 1);
                 shown.remove(shown.size() - 1);
                 hidden++;
                 more = "+" + hidden + " more";
-                mw = width(more) + 20;
+                mw = width(more) + pad;
                 last = pos.get(pos.size() - 1);
             }
             float mx0 = last[0] + last[2] + gap;
@@ -565,10 +598,10 @@ public final class BoardView extends View {
             round(c, l, tp, l + q[2], tp + ch, 8, 0x8CFFFFFF);
             String s = shown.get(k);
             c.save();
-            c.clipRect(l + 10, tp, l + q[2] - 4, tp + ch);
-            font(look.fig700, 16, PREP_INK, 0);
-            if (width(s) > q[2] - 20) s = ellipsize(s, q[2] - 20);
-            mid(c, s, l + 10, tp + ch / 2, Paint.Align.LEFT);
+            c.clipRect(l + pad / 2, tp, l + q[2] - 4, tp + ch);
+            font(look.fig700, fs, PREP_INK, 0);
+            if (width(s) > q[2] - pad) s = ellipsize(s, q[2] - pad);
+            mid(c, s, l + pad / 2, tp + ch / 2, Paint.Align.LEFT);
             c.restore();
         }
     }
@@ -591,13 +624,21 @@ public final class BoardView extends View {
         mid(c, "~" + model.estMinutes + " min", x1 + u - 18, cy + 1, Paint.Align.RIGHT);
         // Dosas in the making
         round(c, x2, tp, x2 + u, b, 16, PURPLE);
-        font(look.fig800, 19, Color.WHITE, 1);
-        mid(c, boxLabel, x2 + 18, cy - 10, Paint.Align.LEFT);
-        font(look.fig600, 14, Color.WHITE, .2f);
-        mid(c, boxLine, x2 + 18, cy + 13, Paint.Align.LEFT);
-        font(look.mont800, 32, Color.WHITE, 0);
         int bv = boxValue;
-        mid(c, bv >= 0 ? String.valueOf(bv) : String.valueOf(model.dosasInMaking), x2 + u - 18, cy + 1, Paint.Align.RIGHT);
+        String bl = boxLabel, bs = boxLine, bn = bv >= 0 ? String.valueOf(bv) : String.valueOf(model.dosasInMaking);
+        String[][] turns = boxTurns;
+        if (turns != null && turns.length > 0) {
+            String[] one = turns[(int) (t() / 6f) % turns.length];
+            bl = one[0];
+            bs = one[1];
+            bn = one[2];
+        }
+        font(look.fig800, 19, Color.WHITE, 1);
+        mid(c, bl, x2 + 18, cy - 10, Paint.Align.LEFT);
+        font(look.fig600, 14, Color.WHITE, .2f);
+        mid(c, bs, x2 + 18, cy + 13, Paint.Align.LEFT);
+        font(look.mont800, 32, Color.WHITE, 0);
+        if (!bn.isEmpty()) mid(c, bn, x2 + u - 18, cy + 1, Paint.Align.RIGHT);
         // Did you know?
         float w3 = rt - x3;
         round(c, x3, tp, rt, b, 16, MAGENTA);
@@ -610,36 +651,58 @@ public final class BoardView extends View {
         ticker(c, sep + 2 + 14, tp, rt, b, cy);
     }
 
+    /**
+     * "Did you know?": one fact at a time. It slides up into view and fades in, stays long enough to
+     * read (6-12 s by its length), then slides up and out as the next one comes in. A long fact gets
+     * a smaller size, or two lines.
+     */
     private void ticker(Canvas c, float l, float tp, float rt, float b, float cy) {
-        // each fact: 28 px | fact | 56 px | ✦ | 28 px (the page's <i> with its ::after star)
-        font(look.fig700, 20, Color.WHITE, 0);
         String[] fs = FACTS; // the list as it is now (it can be swapped while drawing)
         if (fs == null || fs.length == 0) return;
-        float star = width("✦"), one = 0;
-        for (String f : fs) one += 28 + width(f) + 56 + star + 28;
-        int chars = 0;
-        for (String f : fs) chars += f.length();
-        float dur = Math.max(18f, chars * .28f), off = (t() % dur) / dur * one;
-        int layer = c.saveLayer(l, tp, rt, b, null);
+        float cycle = 0;
+        for (String f : fs) cycle += factSecs(f);
+        float at = t() % cycle;
+        int i = 0;
+        while (i < fs.length - 1 && at >= factSecs(fs[i])) { at -= factSecs(fs[i]); i++; }
+        float dur = factSecs(fs[i]), tr = .55f;
+        float in = Math.min(1f, at / tr), out = Math.max(0f, (at - (dur - tr)) / tr);
+        in = 1 - (1 - in) * (1 - in) * (1 - in); // ease out
+        out = out * out; // ease in
+        float h = b - tp, room = rt - l - 18;
+        float dy = (1 - in) * h * .55f - out * h * .55f, a = Math.min(in, 1 - out);
+        c.save();
         c.clipRect(l, tp, rt, b);
-        float x = l - off;
-        while (x < rt) {
-            for (String f : fs) {
-                font(look.fig700, 20, Color.WHITE, 0);
-                float fw = width(f);
-                mid(c, f, x + 28, cy, Paint.Align.LEFT);
-                text.setColor(0x99FFFFFF);
-                mid(c, "✦", x + 28 + fw + 56, cy, Paint.Align.LEFT);
-                x += 28 + fw + 56 + star + 28;
-            }
+        // the size: 20 px on one line if it fits, else down to 16, else two lines of 17
+        String f = fs[i];
+        float size = 20;
+        font(look.fig700, size, Color.WHITE, 0);
+        while (width(f) > room && size > 16) { size -= 1; font(look.fig700, size, Color.WHITE, 0); }
+        int col = alpha(Color.WHITE, a);
+        if (width(f) <= room) {
+            font(look.fig700, size, col, 0);
+            mid(c, f, l, cy + dy, Paint.Align.LEFT);
+        } else {
+            font(look.fig700, 17, col, 0);
+            String[] two = twoLines(f, room);
+            mid(c, two[0], l, cy - 11 + dy, Paint.Align.LEFT);
+            mid(c, two[1], l, cy + 11 + dy, Paint.Align.LEFT);
         }
-        // fade at both ends (the page's mask: 4 % and 6 %)
-        float w = rt - l;
-        Paint m = new Paint();
-        m.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_IN));
-        m.setShader(new LinearGradient(l, 0, rt, 0, new int[]{0x00000000, 0xFF000000, 0xFF000000, 0x00000000},
-                new float[]{0, .04f, .94f, 1}, Shader.TileMode.CLAMP));
-        c.drawRect(l, tp, l + w, b, m);
-        c.restoreToCount(layer);
+        c.restore();
+    }
+
+    private static float factSecs(String f) { return Math.max(6f, Math.min(12f, 4f + f.length() * .07f)); }
+
+    /** The fact in two lines, split at a space; the second line ends with "…" if it still doesn't fit. */
+    private String[] twoLines(String f, float room) {
+        String[] w = f.split(" ");
+        StringBuilder a = new StringBuilder();
+        int k = 0;
+        while (k < w.length && width(a.length() == 0 ? w[k] : a + " " + w[k]) <= room) { if (a.length() > 0) a.append(' '); a.append(w[k++]); }
+        if (a.length() == 0) return new String[]{ellipsize(f, room), ""};
+        StringBuilder rest = new StringBuilder();
+        for (; k < w.length; k++) { if (rest.length() > 0) rest.append(' '); rest.append(w[k]); }
+        String r = rest.toString();
+        if (width(r) > room) r = ellipsize(r, room);
+        return new String[]{a.toString(), r};
     }
 }

@@ -84,6 +84,7 @@ public class DosaApp extends Activity {
         if (P.getString("ppHost", "").isEmpty()) showSetup(false);
         else showBoard();
         h.post(factsLoop);
+        h.post(boxLoop);
         web = new TvWeb(webApp);
         web.start();
     }
@@ -119,6 +120,27 @@ public class DosaApp extends Activity {
             if (f.isEmpty()) f.add(FACTS[0]);
             BoardView.FACTS = f.toArray(new String[0]);
             h.postDelayed(this, 60_000);
+        }
+    };
+
+    /**
+     * The middle box at the bottom takes turns: dosas served today, tokens waiting, and dosas in the
+     * making only when more than 10. Nothing yet: "First dosas of the day".
+     */
+    private final Runnable boxLoop = new Runnable() {
+        @Override public void run() {
+            List<String[]> t = new ArrayList<String[]>();
+            DosaBoard b = board;
+            if (b != null) {
+                com.babai.board.BoardModel m = b.model();
+                int making = m.dosasInMaking, waiting = m.prep.size(), served = Math.max(0, stats.total() - making);
+                if (served > 0) t.add(new String[]{"DOSAS SERVED TODAY", "Made fresh, one by one", String.valueOf(served)});
+                if (waiting > 0) t.add(new String[]{"TOKENS WAITING", "Served in token order", String.valueOf(waiting)});
+                if (making > 10) t.add(new String[]{"DOSAS IN THE MAKING", "Freshly made, just for you!", String.valueOf(making)});
+            }
+            if (t.isEmpty()) t.add(new String[]{"FRESH ON THE TAWA", "First dosas of the day", ""});
+            BoardView.boxTurns = t.toArray(new String[0][]);
+            h.postDelayed(this, 2000);
         }
     };
 
@@ -164,6 +186,7 @@ public class DosaApp extends Activity {
                 st.put("roundSize", P.getInt("roundSize", 8));
                 st.put("roundMin", (double) P.getFloat("roundMin", 3f));
                 st.put("voice", P.getBoolean("dosaVoice", true));
+                st.put("reminders", P.getBoolean("reminders", true));
                 boolean dg = P.getBoolean("voiceDigits", true);
                 st.put("digits", dg);
                 st.put("numbersOn", P.getBoolean("numbersOn", true));
@@ -233,7 +256,7 @@ public class DosaApp extends Activity {
                 float rm = (float) Math.max(1.5, Math.min(8, in.optDouble("roundMin", 3)));
                 P.edit().putString("facts", keep.toString()).putBoolean("numbersOn", in.optBoolean("numbersOn", true))
                         .putString("dosaKinds", kinds).putString("dosaChans", ch.toString()).putInt("dosaClearMin", clr).putInt("roundSize", rs).putFloat("roundMin", rm)
-                        .putBoolean("dosaVoice", in.optBoolean("voice", true)).putBoolean("voiceDigits", in.optBoolean("digits", true))
+                        .putBoolean("dosaVoice", in.optBoolean("voice", true)).putBoolean("reminders", in.optBoolean("reminders", true)).putBoolean("voiceDigits", in.optBoolean("digits", true))
                         .putString("ttsVoice", in.optString("ttsVoice", "")).apply();
                 voice.tune(0.95f, 1.05f, in.optString("ttsVoice", ""));
                 h.post(new Runnable() { @Override public void run() { h.removeCallbacks(factsLoop); factsLoop.run(); } });
