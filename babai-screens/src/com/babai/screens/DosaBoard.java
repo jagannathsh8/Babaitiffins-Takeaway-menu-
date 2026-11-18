@@ -50,7 +50,8 @@ final class DosaBoard {
     boolean fetchAll;
     DosaStats stats;
     volatile JSONObject last; // the last kitchen list read (the TV's settings page shows it)
-    static String defaultKinds = "IP"; // Babai Screens: dine in + pick up; the Dosa Board app: dine in
+    static String defaultKinds = "IP";
+    static boolean roundsMode = false; // the Dosa Board app: wait by tawa rounds // Babai Screens: dine in + pick up; the Dosa Board app: dine in
     private boolean running, first = true, busy;
 
     DosaBoard(Context c, SharedPreferences p, Host host, String base, String query) {
@@ -134,6 +135,9 @@ final class DosaBoard {
                     List<BoardModel.Order> orders = fresh(orders(j, P, now), now);
                     model.clearMs = P.getInt("dosaClearMin", 10) * 60_000L;
                     model.tawaOrders = P.getInt("tawaOrders", 4); // orders the tawa works on at once (laptop page)
+                    model.rounds = roundsMode; // the Dosa Board app: wait by tawa rounds (as the KDS V11 Dosa Live)
+                    model.roundSize = P.getInt("roundSize", 8);
+                    model.roundMin = P.getFloat("roundMin", 3f);
                     model.update(orders, now);
                     view.show(model, now);
                     last = j;

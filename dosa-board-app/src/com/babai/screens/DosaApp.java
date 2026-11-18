@@ -71,7 +71,8 @@ public class DosaApp extends Activity {
         DosaBoard.defaultKinds = "I"; // this app: dine-in dosas unless chosen otherwise
         DosaBoard.remindMins = new int[]{1, 2, 4, 5}; // calls again while ready and not dispatched
         DosaBoard.defaultDigits = true; // "token two four zero one"
-        DosaBoard.shortCalls = true;    // the outlet's choice: "Token 2 4 0 1, dosa ready."
+        DosaBoard.shortCalls = true;
+        DosaBoard.roundsMode = true;    // wait times by tawa rounds: 8 dosas in 3 min (the KDS V11 Dosa Live rule)    // the outlet's choice: "Token 2 4 0 1, dosa ready."
         voice = new Voice(this);
         voice.tune(0.95f, 1.05f, P.getString("ttsVoice", "")); // the outlet's choice: speed 0.95, pitch 1.05
         stats = new DosaStats(new File(getFilesDir(), "today.json"));
@@ -158,7 +159,8 @@ public class DosaApp extends Activity {
                 for (String c : DosaBoard.seenChans(P)) seen.put(c);
                 st.put("seenChans", seen);
                 st.put("clearMin", P.getInt("dosaClearMin", 10));
-                st.put("tawa", P.getInt("tawaOrders", 4));
+                st.put("roundSize", P.getInt("roundSize", 8));
+                st.put("roundMin", (double) P.getFloat("roundMin", 3f));
                 st.put("voice", P.getBoolean("dosaVoice", true));
                 boolean dg = P.getBoolean("voiceDigits", true);
                 st.put("digits", dg);
@@ -224,9 +226,10 @@ public class DosaApp extends Activity {
                 for (int i = 0; c != null && i < c.length(); i++) if (!c.optString(i).trim().isEmpty()) ch.append(c.optString(i).trim()).append('\n');
                 int clr = in.optInt("clearMin", 10);
                 if (clr != 5 && clr != 10 && clr != 15 && clr != 30) clr = 10;
-                int tawa = Math.max(1, Math.min(12, in.optInt("tawa", 4)));
+                int rs = Math.max(2, Math.min(20, in.optInt("roundSize", 8)));
+                float rm = (float) Math.max(1.5, Math.min(8, in.optDouble("roundMin", 3)));
                 P.edit().putString("facts", keep.toString()).putBoolean("numbersOn", in.optBoolean("numbersOn", true))
-                        .putString("dosaKinds", kinds).putString("dosaChans", ch.toString()).putInt("dosaClearMin", clr).putInt("tawaOrders", tawa)
+                        .putString("dosaKinds", kinds).putString("dosaChans", ch.toString()).putInt("dosaClearMin", clr).putInt("roundSize", rs).putFloat("roundMin", rm)
                         .putBoolean("dosaVoice", in.optBoolean("voice", true)).putBoolean("voiceDigits", in.optBoolean("digits", true))
                         .putString("ttsVoice", in.optString("ttsVoice", "")).apply();
                 voice.tune(0.95f, 1.05f, in.optString("ttsVoice", ""));

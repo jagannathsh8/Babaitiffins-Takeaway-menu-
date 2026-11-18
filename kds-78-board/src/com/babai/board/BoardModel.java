@@ -143,25 +143,63 @@ public final class BoardModel {
             }
         });
         while (!recent.isEmpty() && recent.get(0) < now - WIN_MS) recent.remove(0);
+        while (!recentPieces.isEmpty() && recentPieces.get(0)[0] < now - WIN_MS) recentPieces.remove(0);
         double avg = avgMin(), perMin = perMin(now, avg);
+        int queued = 0;
+        for (Order o : pr) queued += o.dosas();
+        double round = roundMinutes(queued, now);
         List<Prep> out = new ArrayList<Prep>();
         int dosas = 0;
         for (int i = 0; i < pr.size(); i++) {
             Order o = pr.get(i);
             dosas += o.dosas();
             double el = o.created > 0 ? Math.max(0, (now - o.created) / 60000.0) : 0;
-            double left = minutesLeft(i, el, avg, perMin);
+            double left = rounds ? roundsLeft(dosas, queued, round) : minutesLeft(i, el, avg, perMin);
             float p = (float) (el / (el + left));
             out.add(new Prep(o, Math.max(1, (int) Math.ceil(left)), Math.max(0f, Math.min(.97f, p))));
         }
         ready = rd;
         prep = out;
         dosasInMaking = dosas;
-        estMinutes = Math.max(2, (int) Math.ceil(minutesLeft(pr.size(), 0, avg, perMin)));
+        estMinutes = rounds ? Math.max(1, (int) Math.ceil(roundsLeft(queued + 1, queued + 1, round)))
+                : Math.max(2, (int) Math.ceil(minutesLeft(pr.size(), 0, avg, perMin)));
+    }
+
+    // ---- tawa rounds (the Petpooja KDS V11 Dosa Live rule; the Babai Dosa Board app uses it) --------
+
+    /** Wait by tawa rounds: roundSize dosas cook together in roundMin minutes. Off: the average-and-pace rule. */
+    public boolean rounds;
+    public int roundSize = 8;
+    public double roundMin = 3.0;
+    static final double ROUND_LOW = 2.5, ROUND_HIGH = 4.5, LEAN_MAX_MIN = 10.0, BUSY_MAX_MIN = 20.0;
+    private final List<long[]> recentPieces = new ArrayList<long[]>(); // {when, dosas} off the tawa
+
+    /** Minutes for the dosas up to and including this token: the round they land in times the round
+     *  time; at most 10 min when one round or less is waiting, 20 min when busy. */
+    double roundsLeft(int dosasUpTo, int queued, double round) {
+        int size = Math.max(1, roundSize);
+        int n = Math.max(1, (dosasUpTo + size - 1) / size);
+        double cap = queued <= size ? LEAN_MAX_MIN : BUSY_MAX_MIN;
+        return Math.max(0.5, Math.min(cap, n * round));
+    }
+
+    /** The round time: roundMin, or on a busy tawa (a full round waiting and two rounds finished in the
+     *  last 15 min) the pace actually seen, kept between 2.5 and 4.5 min (scaled to roundMin). */
+    double roundMinutes(int queued, long now) {
+        int size = Math.max(1, roundSize);
+        if (queued < size) return roundMin;
+        long done = 0;
+        for (long[] p : recentPieces) done += p[1];
+        if (done < 2L * size) return roundMin;
+        double window = Math.max(MIN_WIN_MS, Math.min(WIN_MS, now - since)) / 60000.0;
+        double seen = size / (done / window);
+        double k = roundMin / 3.0;
+        return Math.max(ROUND_LOW * k, Math.min(ROUND_HIGH * k, seen));
     }
 
     private void offTheTawa(Order o, long now) {
         recent.add(now);
+        recentPieces.add(new long[]{now, o.dosas()});
         long d = o.created > 0 ? now - o.created : 0;
         if (d > 0 && d < MAX_PREP_MS) {
             completed++;
