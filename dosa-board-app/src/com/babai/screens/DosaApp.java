@@ -58,6 +58,7 @@ public class DosaApp extends Activity {
     private TvWeb web;
     private long lastCall; // when the last call was queued (one chime per run of calls)
     private long failSince; // when Petpooja stopped answering (0: it answers)
+    private volatile String lastWhy = "";
     private TextView overlay;
     private boolean inSetup;
     private int fails;
@@ -179,6 +180,7 @@ public class DosaApp extends Activity {
                 for (String x : stats.facts()) nums.put(x);
                 o.put("numbers", nums);
                 o.put("ppHost", P.getString("ppHost", ""));
+                if (failSince > 0) o.put("ppProblem", "Petpooja not answering since " + new java.text.SimpleDateFormat("h:mm a", java.util.Locale.US).format(failSince) + " (" + lastWhy + "). The TV shows the last orders it read.");
                 o.put("version", "app " + Version.NAME);
                 DosaBoard b = board;
                 org.json.JSONObject last = b == null ? null : b.last;
@@ -256,28 +258,12 @@ public class DosaApp extends Activity {
         root.removeAllViews();
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         board = new DosaBoard(this, P, new DosaBoard.Host() {
-            @Override public void boardOk() { fails = 0; failSince = 0; overlay.setVisibility(View.GONE); }
+            @Override public void boardOk() { fails = 0; failSince = 0; lastWhy = ""; }
             @Override public void boardFailed(String why) {
-                if (inSetup) return;
+                // nothing on the TV: the board keeps the last orders; the laptop page says what is wrong
                 fails++;
-                long now = System.currentTimeMillis();
-                if (failSince == 0) failSince = now;
-                String since = new java.text.SimpleDateFormat("h:mm a", java.util.Locale.US).format(failSince);
-                if (now - failSince < 120_000) {
-                    // a short outage: keep the board, with a small line at the bottom
-                    overlay.setText("Petpooja not answering since " + since + " · showing the last orders");
-                    overlay.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-                    overlay.setPadding(dp(14), dp(6), dp(14), dp(6));
-                    overlay.setLayoutParams(new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
-                    if (fails >= 2) overlay.setVisibility(View.VISIBLE);
-                } else {
-                    overlay.setText("Babai Dosa Board\n\nPetpooja (" + P.getString("ppHost", "") + ") not answering since " + since + "\n\n"
-                            + "Check that the billing PC is on, awake, with Petpooja open, and this TV is on the shop Wi-Fi.\n(" + why + ")\n\nMENU or Back ×5: settings");
-                    overlay.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-                    overlay.setPadding(dp(40), dp(40), dp(40), dp(40));
-                    overlay.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-                    overlay.setVisibility(View.VISIBLE);
-                }
+                if (failSince == 0) failSince = System.currentTimeMillis();
+                lastWhy = why == null ? "" : why;
             }
             @Override public void say(String text, String wav) {
                 // one chime for a run of calls: not while still speaking, nor within 4 s of the last call
