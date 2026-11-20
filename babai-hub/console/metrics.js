@@ -351,12 +351,19 @@
       if (!t.length) return '<span class="mute">–</span>'; var u = rs(t), i = t.filter(function (v) { return v.complaint || (v.rating != null && v.rating <= 3); }).length;
       return '<b class="' + (u.m != null ? rcAll(u.m) : "") + '">' + (u.m != null ? u.m.toFixed(2) + "★" : "–") + '</b><small class="' + (i ? "c-r" : "mute") + '">' + i + " issue" + (i === 1 ? "" : "s") + "</small>";
     });
-    unhappy.sort(function (a, b) { return (b.day + (b.time || "")).localeCompare(a.day + (a.time || "")); });
+    // Punched: the exact order date and time. This PC's own KOT record first, else the sheet's order
+    // date (oday). A rating's day is when it was given, so it is never shown as the punched date.
+    function punchedOf(c, o) {
+      if (o && o.pu) return { t: hm(o.pu), d: dmon(o.pu), k: ymd(new Date(o.pu)) + hm(o.pu) };
+      var od = c.oday || (c.rating != null ? "" : c.day);
+      return { t: c.time || "–", d: od ? dmon(Date.parse(od + "T12:00:00")) : c.day ? "rated " + dmon(Date.parse(c.day + "T12:00:00")) : "", k: (od || c.day || "") + (c.time || "") };
+    }
+    unhappy.sort(function (a, b) { return punchedOf(b, opsFor(b)).k.localeCompare(punchedOf(a, opsFor(a)).k); });
     h += '<div class="panel"><div class="hd"><h2>Low ratings and complaints</h2><span class="sub">' + unhappy.length + ' orders · tap a row for the full order</span><button class="tbtn" data-copy="mxCxT">Copy</button><button class="tbtn" data-copy="mxCxT" data-csv="1">CSV</button></div>' +
       '<div class="tw"><table id="mxCxT"><thead><tr><th>Order ID</th><th class="c">Pf</th><th>Punched</th><th>Rating</th><th>Complaint / comment</th><th class="num">Refund</th><th>Items</th><th class="num">KPT</th><th class="num">RWT</th><th>Ready status</th></tr></thead><tbody>' +
       unhappy.map(function (c, i) {
-        var o = opsFor(c), said = c.text || c.feedback || "";
-        return '<tr class="row" data-key="c' + i + '"><td class="id">' + esc(c.id) + '</td><td class="c"><span class="pf ' + c._p + '">' + c._p + "</span></td><td>" + esc(c.time || "–") + '<span class="dt">' + esc(c.day ? dmon(Date.parse(c.day + "T12:00:00")) : "") + "</span></td><td>" +
+        var o = opsFor(c), said = c.text || c.feedback || "", pt = punchedOf(c, o);
+        return '<tr class="row" data-key="c' + i + '"><td class="id">' + esc(c.id) + '</td><td class="c"><span class="pf ' + c._p + '">' + c._p + "</span></td><td>" + esc(pt.t) + '<span class="dt">' + esc(pt.d) + "</span></td><td>" +
           (c.complaint ? '<span class="chip bad">Complaint</span>' : "") + (c.rating != null ? ' <span class="star' + (c.rating <= 3 ? " lo" : "") + '">' + c.rating + "★</span>" : "") + '</td><td class="items" style="min-width:160px">' + (c.complaint ? "<b>" + esc(c.complaint) + "</b>" + (said ? " · " : "") : "") + (said ? esc(said) : c.complaint ? "" : '<span class="mute">–</span>') +
           '</td><td class="num">' + (c.refund ? "₹" + Math.round(c.refund) : '<span class="mute">–</span>') + '</td><td class="items">' + esc(o ? o.items : c.items || "–") + '</td><td class="num">' + f1(o && o.kpt != null ? o.kpt : c.kpt) +
           '</td><td class="num">' + f1(o ? o.rwt : c.wait) + "</td><td>" + (o ? frChip(o.fr) : '<span class="mute">–</span>') + "</td></tr>";

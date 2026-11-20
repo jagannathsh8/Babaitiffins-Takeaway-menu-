@@ -237,7 +237,7 @@ function getData() {
 // The dashboard's data: only the fields it shows, as rows under one list of column names (small and
 // quick to send). Kept ready in the script cache, refreshed with the Merged tab every 15 minutes.
 var DCOLS = ['id', 'sid', 'day', 'time', 'meal', 'outlet', 'platform', 'rating', 'feedback', 'complaint', 'item', 'items',
-  'text', 'value', 'status', 'refund', 'ctype', 'check', 'cause', 'kpt', 'wait', 'slot', 'customer', 'photoUrl'];
+  'text', 'value', 'status', 'refund', 'ctype', 'check', 'cause', 'kpt', 'wait', 'slot', 'customer', 'photoUrl', 'oday'];
 var CHUNK = 90000;
 
 function cachePayload_(list) {
@@ -509,6 +509,7 @@ function orders_() {
     var out = {
       at: when ? when.getTime() : 0,
       day: when ? Utilities.formatDate(when, TZ, 'yyyy-MM-dd') : '',
+      oday: exact ? Utilities.formatDate(exact, TZ, 'yyyy-MM-dd') : '', // the order's own date (day is the rating's)
       time: exact ? Utilities.formatDate(exact, TZ, 'HH:mm') : '',
       meal: meal_(hour),
       outlet: o.outlet || '', platform: o.platform, id: o.id,
