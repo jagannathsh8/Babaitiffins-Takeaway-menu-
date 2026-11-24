@@ -872,13 +872,16 @@ func directBridgeHold(j *Job) bool {
 		giveSlot(j) // the emergency switch (or nothing set up yet): Petpooja's slip, as Bridge Print
 		return true
 	}
-	if !waitForKot(j) { // Petpooja's list can't be read, or the order never showed: print it (never lose a slip)
-		giveSlot(j)
-		prMu.Lock()
-		t := j.Token
-		prMu.Unlock()
-		addAlert("bad", "", fmt.Sprintf("Slot %d: Petpooja's slip printed (its order couldn't be read from Petpooja).", t), t)
-		return true
+	// 4.21: only Petpooja's KOT list prints. Petpooja's own slips (KOTs, bills) are read for the
+	// order details (order ID, OTP) and never printed while the Console prints.
+	if !waitForKot(j) { // not a KOT in Petpooja's list (a bill), or the list can't be read
+		if !ppFresh() {
+			addAlert("bad", "", "Petpooja's KOT list can't be read: new KOTs print as soon as it can be read again. Petpooja's own slips are not printed (turn on the emergency switch to print them).", 0)
+			directSkipBridge(j, nil, "Not printed (Petpooja's KOT list couldn't be read; the Console prints from it only)")
+		} else {
+			directSkipBridge(j, nil, "Not printed (not linked to a KOT in Petpooja's list: a bill, or the list wasn't readable; the Console prints from the list only)")
+		}
+		return false
 	}
 	var k Kot
 	ppMu.Lock()
@@ -917,29 +920,17 @@ func directBridgeHold(j *Job) bool {
 				directSkipBridge(j, cj, "Not printed (the Console printed this order)")
 				return false
 			}
-			if st == "uncertain" { // every printer and backup failed: Petpooja's slip, same slot
-				directTakeToken(j, cj)
-				if found {
-					orderPrinted(&k, j)
-				}
-				addAlert("bad", "", fmt.Sprintf("Slot %d: no printer took the Console's slip, Petpooja's slip printed instead.", cj.Token), cj.Token)
-				return true
+			if st == "uncertain" { // every printer and backup failed: the Console's own alert says so; Reprint
+				directSkipBridge(j, cj, "Not printed (the Console's slip didn't print: check the printer, then Reprint)")
+				return false
 			}
 		}
 		if time.Now().After(deadline) && (cj == nil || cj.Status != "sent") {
-			if cj != nil {
-				directTakeToken(j, cj)
-			} else {
-				giveSlot(j)
+			if cj == nil && found && directWants(c, k) {
+				addAlert("bad", "", fmt.Sprintf("KOT %d: the Console has no slip for it yet. Check Printing › Prints and Reprint if needed.", k.Token), 0)
 			}
-			if found {
-				orderPrinted(&k, j)
-			}
-			prMu.Lock()
-			t := j.Token
-			prMu.Unlock()
-			addAlert("bad", "", fmt.Sprintf("Slot %d: no Console slip within 10 s, Petpooja's slip printed instead.", t), t)
-			return true
+			directSkipBridge(j, cj, "Not printed (the Console prints from Petpooja's KOT list only)")
+			return false
 		}
 		time.Sleep(250 * time.Millisecond)
 	}

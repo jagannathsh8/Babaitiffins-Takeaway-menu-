@@ -227,12 +227,13 @@ var (
 	reCandidate     = regexp.MustCompile(`(?i)order\s*(?:type|from|source)|(?:delivery|service)\s*type`)
 	reSkipBrandLine = regexp.MustCompile(`(?i)barcode|delivery partner`)
 	reExplicit      = regexp.MustCompile(`(?i)(?:order\s*(?:type|from|source)|(?:delivery|service)\s*type)\s*[:#-]\s*([A-Z][A-Z0-9 .&-]{1,30})`)
-	reIgnoredLabel  = regexp.MustCompile(`(?i)^(?:kot|otp|order(?:\s*(?:id|no\.?|number))?|table(?:\s*(?:id|no\.?|number))?|bill(?:\s*(?:id|no\.?|number))?|token|customer|phone|mobile|payment|total|gst|invoice|cashier|date|time|(?:delivery\s+)?passcode|payment\s*status|(?:prepare|ready|deliver|delivery|pick\s*up)\s*by|(?:delivery|pick\s*up)\s*time)$`)
+	reIgnoredLabel  = regexp.MustCompile(`(?i)^(?:kot|otp|order(?:\s*(?:id|no\.?|number))?|table(?:\s*(?:id|no\.?|number))?|bill(?:\s*(?:id|no\.?|number))?|token|customer|phone|mobile|payment|total|gst(?:in)?|fssai(?:\s*reg(?:\.|istration)?)?(?:\s*no\.?)?|invoice|cashier|date|time|(?:delivery\s+)?passcode|payment\s*status|(?:prepare|ready|deliver|delivery|pick\s*up)\s*by|(?:delivery|pick\s*up)\s*time)$`)
 	reLabelOnly     = regexp.MustCompile(`(?i)^\s*([A-Z][A-Z0-9 .&-]{1,23}?)\s*[:#-]\s*$`)
 	reDateValue     = regexp.MustCompile(`^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}$`)
 	reSourceID      = regexp.MustCompile(`(?i)^\s*([A-Z][A-Z0-9 .&-]{1,23})\s*[:#-]\s*([A-Z0-9][A-Z0-9-]{1,39})\s*$`)
 	reOcrIDLine     = regexp.MustCompile(`(?i)^\s*([A-Z][A-Z0-9 .&-]{1,23}?)\s*[:#;-]\s*([0-9OoIl|][0-9OoIl| -]{4,48}[0-9OoIl|])\s*$`)
 	reOcrish        = regexp.MustCompile(`^[0-9OoIl|]{10,}$`)
+	reBillFrom      = regexp.MustCompile(`(?i)^from\s+([A-Za-z][A-Za-z ]{1,20}?)\s*\[\s*(\d{6,24})\s*\]`)
 	reOcrLine       = regexp.MustCompile(`^[0-9OoIl| -]+$`)
 	reAllDigits     = regexp.MustCompile(`^\d+$`)
 	reDigits6to24   = regexp.MustCompile(`^\d{6,24}$`)
@@ -353,6 +354,15 @@ func parseReceiptText(text string) ReceiptMeta {
 			orderID = d
 			if brand == "" {
 				brand = reSpaces.ReplaceAllString(strings.TrimSpace(m[1]), " ")
+			}
+		}
+	}
+	// Petpooja's bill: "From Zomato[8865860530]"
+	for _, line := range lines {
+		if m := reBillFrom.FindStringSubmatch(line); m != nil && orderID == "" {
+			orderID = m[2]
+			if brand == "" {
+				brand = m[1]
 			}
 		}
 	}
